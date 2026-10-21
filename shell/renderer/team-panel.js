@@ -348,9 +348,12 @@
     });
   }
 
-  function hide() {
+  function hide(immediate = false) {
     cancelAnimationFrame(showFrame);
-    if (!visible) {
+    if (!visible || immediate) {
+      panel.classList.remove("open");
+      scrim.classList.remove("open");
+      visible = false;
       panel.hidden = true;
       scrim.hidden = true;
       return;
@@ -396,7 +399,7 @@
     ingest,
     syncSession,
     open: openRun,
-    close: hide,
+    close: (options = {}) => hide(!!options.immediate),
     isOpen: () => visible,
   };
 })();

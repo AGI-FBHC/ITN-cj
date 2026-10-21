@@ -5135,3 +5135,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 切页任务并行交给子 agent Faraday，发现侧栏在 await 后才记录导航代次，聊天/课程等异步渲染缺少返回检查，body 弹层不归页面清理。app.js/workbench.js/coursemap.js 加导航代次和资源加载令牌检查；切页清理旧弹层/预览/视图轮询、暂停媒体并移除旧 iframe，不取消后台会话或内核任务。tools/route-lifecycle-check.cjs 用真实 Edge、独立仓颉夹具与可控延迟 HTTP，在原代码复现 5 项失败（12/17），修复后17/17；生成和对话离页继续完成、回来可见，连续左栏切页和浏览器前后退均通过。基线 C:/Users/GeJie/AppData/Local/Temp/lumin-route-RdBsbg/result.json；修后 lumin-route-VPoHlN/result.json。
 - 先更新 docs/02-接口契约.md 中显示/导航生命周期约定，本轮没有改变内核 API 或 Lumin 工具语义，因此不新增无业务意义的工具。未访问真实用户数据库、未打印密钥、未修改 Web 项目。核心仓颉无变更，未重跑176项核心测试，不沿用旧结果冒充本轮。
 - 已检查 JavaScript 及 PowerShell 脚本语法和 git diff --check；未跟踪的 .taste-skill 与两份用户原有调研文档继续排除。下一步按本提交构建新包，复测包内而不是只测源码，并追加实际包大小/哈希、启动和包内回归结果。
+
+### 2026-10-22 05:03 · 包内复验与协作弹窗跨页清理补漏
+
+- 首次构建产物 build=lumin-0.8.31-25c1830。包内 team-panel-check 34/34，包内 route-lifecycle-check 17/17；38项manifest哈希、2763个ZIP条目与关键EXE/ICO/renderer一致。Windows EXE原生启动/关闭/再次启动9项通过（独立数据根 Lumin-启动验收-YLRoa6），包括默认隐藏、外观设置显示及再次启动隐藏；没有付费模型。
+- 原生启动夹具排障如实记录：第一次仅隔离APPDATA环境，Electron自身profile仍与运行实例争锁，退出0；改为明确 --user-data-dir 后正常创建独立profile。第二次错误地等待空数据库不存在的输入框超时；实际页面已完整显示“还没有可用的对话模型”，无脚本错误。改为断言产品在无模型配置时应有的空状态，未修改产品去迎合测试。lumin协议注册项测试前导出，结束后恢复；未使用Python样张。临时脚本 tmp/package-branding-check.cjs、tmp/verify-package-0.8.31.ps1 保留。
+- 用户追加截图，仍为原目录中运行的窄侧栏：树与详情被压缩、点击节点退出。已说明新包恢复居中宽弹窗，截图中旧实例尚未替换；不擅自关闭仍在工作中的用户实例。
+- 在整合两项修复时补查协作树弹窗自身的导航生命周期：真实浏览器后退后，旧team-modal遮罩仍在新页并拦截下一次左栏点击；tmp/route-team-cleanup-before.log记录断言失败及pointer interception，属实际遗漏，不当作无关测试噪声。clearRouteUi现在调用协作面板立即关闭API，切页不等待消失动画；普通关闭仍保留动画。重新执行原17项加该场景，18/18通过，记录C:/Users/GeJie/AppData/Local/Temp/lumin-route-La5qaM/result.json；协作树自身34/34再次通过。因有这3行产品改动，下面按新提交重新打包，不将上一ZIP冒充最终包。

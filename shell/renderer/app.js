@@ -960,6 +960,7 @@ let currentSection = "";
 function clearRouteUi() {
   closePopover();
   closePalette();
+  window.LuminTeamPanel?.close({immediate: true});
   document.querySelectorAll('.course-modal-overlay, .task-modal').forEach(node => node.remove());
   document.querySelector('.course-stage')?._courseObserver?.disconnect();
   document.querySelector('.wb-toolbar')?.remove();

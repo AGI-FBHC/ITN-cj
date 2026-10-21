@@ -101,6 +101,15 @@ const until = async (fn, timeout = 30000) => { const end = Date.now() + timeout;
     check('real Cangjie conversation completes after leaving chat', events.some(e => e.type === 'turn/end') && await settingsIntact());
     await nav('chat');check('returning to chat retains the finished reply', await page.locator('.chat-thread').innerText().then(t => t.includes('工具调用')));
 
+    await page.evaluate(() => window.LuminTeamPanel.ingest([
+      {type:'team/run_started',payload:{runId:'route-popup',tool:'research_topic_team',goal:'页面切换检查'}},
+      {type:'team/node_created',payload:{runId:'route-popup',nodeId:'root',depth:0,title:'协作任务',role:'调度员'}},
+    ], state.chatSessionId, {autoOpen:true}));
+    await page.waitForSelector('#team-panel.open');
+    await page.goBack();await ready();
+    check('browser navigation closes the team popup without leaving its backdrop', await settingsIntact() && await page.locator('#team-panel-scrim').isHidden() && !await page.evaluate(() => window.LuminTeamPanel.isOpen()));
+    await page.evaluate(() => window.LuminTeamPanel.close({immediate: true}));
+
     // Repeated real left-rail clicks plus browser history, with no canned render functions.
     for(let i=0;i<3;i++) { await page.locator('#rail [data-page="home"]').click();await page.locator('#rail [data-page="resources"]').click();await page.locator('#rail [data-page="settings"]').click();await ready();check('rapid rail switching keeps final page '+(i+1),await settingsIntact()); }
     await page.goBack();await ready();check('browser Back renders resources',await page.locator('.outcome-page').count()===1);
