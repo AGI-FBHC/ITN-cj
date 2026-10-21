@@ -494,6 +494,21 @@ button.text-base {
     align-items: stretch;
   }
 
+  .zx-dashboard-profile {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .zx-dashboard-profile > * {
+    flex-shrink: 0;
+  }
+
+  .zx-dashboard-profile > :not(:first-child) {
+    margin-top: 0;
+  }
+
   .zx-dashboard-profile,
   .zx-dashboard-center,
   .zx-dashboard-side {

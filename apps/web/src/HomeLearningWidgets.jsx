@@ -95,7 +95,7 @@ export function PopularLearningResources({ insights, catalog, onOpen, onViewAll 
       return <li key={item.id || `${item.courseId}:${item.lessonIndex}:${item.kind}`}>
         <button type="button" className="zx-home-resource-row" disabled={!target} onClick={() => { if (target) onOpen(target); }}>
           <RankBadge rank={index + 1} />
-          <span className="zx-home-resource-copy"><span className="zx-home-resource-title"><span className={`zx-home-resource-kind kind-${target?.mode || item.kind}`}>{popularResourceLabel(item.kind)}</span><strong>{item.title || item.lessonTitle || lesson?.title}</strong></span><span className="zx-home-resource-context">{[course?.name || item.courseName, lesson?.title || item.lessonTitle].filter(Boolean).join(' · ')}</span>{!target && <span className="zx-home-resource-unavailable">课程或资源暂不可访问</span>}</span>
+          <span className="zx-home-resource-copy"><span className="zx-home-resource-title"><span className={`zx-home-resource-kind kind-${target?.mode || item.kind}`}>{popularResourceLabel(item.kind)}</span><strong>{[course?.name || item.courseName, lesson?.title || item.lessonTitle || item.title].filter(Boolean).join(' · ')}</strong></span>{!target && <span className="zx-home-resource-unavailable">课程或资源暂不可访问</span>}</span>
           <span className="zx-home-resource-count"><strong>{item.learnerCount}</strong><span>人学习</span></span>
         </button>
       </li>;

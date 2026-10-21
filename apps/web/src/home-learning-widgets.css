@@ -62,7 +62,6 @@
 .zx-home-resource-kind { flex: 0 0 auto; border-radius: 5px; padding: 1px 5px; background: #eee8fb; color: #7953b5; font-size: 9px; font-weight: 700; line-height: 1.6; }
 .zx-home-resource-kind.kind-presentation { background: #eaf1fc; color: #5377a8; }
 .zx-home-resource-kind.kind-quiz { background: #fcf0e2; color: #997043; }
-.zx-home-resource-context { overflow-wrap: anywhere; color: #82788e; font-size: 10px; line-height: 1.6; }
 .zx-home-resource-unavailable { color: #93636c; font-size: 10px; }
 .zx-home-resource-count { display: grid; flex: 0 0 auto; justify-items: end; color: #8a8096; font-size: 10px; line-height: 1.6; }
 .zx-home-resource-count strong { color: #5f5274; font-size: 15px; font-variant-numeric: tabular-nums; font-weight: 800; }
