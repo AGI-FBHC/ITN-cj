@@ -12,12 +12,25 @@ func presentationDir(id: String): String {
     dir
 }
 
-func presentationBackgroundStyle(): String {
-    let configured = envOr("ZHIXUN_PPT_BACKGROUND_STYLE", "clean-minimal").trimAscii()
-    let allowed = HashSet<String>(["none", "colorful-ink", "sunset-mountains", "abstract-gradient",
+func presentationBackgroundStyles(): HashSet<String> {
+    HashSet<String>(["none", "colorful-ink", "sunset-mountains", "abstract-gradient",
         "clean-minimal", "cartoon-doodle", "blue-white-minimal", "blue-conference",
         "morandi-blue-gray", "business-gray", "watercolor"])
-    if (allowed.contains(configured)) { configured } else { "clean-minimal" }
+}
+
+func presentationNormalizeBackgroundStyle(value: String): String {
+    let configured = value.trimAscii()
+    if (presentationBackgroundStyles().contains(configured)) { configured } else { "clean-minimal" }
+}
+
+func presentationBackgroundStyle(): String {
+    presentationNormalizeBackgroundStyle(envOr("ZHIXUN_PPT_BACKGROUND_STYLE", "clean-minimal"))
+}
+
+func presentationRendererDetailLevel(value: String): String {
+    if (value == "concise") { "concise" }
+    else if (value == "detailed") { "detailed" }
+    else { "balanced" }
 }
 
 func presentationRendererDir(): String {
@@ -33,19 +46,21 @@ func presentationRendererDir(): String {
     throw Exception("PPT渲染器目录不存在")
 }
 
-func presentationRequestJson(title: String, sourceLabel: String, slideCount: Int64): String {
+func presentationRequestJson(title: String, sourceLabel: String, slideCount: Int64,
+                             backgroundStyle: String, detailLevel: String,
+                             includeSpeakerNotes: Bool): String {
     let out = JsonWriter()
     out.putStr("requirement", "根据《" + title + "》本章原文制作可直接授课的交互演示文稿；来源：" + sourceLabel)
     out.putStr("title", title)
     out.putStr("audience", "学生")
     out.putStr("purpose", "courseware")
     out.putStr("style", "education")
-    out.putStr("backgroundStyle", presentationBackgroundStyle())
+    out.putStr("backgroundStyle", backgroundStyle)
     out.putStr("language", "zh-CN")
     out.putInt("slideCount", slideCount)
     out.putStr("aspectRatio", "16:9")
-    out.putStr("detailLevel", "detailed")
-    out.putBool("includeSpeakerNotes", true)
+    out.putStr("detailLevel", presentationRendererDetailLevel(detailLevel))
+    out.putBool("includeSpeakerNotes", includeSpeakerNotes)
     out.putStr("modelProvider", "cangjie")
     out.putStr("generationMode", "template")
     out.toJson()
@@ -69,14 +84,17 @@ class PresentationRenderResult {
  * slide-shaped HTML preview.
  */
 func renderPresentationPptx(id: String, title: String, sourceLabel: String,
-                            outlineJson: String): PresentationRenderResult {
+                            outlineJson: String, slideCount: Int64,
+                            backgroundStyle: String, detailLevel: String,
+                            includeSpeakerNotes: Bool): PresentationRenderResult {
     let dir = presentationDir(id)
     let rendererDir = presentationRendererDir()
     let script = rendererDir + "/render_ppt.py"
     if (!exists(Path(script))) { throw Exception("PPT渲染器缺失：" + script) }
     let inputPath = dir + "/presentation.request.json"
     let outputPath = dir + "/presentation.pptx"
-    let packet = "{\"request\":" + presentationRequestJson(title, sourceLabel, CW_PRESENTATION_SLIDE_COUNT) +
+    let packet = "{\"request\":" + presentationRequestJson(title, sourceLabel, slideCount,
+        backgroundStyle, detailLevel, includeSpeakerNotes) +
         ",\"outline\":" + outlineJson + "}"
     File.writeTo(Path(inputPath), packet.toArray())
     let (code, out, err) = executeWithOutput("python",
@@ -85,7 +103,7 @@ func renderPresentationPptx(id: String, title: String, sourceLabel: String,
         let diagnostic = if (err.size > 0) { String.fromUtf8(err) } else { String.fromUtf8(out) }
         throw Exception("PPT渲染失败：" + kbTruncate(diagnostic, 1200))
     }
-    var actualSlides: Int64 = CW_PRESENTATION_SLIDE_COUNT
+    var actualSlides: Int64 = slideCount
     var actualNotes: Int64 = 0
     match (cwJsonObjectFrom(String.fromUtf8(out))) {
         case Some(result) =>
@@ -99,7 +117,9 @@ func renderPresentationPptx(id: String, title: String, sourceLabel: String,
     meta.putStr("previewUrl", "/api/presentation/" + id + "/preview")
     meta.putInt("slideCount", actualSlides)
     meta.putInt("speakerNoteCount", actualNotes)
-    meta.putStr("backgroundStyle", presentationBackgroundStyle())
+    meta.putStr("backgroundStyle", backgroundStyle)
+    meta.putStr("detailLevel", detailLevel)
+    meta.putBool("includeSpeakerNotes", includeSpeakerNotes)
     meta.putStr("generationMode", "template")
     meta.putStr("renderer", "lumin-python-pptx-v1")
     PresentationRenderResult(meta.toJson(), actualSlides, actualNotes)

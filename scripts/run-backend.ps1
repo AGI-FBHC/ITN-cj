@@ -13,11 +13,19 @@ Get-Content -LiteralPath $zhixunEnv | ForEach-Object {
     }
 }
 
-Push-Location (Join-Path $zhixunRoot 'services/learning')
+$zhixunService = Join-Path $zhixunRoot 'services/learning'
+Push-Location $zhixunService
 try {
     & cjpm build -i -j1
     if ($LASTEXITCODE -ne 0) { throw 'Cangjie backend build failed' }
-    & (Join-Path (Get-Location) 'target/release/bin/main.exe')
+} finally {
+    Pop-Location
+}
+
+# Runtime data and PPT artifacts are rooted at the project directory.
+Push-Location $zhixunRoot
+try {
+    & (Join-Path $zhixunService 'target/release/bin/main.exe')
 } finally {
     Pop-Location
 }

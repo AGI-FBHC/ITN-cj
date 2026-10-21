@@ -1242,6 +1242,7 @@ func cwSelect(): String {
     "SELECT c.id,c.bundle_id,c.doc_id,c.kind,c.title,c.status,c.published,c.model,c.error_message," +
     "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
     "COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title," +
+    "COALESCE(d.order_index,0)+1 source_order,COALESCE(c.options_json,'') options_json," +
     "COALESCE((SELECT ch.order_no FROM kb_courseware_chapters ch WHERE ch.bundle_id=c.bundle_id " +
     "AND ch.doc_id=c.doc_id),0) chapter_order " +
     "FROM kb_courseware c LEFT JOIN kb_bundle_docs d ON d.id=c.doc_id " +
@@ -1263,6 +1264,16 @@ func cwRowJson(row: Row): String {
     out.putStr("model", row.text("model"))
     out.putStr("errorMessage", row.text("error_message"))
     out.putInt("chapterOrder", row.int("chapter_order"))
+    out.putInt("sourceOrder", row.int("source_order"))
+    let options = row.text("options_json").trimAscii()
+    var safeOptions = "null"
+    if (options.size > 0) {
+        match (cwJsonObjectFrom(options)) {
+            case Some(_) => safeOptions = options
+            case None => ()
+        }
+    }
+    out.putRaw("options", safeOptions)
     out.putStr("updatedAt", row.text("updated_at"))
     out.toJson()
 }
@@ -1270,7 +1281,9 @@ func cwRowJson(row: Row): String {
 func cwListBody(cfg: Config, bundleId: String): String {
     var filter = ""
     if (bundleId.size > 0) { filter = "WHERE c.bundle_id=" + sqlQuote(bundleId) + " " }
-    let rows = query(cfg, cwSelect() + filter + "ORDER BY c.created_at DESC LIMIT 100")
+    // The admin library filters client-side, so the list must include all
+    // practical rows instead of silently hiding records after the first 100.
+    let rows = query(cfg, cwSelect() + filter + "ORDER BY c.created_at DESC LIMIT 1000")
     let arr = JsonArrWriter()
     for (row in rows) { arr.addRaw(cwRowJson(row)) }
     let out = JsonWriter()
@@ -2985,6 +2998,7 @@ main(): Int64 {
                         let bundleId = (jsonGetString(body, "bundleId") ?? "").trimAscii()
                         let docId = (jsonGetString(body, "docId") ?? "").trimAscii()
                         let kinds = jsonGetArray(body, "kinds") ?? JsonArray()
+                        let options = cwNormalizeGenerationOptions(jsonGetObject(body, "options"))
                         let docs = query(cfg,
                             "SELECT id,title FROM kb_bundle_docs WHERE id=" + sqlQuote(docId) +
                             " AND bundle_id=" + sqlQuote(bundleId))
@@ -3008,10 +3022,10 @@ main(): Int64 {
                                     if (cwValidKind(kind)) {
                                         let id = uuidFormat(uuidV4())
                                         execute(cfg,
-                                            "INSERT INTO kb_courseware(id,bundle_id,doc_id,kind,title,status,model,created_at) VALUES(" +
+                                            "INSERT INTO kb_courseware(id,bundle_id,doc_id,kind,title,status,model,options_json,created_at) VALUES(" +
                                             sqlQuote(id) + "," + sqlQuote(bundleId) + "," + sqlQuote(docId) + "," +
                                             sqlQuote(kind) + ",''," + sqlQuote("queued") + "," +
-                                            sqlQuote(settings.chat.model) + ",NOW(6))")
+                                            sqlQuote(settings.chat.model) + "," + sqlQuote(options.toJson()) + ",NOW(6))")
                                         created.add(id)
                                         let item = JsonWriter()
                                         item.putStr("id", id)

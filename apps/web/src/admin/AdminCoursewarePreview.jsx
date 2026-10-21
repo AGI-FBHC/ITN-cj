@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { adminApi } from './admin-api.js';
 import { ErrorBlock, Loading, Notice } from './admin-ui.jsx';
 import { CoursewareContent, StepTimeline } from './CoursewareView.jsx';
+import { generationOptionChips, normalizeGenerationOptions } from './courseware-options.js';
 
 const STATUS = {
   queued: { label: '排队中', kind: 'draft' },
@@ -63,6 +64,9 @@ export default function AdminCoursewarePreview() {
 
   const item = state.item;
   const status = item.published ? { label: '已发布', kind: 'live' } : (STATUS[item.status] || STATUS.draft);
+  const options = normalizeGenerationOptions(item.options);
+  const optionChips = generationOptionChips(item.kind, item.options);
+  const sourceLabel = item.sourceOrder > 0 ? `第 ${item.sourceOrder} 章` : item.docTitle;
 
   return (
     <div className="zx-admin-page">
@@ -70,7 +74,7 @@ export default function AdminCoursewarePreview() {
         <button type="button" className="zx-preview-back" onClick={() => navigate('/admin/courseware')}>← 返回课件</button>
         <div className="zx-preview-bar-title">
           <strong title={item.title}>{item.title || item.kindLabel}</strong>
-          <span>{item.kindLabel} · {item.bundleTitle} · {item.docTitle}</span>
+          <span>{item.kindLabel} · {item.bundleTitle} · {sourceLabel}{item.sourceOrder > 0 ? `：${item.docTitle}` : ''}</span>
         </div>
         <div className="zx-preview-bar-actions">
           <span className={`zx-pill ${status.kind === 'live' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{status.label}</span>
@@ -107,6 +111,16 @@ export default function AdminCoursewarePreview() {
         <StepTimeline steps={state.steps} />
         {item.status === 'generating' || item.status === 'queued' ? <div className="zx-card-hint">{item.status === 'queued' ? '队列等待中，轮到时自动开始并刷新页面。' : '生成中，页面会自动刷新。'}</div> : null}
         {item.model ? <div className="zx-card-hint">模型：{item.model}</div> : null}
+        <div className="zx-cw-generation-settings">
+          <div>
+            <strong>本次生成设置</strong>
+            <span>{item.options ? '已按任务参数生成' : '历史任务，使用默认参数'}</span>
+          </div>
+          <div className="zx-cw-generation-chips">
+            {optionChips.map((chip) => <span key={chip}>{chip}</span>)}
+          </div>
+          {options.note ? <p><strong>补充说明</strong>{options.note}</p> : null}
+        </div>
       </div>
 
       <div className="zx-card">

@@ -5,12 +5,20 @@ import { bundleReadable, BundleLogo } from './BundlePipeline.jsx';
 import Markdown from './Markdown.jsx';
 import { useNavigate } from 'react-router-dom';
 import './courseware-queue.css';
+import {
+  DEFAULT_GENERATION_OPTIONS,
+  DETAIL_LEVELS,
+  PPT_BACKGROUNDS,
+  generationOptionsAreDefault,
+  normalizeGenerationOptions,
+  resourceOptionSummary,
+} from './courseware-options.js';
 
 const RESOURCES = [
-  { key: 'lecture', label: '讲义文稿', badge: '讲', desc: '把章节原文整理成可阅读的讲解稿', meta: '约 2000–3000 字' },
-  { key: 'guide', label: '实操指南', badge: '操', desc: '可跟着做的步骤、命令与检查点', meta: '8–15 步' },
-  { key: 'bank', label: '题库', badge: '题', desc: '随堂练习与章节测验，统一进题库', meta: '8 题' },
-  { key: 'slides', label: '教学幻灯片', badge: '播', desc: '旧版预设模板，按章节自动生成', meta: '12 页分镜 + 章节页' },
+  { key: 'lecture', label: '讲义文稿', badge: '讲', desc: '把章节原文整理成可阅读的讲解稿', meta: '支持精简 / 标准 / 详细' },
+  { key: 'guide', label: '实操指南', badge: '操', desc: '可跟着做的步骤、命令与检查点', meta: '支持精简 / 标准 / 详细' },
+  { key: 'bank', label: '题库', badge: '题', desc: '随堂练习与章节测验，统一进题库', meta: '可选 5–20 题' },
+  { key: 'slides', label: '教学幻灯片', badge: '播', desc: '旧版预设模板，按章节自动生成', meta: '可调页数、背景和讲稿' },
 ];
 
 const TYPE_LABEL = Object.fromEntries(RESOURCES.map((item) => [item.key, item.label]));
@@ -24,6 +32,28 @@ const STATUS = {
 };
 
 const KIND_ORDER = Object.fromEntries(RESOURCES.map((item, index) => [item.key, index]));
+const LIBRARY_FILTER_KEY = 'zx-courseware-library-filters-v2';
+
+function readLibraryFilters() {
+  const fallback = { query: '', kinds: [], docIds: [], status: 'all', published: 'all' };
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(LIBRARY_FILTER_KEY) || 'null');
+    if (!parsed || typeof parsed !== 'object') return fallback;
+    return {
+      query: typeof parsed.query === 'string' ? parsed.query : '',
+      kinds: Array.isArray(parsed.kinds) ? parsed.kinds.filter((kind) => TYPE_LABEL[kind]) : [],
+      docIds: Array.isArray(parsed.docIds) ? parsed.docIds.filter((id) => typeof id === 'string') : [],
+      status: ['all', 'queued', 'generating', 'ready', 'failed'].includes(parsed.status) ? parsed.status : 'all',
+      published: ['all', 'published', 'unpublished'].includes(parsed.published) ? parsed.published : 'all',
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function toggleArrayValue(list, value) {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
 
 function rankOf(item) {
   if (item.status === 'ready') return 3;
@@ -112,6 +142,126 @@ function CoursewareQueueIndicator({ queue, open, onToggle, onClose }) {
   </div>;
 }
 
+function GenerationSettingsPanel({ picked, active, onActive, options, onChange }) {
+  if (picked.length === 0) return null;
+  const activeKind = picked.includes(active) ? active : picked[0];
+  const resource = RESOURCES.find((item) => item.key === activeKind);
+  const detailField = activeKind === 'guide' ? 'guideDetailLevel' : 'lectureDetailLevel';
+  const activeDetailLevel = activeKind === 'guide' ? options.guideDetailLevel : options.lectureDetailLevel;
+  const update = (key, value) => onChange((current) => ({ ...current, [key]: value }));
+  return <section className="zx-cw-gen-settings" aria-label="生成设置">
+    <header>
+      <div>
+        <strong>生成设置</strong>
+        <span>全部选填，不调整时使用当前默认值</span>
+      </div>
+      <button type="button" className="zx-cw-settings-reset" onClick={() => onChange({ ...DEFAULT_GENERATION_OPTIONS })}>恢复默认</button>
+    </header>
+    <div className="zx-cw-settings-tabs" role="tablist" aria-label="选择要设置的内容类型">
+      {picked.map((kind) => {
+        const item = RESOURCES.find((resourceItem) => resourceItem.key === kind);
+        return <button
+          key={kind}
+          type="button"
+          role="tab"
+          aria-selected={activeKind === kind}
+          className={activeKind === kind ? 'active' : ''}
+          onClick={() => onActive(kind)}
+        >
+          <span>{item?.label || kind}</span>
+          <small>{resourceOptionSummary(kind, options)}</small>
+        </button>;
+      })}
+    </div>
+    <div className="zx-cw-settings-panel" role="tabpanel" aria-label={`${resource?.label || '资源'}设置`}>
+      {(activeKind === 'lecture' || activeKind === 'guide') ? <div className="zx-cw-detail-levels">
+        <span className="zx-cw-settings-label">详细程度</span>
+        <div role="group" aria-label="详细程度">
+          {DETAIL_LEVELS.map((level) => <button
+            key={level.value}
+            type="button"
+            className={activeDetailLevel === level.value ? 'active' : ''}
+            aria-pressed={activeDetailLevel === level.value}
+            onClick={() => update(detailField, level.value)}
+          >
+            <strong>{level.label}</strong>
+            <small>{level.description}</small>
+          </button>)}
+        </div>
+      </div> : null}
+
+      {activeKind === 'bank' ? <div className="zx-cw-number-setting">
+        <div>
+          <span className="zx-cw-settings-label">题目数量</span>
+          <small>默认 8 题，支持 5–20 题</small>
+        </div>
+        <div className="zx-cw-stepper">
+          <button type="button" aria-label="减少题目" disabled={options.questionCount <= 5} onClick={() => update('questionCount', Math.max(5, options.questionCount - 1))}>−</button>
+          <input type="number" min="5" max="20" value={options.questionCount} aria-label="题目数量" onChange={(event) => update('questionCount', Math.min(20, Math.max(5, Number(event.target.value) || 5)))} />
+          <button type="button" aria-label="增加题目" disabled={options.questionCount >= 20} onClick={() => update('questionCount', Math.min(20, options.questionCount + 1))}>+</button>
+          <span>题</span>
+        </div>
+      </div> : null}
+
+      {activeKind === 'slides' ? <div className="zx-cw-slide-settings">
+        <div className="zx-cw-number-setting">
+          <div>
+            <span className="zx-cw-settings-label">结构页数</span>
+            <small>章节页会自动追加，最终 PPT 页数可能更多</small>
+          </div>
+          <div className="zx-cw-stepper">
+            <button type="button" aria-label="减少页面" disabled={options.slideCount <= 8} onClick={() => update('slideCount', Math.max(8, options.slideCount - 1))}>−</button>
+            <input type="number" min="8" max="20" value={options.slideCount} aria-label="结构页数" onChange={(event) => update('slideCount', Math.min(20, Math.max(8, Number(event.target.value) || 8)))} />
+            <button type="button" aria-label="增加页面" disabled={options.slideCount >= 20} onClick={() => update('slideCount', Math.min(20, options.slideCount + 1))}>+</button>
+            <span>页</span>
+          </div>
+        </div>
+        <div className="zx-cw-background-setting">
+          <span className="zx-cw-settings-label">背景模板</span>
+          <div className="zx-cw-background-grid" role="radiogroup" aria-label="PPT 背景模板">
+            {PPT_BACKGROUNDS.map((background) => <button
+              key={background.value}
+              type="button"
+              role="radio"
+              aria-checked={options.backgroundStyle === background.value}
+              className={options.backgroundStyle === background.value ? 'active' : ''}
+              onClick={() => update('backgroundStyle', background.value)}
+            >
+              <span className="zx-cw-background-preview">
+                {background.preview
+                  ? <img src={background.preview} alt="" />
+                  : <i>无背景</i>}
+              </span>
+              <small>{background.label}</small>
+            </button>)}
+          </div>
+        </div>
+        <label className="zx-cw-toggle-setting">
+          <span>
+            <strong>生成讲者备注</strong>
+            <small>随 PPTX 输出逐页口播稿</small>
+          </span>
+          <input type="checkbox" checked={options.includeSpeakerNotes} onChange={(event) => update('includeSpeakerNotes', event.target.checked)} />
+        </label>
+      </div> : null}
+    </div>
+    <label className="zx-cw-note-setting">
+      <span>
+        <strong>补充说明</strong>
+        <small>可限定受众、范围和侧重点，不会覆盖本章原文事实</small>
+      </span>
+      <textarea
+        maxLength="300"
+        rows="2"
+        value={options.note}
+        onChange={(event) => update('note', event.target.value)}
+        placeholder="选填，例如：面向零基础学生，侧重本章的实操案例。"
+      />
+      <em>{options.note.length}/300</em>
+    </label>
+  </section>;
+}
+
 /* ---------- 页面 ---------- */
 
 export default function AdminCourseware() {
@@ -134,10 +284,19 @@ export default function AdminCourseware() {
   const [busy, setBusy] = React.useState(false);
   const [queueOpen, setQueueOpen] = React.useState(false);
   const closeQueue = React.useCallback(() => setQueueOpen(false), []);
-  const [libraryQuery, setLibraryQuery] = React.useState('');
-  const [libraryKind, setLibraryKind] = React.useState('all');
-  const [libraryStatus, setLibraryStatus] = React.useState('all');
-  const [libraryPublished, setLibraryPublished] = React.useState('all');
+  const savedLibraryFilters = React.useMemo(() => readLibraryFilters(), []);
+  const [libraryQuery, setLibraryQuery] = React.useState(savedLibraryFilters.query);
+  const [libraryKinds, setLibraryKinds] = React.useState(savedLibraryFilters.kinds);
+  const [libraryDocIds, setLibraryDocIds] = React.useState(savedLibraryFilters.docIds);
+  const [libraryStatus, setLibraryStatus] = React.useState(savedLibraryFilters.status);
+  const [libraryPublished, setLibraryPublished] = React.useState(savedLibraryFilters.published);
+  const [sourcePickerOpen, setSourcePickerOpen] = React.useState(false);
+  const [sourceQuery, setSourceQuery] = React.useState('');
+  const [moreFiltersOpen, setMoreFiltersOpen] = React.useState(false);
+  const [collapsedGroups, setCollapsedGroups] = React.useState([]);
+  const [generationOptions, setGenerationOptions] = React.useState({ ...DEFAULT_GENERATION_OPTIONS });
+  const [settingsTab, setSettingsTab] = React.useState('lecture');
+  const sourcePickerRef = React.useRef(null);
   const pollTimer = React.useRef(null);
 
   const bundles = (bundlesState.data?.bundles || []).filter((item) => bundleReadable(item));
@@ -168,27 +327,167 @@ export default function AdminCourseware() {
   const activeChapter = chapters.find((item) => item.id === activeDocId) || null;
   const activeLive = activeDocId ? liveByDoc.get(activeDocId) : null;
   const items = listState.data?.items || [];
+  const sourceGroups = React.useMemo(() => {
+    const bundlesById = new Map();
+    for (const item of items) {
+      if (!bundlesById.has(item.bundleId)) {
+        bundlesById.set(item.bundleId, {
+          id: item.bundleId,
+          title: item.bundleTitle || '未命名知识库',
+          docsById: new Map(),
+        });
+      }
+      const bundle = bundlesById.get(item.bundleId);
+      if (!bundle.docsById.has(item.docId)) {
+        bundle.docsById.set(item.docId, {
+          id: item.docId,
+          title: item.docTitle || '未命名章节',
+          order: Number(item.sourceOrder || item.chapterOrder || 0),
+          bundleId: item.bundleId,
+          bundleTitle: bundle.title,
+        });
+      }
+    }
+    return [...bundlesById.values()]
+      .map((bundle) => ({
+        ...bundle,
+        docs: [...bundle.docsById.values()].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, 'zh-CN')),
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+  }, [items]);
+  const sourceDocs = React.useMemo(
+    () => sourceGroups.flatMap((bundle) => bundle.docs),
+    [sourceGroups],
+  );
   const libraryItems = React.useMemo(() => {
     const keyword = libraryQuery.trim().toLocaleLowerCase();
     return items.filter((item) => {
-      if (libraryKind !== 'all' && item.kind !== libraryKind) return false;
+      if (libraryKinds.length > 0 && !libraryKinds.includes(item.kind)) return false;
+      if (libraryDocIds.length > 0 && !libraryDocIds.includes(item.docId)) return false;
       if (libraryStatus !== 'all' && item.status !== libraryStatus) return false;
       if (libraryPublished === 'published' && !item.published) return false;
       if (libraryPublished === 'unpublished' && item.published) return false;
       if (!keyword) return true;
-      return [item.title, item.kindLabel, item.bundleTitle, item.docTitle, item.errorMessage]
+      return [item.title, item.kindLabel, item.bundleTitle, item.docTitle, item.errorMessage,
+        `第 ${item.sourceOrder || item.chapterOrder || 0} 章`]
         .some((value) => String(value || '').toLocaleLowerCase().includes(keyword));
     });
-  }, [items, libraryKind, libraryPublished, libraryQuery, libraryStatus]);
-  const libraryFiltered = libraryQuery.trim() || libraryKind !== 'all' || libraryStatus !== 'all' || libraryPublished !== 'all';
+  }, [items, libraryDocIds, libraryKinds, libraryPublished, libraryQuery, libraryStatus]);
+  const libraryGroups = React.useMemo(() => {
+    const groups = new Map();
+    for (const item of libraryItems) {
+      const key = `${item.bundleId}:${item.docId}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          bundleId: item.bundleId,
+          docId: item.docId,
+          bundleTitle: item.bundleTitle || '未命名知识库',
+          docTitle: item.docTitle || '未命名章节',
+          sourceOrder: Number(item.sourceOrder || item.chapterOrder || 0),
+          items: [],
+        });
+      }
+      groups.get(key).items.push(item);
+    }
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        items: group.items.sort((a, b) => (KIND_ORDER[a.kind] ?? 99) - (KIND_ORDER[b.kind] ?? 99)
+          || String(b.updatedAt).localeCompare(String(a.updatedAt))),
+      }))
+      .sort((a, b) => a.bundleTitle.localeCompare(b.bundleTitle, 'zh-CN')
+        || a.sourceOrder - b.sourceOrder
+        || a.docTitle.localeCompare(b.docTitle, 'zh-CN'));
+  }, [libraryItems]);
+  const selectedSourceDocs = React.useMemo(
+    () => sourceDocs.filter((doc) => libraryDocIds.includes(doc.id)),
+    [libraryDocIds, sourceDocs],
+  );
+  const visibleSourceGroups = React.useMemo(() => {
+    const keyword = sourceQuery.trim().toLocaleLowerCase();
+    if (!keyword) return sourceGroups;
+    return sourceGroups
+      .map((bundle) => {
+        if (bundle.title.toLocaleLowerCase().includes(keyword)) return bundle;
+        return {
+          ...bundle,
+          docs: bundle.docs.filter((doc) => `${doc.order} ${doc.title}`.toLocaleLowerCase().includes(keyword)),
+        };
+      })
+      .filter((bundle) => bundle.docs.length > 0);
+  }, [sourceGroups, sourceQuery]);
+  const libraryFiltered = Boolean(
+    libraryQuery.trim()
+    || libraryKinds.length > 0
+    || libraryDocIds.length > 0
+    || libraryStatus !== 'all'
+    || libraryPublished !== 'all',
+  );
   const clearLibraryFilters = () => {
     setLibraryQuery('');
-    setLibraryKind('all');
+    setLibraryKinds([]);
+    setLibraryDocIds([]);
     setLibraryStatus('all');
     setLibraryPublished('all');
+    setSourcePickerOpen(false);
+  };
+  const toggleLibraryKind = (kind) => {
+    setLibraryKinds((current) => toggleArrayValue(current, kind));
+  };
+  const toggleSourceDoc = (docId) => {
+    setLibraryDocIds((current) => toggleArrayValue(current, docId));
+  };
+  const toggleSourceBundle = (bundle) => {
+    const docIds = bundle.docs.map((doc) => doc.id);
+    const allSelected = docIds.every((id) => libraryDocIds.includes(id));
+    setLibraryDocIds((current) => allSelected
+      ? current.filter((id) => !docIds.includes(id))
+      : [...new Set([...current, ...docIds])]);
+  };
+  const selectVisibleSources = () => {
+    const ids = visibleSourceGroups.flatMap((bundle) => bundle.docs.map((doc) => doc.id));
+    setLibraryDocIds((current) => [...new Set([...current, ...ids])]);
+  };
+  const toggleGroup = (key) => {
+    setCollapsedGroups((current) => toggleArrayValue(current, key));
   };
   const generating = items.some((item) => item.status === 'generating' || item.status === 'queued')
     || Number(queueState.data?.running || 0) + Number(queueState.data?.queued || 0) > 0;
+
+  React.useEffect(() => {
+    try {
+      window.sessionStorage.setItem(LIBRARY_FILTER_KEY, JSON.stringify({
+        query: libraryQuery,
+        kinds: libraryKinds,
+        docIds: libraryDocIds,
+        status: libraryStatus,
+        published: libraryPublished,
+      }));
+    } catch {
+      // Filter persistence is a convenience; the page still works without storage.
+    }
+  }, [libraryDocIds, libraryKinds, libraryPublished, libraryQuery, libraryStatus]);
+
+  React.useEffect(() => {
+    if (!sourcePickerOpen) return undefined;
+    const closeOutside = (event) => {
+      if (!sourcePickerRef.current?.contains(event.target)) setSourcePickerOpen(false);
+    };
+    const closeEscape = (event) => {
+      if (event.key === 'Escape') setSourcePickerOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOutside, true);
+    document.addEventListener('keydown', closeEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside, true);
+      document.removeEventListener('keydown', closeEscape);
+    };
+  }, [sourcePickerOpen]);
+
+  React.useEffect(() => {
+    if (picked.length > 0 && !picked.includes(settingsTab)) setSettingsTab(picked[0]);
+  }, [picked, settingsTab]);
 
   // 有生成中的任务就轮询
   React.useEffect(() => {
@@ -242,6 +541,17 @@ export default function AdminCourseware() {
     setPicked((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
   }
 
+  function updateGenerationOptions(next) {
+    setGenerationOptions((current) => (typeof next === 'function' ? next(current) : next));
+  }
+
+  function openGenerationPicker() {
+    setPicked([]);
+    setGenerationOptions({ ...DEFAULT_GENERATION_OPTIONS });
+    setSettingsTab('lecture');
+    setShowPicker(true);
+  }
+
   function reloadAll() {
     bundlesState.reload();
     listState.reload();
@@ -254,9 +564,18 @@ export default function AdminCourseware() {
     setShowPicker(false);
     setError('');
     try {
-      await adminApi.cwGenerate({ bundleId, docId: doc.id, kinds: picked });
-      setMessage(`已提交 ${picked.length} 份课件的生成任务。`);
+      await adminApi.cwGenerate({
+        bundleId,
+        docId: doc.id,
+        kinds: picked,
+        options: {
+          ...generationOptions,
+          note: generationOptions.note.trim(),
+        },
+      });
+      setMessage(`已提交 ${picked.length} 份课件，使用了当前生成设置。`);
       setPicked([]);
+      setGenerationOptions({ ...DEFAULT_GENERATION_OPTIONS });
       listState.reload();
     } catch (failure) {
       setError(failure.message);
@@ -441,7 +760,7 @@ export default function AdminCourseware() {
                     <span>{activeChapter.charCount} 字{activeChapter.sourcePath ? ` · ${activeChapter.sourcePath}` : ''}</span>
                   </div>
                   <div className="zx-cw-main-actions">
-                    <button type="button" className="zx-btn zx-btn-ghost" disabled={!doc || docLoading} onClick={() => { setPicked([]); setShowPicker(true); }}>
+                    <button type="button" className="zx-btn zx-btn-ghost" disabled={!doc || docLoading} onClick={openGenerationPicker}>
                       生成课件
                     </button>
                     <button
@@ -479,16 +798,97 @@ export default function AdminCourseware() {
                 aria-label="搜索课件"
                 value={libraryQuery}
                 onChange={(event) => setLibraryQuery(event.target.value)}
-                placeholder="课件、知识库或来源章节"
+                placeholder="搜索课件、知识库、章节或错误信息"
               />
             </label>
-            <label>
-              <span>类型</span>
-              <select aria-label="资源类型" value={libraryKind} onChange={(event) => setLibraryKind(event.target.value)}>
-                <option value="all">全部类型</option>
-                {RESOURCES.map((resource) => <option key={resource.key} value={resource.key}>{resource.label}</option>)}
-              </select>
-            </label>
+            <div className="zx-cw-source-filter" ref={sourcePickerRef}>
+              <span className="zx-cw-filter-label">来源</span>
+              <button
+                type="button"
+                className={`zx-cw-source-trigger ${libraryDocIds.length ? 'has-value' : ''}`}
+                aria-expanded={sourcePickerOpen}
+                onClick={() => setSourcePickerOpen((value) => !value)}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.5h6l2 2h8v11H4z"/><path d="M4 10h16"/></svg>
+                <span>{libraryDocIds.length ? `已选 ${libraryDocIds.length} 个章节` : '全部知识库与章节'}</span>
+                <svg className="zx-cw-filter-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m5 7.5 5 5 5-5"/></svg>
+              </button>
+              {sourcePickerOpen ? <div className="zx-cw-source-picker" role="dialog" aria-label="选择来源知识库和章节">
+                <header>
+                  <div>
+                    <strong>选择来源</strong>
+                    <span>支持勾选整个知识库或其中章节</span>
+                  </div>
+                  <button type="button" aria-label="关闭来源筛选" onClick={() => setSourcePickerOpen(false)}>×</button>
+                </header>
+                <label className="zx-cw-source-picker-search">
+                  <input
+                    type="search"
+                    value={sourceQuery}
+                    onChange={(event) => setSourceQuery(event.target.value)}
+                    placeholder="搜索知识库或章节"
+                    aria-label="搜索来源知识库或章节"
+                  />
+                </label>
+                <div className="zx-cw-source-picker-actions">
+                  <span>已选 {libraryDocIds.length} 个</span>
+                  <div>
+                    <button type="button" onClick={() => setLibraryDocIds([])} disabled={libraryDocIds.length === 0}>清空</button>
+                    <button type="button" onClick={selectVisibleSources} disabled={visibleSourceGroups.length === 0}>选择当前</button>
+                  </div>
+                </div>
+                <div className="zx-cw-source-picker-list">
+                  {visibleSourceGroups.length === 0 ? <p>没有匹配的知识库或章节</p> : visibleSourceGroups.map((bundle) => {
+                    const allSelected = bundle.docs.every((doc) => libraryDocIds.includes(doc.id));
+                    return <section key={bundle.id} className="zx-cw-source-group">
+                      <label className="zx-cw-source-bundle">
+                        <input type="checkbox" checked={allSelected} onChange={() => toggleSourceBundle(bundle)} />
+                        <span>
+                          <strong>{bundle.title}</strong>
+                          <small>{bundle.docs.length} 个章节</small>
+                        </span>
+                      </label>
+                      <div className="zx-cw-source-docs">
+                        {bundle.docs.map((doc) => <label key={doc.id}>
+                          <input type="checkbox" checked={libraryDocIds.includes(doc.id)} onChange={() => toggleSourceDoc(doc.id)} />
+                          <span className="zx-cw-source-order">{doc.order > 0 ? doc.order : '·'}</span>
+                          <span title={doc.title}>{doc.title}</span>
+                        </label>)}
+                      </div>
+                    </section>;
+                  })}
+                </div>
+                <footer>
+                  <span>选择后与课件类型、状态条件同时生效</span>
+                  <button type="button" className="zx-btn zx-btn-sm zx-btn-primary" onClick={() => setSourcePickerOpen(false)}>完成</button>
+                </footer>
+              </div> : null}
+            </div>
+            <div className="zx-cw-kind-filter">
+              <span className="zx-cw-filter-label">课件类型</span>
+              <div role="group" aria-label="课件类型（可多选）">
+                <button
+                  type="button"
+                  className={libraryKinds.length === 0 ? 'active' : ''}
+                  aria-pressed={libraryKinds.length === 0}
+                  onClick={() => setLibraryKinds([])}
+                >全部</button>
+                {RESOURCES.map((resource) => <button
+                  key={resource.key}
+                  type="button"
+                  className={libraryKinds.includes(resource.key) ? 'active' : ''}
+                  aria-pressed={libraryKinds.includes(resource.key)}
+                  onClick={() => toggleLibraryKind(resource.key)}
+                >{resource.label}</button>)}
+              </div>
+            </div>
+            <div className="zx-cw-library-filter-meta">
+              <span><strong>{libraryItems.length}</strong> / {items.length} 份</span>
+              <button type="button" className={moreFiltersOpen ? 'active' : ''} onClick={() => setMoreFiltersOpen((value) => !value)}>更多筛选</button>
+              <button type="button" disabled={!libraryFiltered} onClick={clearLibraryFilters}>清除</button>
+            </div>
+          </section>
+          {moreFiltersOpen ? <section className="zx-cw-library-more" aria-label="更多课件筛选">
             <label>
               <span>生成状态</span>
               <select aria-label="生成状态" value={libraryStatus} onChange={(event) => setLibraryStatus(event.target.value)}>
@@ -507,11 +907,23 @@ export default function AdminCourseware() {
                 <option value="unpublished">未发布</option>
               </select>
             </label>
-            <div className="zx-cw-library-filter-meta">
-              <span>显示 {libraryItems.length} / {items.length}</span>
-              <button type="button" disabled={!libraryFiltered} onClick={clearLibraryFilters}>清除筛选</button>
-            </div>
-          </section>
+          </section> : null}
+          {libraryFiltered ? <div className="zx-cw-active-filters" aria-label="当前筛选条件">
+            <span>当前条件</span>
+            {selectedSourceDocs.map((doc) => <button key={doc.id} type="button" onClick={() => toggleSourceDoc(doc.id)}>
+              {doc.bundleTitle} · 第 {doc.order} 章 {doc.title}<em>×</em>
+            </button>)}
+            {libraryKinds.map((kind) => <button key={kind} type="button" onClick={() => toggleLibraryKind(kind)}>
+              {TYPE_LABEL[kind]}<em>×</em>
+            </button>)}
+            {libraryStatus !== 'all' ? <button type="button" onClick={() => setLibraryStatus('all')}>
+              {STATUS[libraryStatus]?.label || libraryStatus}<em>×</em>
+            </button> : null}
+            {libraryPublished !== 'all' ? <button type="button" onClick={() => setLibraryPublished('all')}>
+              {libraryPublished === 'published' ? '已发布' : '未发布'}<em>×</em>
+            </button> : null}
+            <button type="button" className="zx-cw-clear-all" onClick={clearLibraryFilters}>全部清除</button>
+          </div> : null}
           {items.length === 0 ? (
             <div className="zx-empty">还没有课件</div>
           ) : libraryItems.length === 0 ? (
@@ -526,51 +938,82 @@ export default function AdminCourseware() {
                   <th>课件</th>
                   <th>类型</th>
                   <th>来源章节</th>
-                  <th>状态</th>
-                  <th>章节上架</th>
+                  <th>状态 / 上架</th>
                   <th>更新时间</th>
                   <th aria-label="操作" />
                 </tr>
               </thead>
-              <tbody>
-                {libraryItems.map((item) => {
-                  const status = item.published ? STATUS.published : (STATUS[item.status] || STATUS.ready);
-                  const liveOrder = item.chapterOrder || 0;
-                  return (
-                    <tr key={item.id}>
-                      <td><div className="zx-cw-title-with-detail">
-                        <div className="zx-cell-title">{item.title || item.kindLabel}</div>
+              {libraryGroups.map((group) => {
+                const collapsed = collapsedGroups.includes(group.key);
+                const sourceLabel = group.sourceOrder > 0 ? `第 ${group.sourceOrder} 章` : '章节';
+                return <tbody key={group.key}>
+                  <tr className="zx-cw-library-group">
+                    <td colSpan={6}>
+                      <div>
+                        <button type="button" className="zx-cw-library-group-toggle" aria-expanded={!collapsed} onClick={() => toggleGroup(group.key)}>
+                          <svg className={collapsed ? '' : 'open'} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m7 5 5 5-5 5"/></svg>
+                          <span>
+                            <strong>{group.bundleTitle}</strong>
+                            <small>{sourceLabel} · {group.docTitle}</small>
+                          </span>
+                        </button>
+                        <em>{group.items.length} 个资源</em>
                         <button
                           type="button"
-                          className="zx-cw-detail-icon"
-                          title="查看该资源生成过程"
-                          aria-label={`查看 ${item.title || item.kindLabel} 的多智能体生成过程`}
-                          onClick={() => navigate(`/admin/courseware/${item.id}/collaboration`)}
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
-                        </button>
-                      </div></td>
-                      <td className="zx-nowrap">{item.kindLabel}</td>
-                      <td className="zx-cell-sub">{item.bundleTitle} · {item.docTitle}</td>
-                      <td>
-                        <span className={`zx-pill ${status.kind === 'live' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{status.label}</span>
-                        {item.status === 'failed' && item.errorMessage ? <div className="zx-cell-sub">{item.errorMessage}</div> : null}
-                      </td>
-                      <td>{liveOrder && item.published ? <span className="zx-cw-live-badge">#{liveOrder}</span> : <span className="zx-cell-sub">—</span>}</td>
-                      <td className="zx-num">{item.updatedAt}</td>
-                      <td className="zx-actions">
-                        <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={item.status !== 'ready'} onClick={() => navigate(`/admin/courseware/${item.id}`)}>预览</button>
-                        {item.published ? (
-                          <button type="button" className="zx-btn zx-btn-sm" onClick={() => act(() => adminApi.cwUnpublish(item.id))}>取消发布</button>
-                        ) : (
-                          <button type="button" className="zx-btn zx-btn-sm" disabled={item.status !== 'ready'} onClick={() => act(() => adminApi.cwPublish(item.id))}>发布</button>
-                        )}
-                        <button type="button" className="zx-btn zx-btn-sm zx-btn-danger" onClick={() => { if (window.confirm('删除这份课件？')) act(() => adminApi.cwDelete(item.id)); }}>删除</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
+                          className="zx-cw-source-link"
+                          onClick={() => navigate(`/admin/knowledge/bundles/${group.bundleId}?docId=${encodeURIComponent(group.docId)}`)}
+                        >查看原文</button>
+                      </div>
+                    </td>
+                  </tr>
+                  {!collapsed ? group.items.map((item) => {
+                    const status = item.published ? STATUS.published : (STATUS[item.status] || STATUS.ready);
+                    const liveOrder = item.chapterOrder || 0;
+                    const itemSource = item.sourceOrder ? `第 ${item.sourceOrder} 章` : sourceLabel;
+                    return (
+                      <tr key={item.id}>
+                        <td><div className="zx-cw-title-with-detail">
+                          <div className="zx-cell-title">{item.title || item.kindLabel}</div>
+                          <button
+                            type="button"
+                            className="zx-cw-detail-icon"
+                            title="查看该资源生成过程"
+                            aria-label={`查看 ${item.title || item.kindLabel} 的多智能体生成过程`}
+                            onClick={() => navigate(`/admin/courseware/${item.id}/collaboration`)}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+                          </button>
+                        </div></td>
+                        <td className="zx-nowrap"><span className="zx-cw-kind-badge">{item.kindLabel}</span></td>
+                        <td>
+                          <div className="zx-cw-source-cell">
+                            <strong>{item.bundleTitle}</strong>
+                            <span>{itemSource} · {item.docTitle}</span>
+                            <button type="button" onClick={() => navigate(`/admin/knowledge/bundles/${item.bundleId}?docId=${encodeURIComponent(item.docId)}`)}>查看原文</button>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="zx-cw-status-stack">
+                            <span className={`zx-pill ${status.kind === 'live' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{status.label}</span>
+                            {liveOrder && item.published ? <small>学员端第 {liveOrder} 章</small> : null}
+                          </div>
+                          {item.status === 'failed' && item.errorMessage ? <div className="zx-cell-sub">{item.errorMessage}</div> : null}
+                        </td>
+                        <td className="zx-num">{item.updatedAt}</td>
+                        <td className="zx-actions">
+                          <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={item.status !== 'ready'} onClick={() => navigate(`/admin/courseware/${item.id}`)}>预览</button>
+                          {item.published ? (
+                            <button type="button" className="zx-btn zx-btn-sm" onClick={() => act(() => adminApi.cwUnpublish(item.id))}>取消发布</button>
+                          ) : (
+                            <button type="button" className="zx-btn zx-btn-sm" disabled={item.status !== 'ready'} onClick={() => act(() => adminApi.cwPublish(item.id))}>发布</button>
+                          )}
+                          <button type="button" className="zx-btn zx-btn-sm zx-btn-danger" onClick={() => { if (window.confirm('删除这份课件？')) act(() => adminApi.cwDelete(item.id)); }}>删除</button>
+                        </td>
+                      </tr>
+                    );
+                  }) : null}
+                </tbody>;
+              })}
             </table>
           )}
         </div>
@@ -607,16 +1050,25 @@ export default function AdminCourseware() {
                       <span className="zx-cw-resource-main">
                         <strong>{item.label}</strong>
                         <span>{item.desc}</span>
-                        <small>{item.meta}</small>
+                        <small>{resourceOptionSummary(item.key, generationOptions)} · {item.meta}</small>
                       </span>
                       <span className="zx-cw-resource-check" aria-hidden="true">{active ? '✓' : ''}</span>
                     </button>
                   );
                 })}
               </div>
+              <GenerationSettingsPanel
+                picked={picked}
+                active={settingsTab}
+                onActive={setSettingsTab}
+                options={generationOptions}
+                onChange={updateGenerationOptions}
+              />
             </div>
             <footer className="zx-cw-modal-foot">
-              <span className="zx-cw-modal-meta">{picked.length === 0 ? '可多选' : `已选 ${picked.length} 项`}</span>
+              <span className="zx-cw-modal-meta">{picked.length === 0
+                ? '选择资源后可调整生成设置'
+                : `已选 ${picked.length} 项 · ${generationOptionsAreDefault(generationOptions) ? '使用默认设置' : '已应用自定义设置'}`}</span>
               <span className="zx-cw-modal-actions">
                 <button type="button" className="zx-btn zx-btn-ghost" onClick={() => setShowPicker(false)}>取消</button>
                 <button type="button" className="zx-btn zx-btn-primary" disabled={picked.length === 0} onClick={generate}>生成所选</button>

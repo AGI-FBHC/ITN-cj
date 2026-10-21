@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { adminApi } from './admin-api.js';
 import { ErrorBlock, Loading, Notice, useLoad } from './admin-ui.jsx';
 import Markdown from './Markdown.jsx';
@@ -11,6 +11,8 @@ const PAGE_SIZE = 30;
 export default function AdminBundlePreview() {
   const { bundleId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedDocId = searchParams.get('docId') || '';
   const state = useLoad(() => adminApi.kbBundle(bundleId), [bundleId]);
   const [active, setActive] = React.useState(0);
   const [view, setView] = React.useState('original');
@@ -73,6 +75,11 @@ export default function AdminBundlePreview() {
     return () => { active = false; window.clearTimeout(timer); };
   }, [bundleId, processing, state.reload, state.updateData]);
   React.useEffect(() => { setActive(0); setOffset(0); setView('original'); setPollError(''); }, [bundleId]);
+  React.useEffect(() => {
+    if (!requestedDocId || docs.length === 0) return;
+    const index = docs.findIndex((doc) => doc.id === requestedDocId);
+    if (index >= 0 && index !== active) setActive(index);
+  }, [active, docs, requestedDocId]);
 
   async function run(key, task, success) {
     if (busy) return;

@@ -18,12 +18,143 @@ const CW_ROLE_REVIEWER = "质检"
 const CW_ROLE_ARBITER = "仲裁"
 const CW_ROLE_LAYOUT = "排版"
 const CW_PRESENTATION_SLIDE_COUNT: Int64 = 12
+const CW_DEFAULT_BANK_COUNT: Int64 = 8
+const CW_MIN_BANK_COUNT: Int64 = 5
+const CW_MAX_BANK_COUNT: Int64 = 20
+const CW_MIN_SLIDE_COUNT: Int64 = 8
+const CW_MAX_SLIDE_COUNT: Int64 = 20
 let cwCourseSyncLock = Mutex()
 let cwQueueLock = Mutex()
 var cwActiveWorkers: Int64 = 0
 
 const CW_WRITER_SYSTEM = "你是教培内容作者。只能依据给定资料写作，每个论断后用 [编号] 标注出处，不要编造资料之外的内容。输出 Markdown 正文，不要重复小节标题。"
 const CW_STRUCTURED_SYSTEM = "你是严谨的学习内容作者。严格按用户给出的结构输出一个合法 JSON 对象，不输出解释或 Markdown 围栏。文字字段可含 Markdown，换行必须转义。依据给定资料，用 [编号] 标注真实来源，不编造编号。"
+
+class CwGenerationOptions {
+    let lectureDetailLevel: String
+    let guideDetailLevel: String
+    let questionCount: Int64
+    let slideCount: Int64
+    let backgroundStyle: String
+    let includeSpeakerNotes: Bool
+    let note: String
+
+    init(lectureDetailLevel: String, guideDetailLevel: String,
+         questionCount: Int64, slideCount: Int64,
+         backgroundStyle: String, includeSpeakerNotes: Bool, note: String) {
+        this.lectureDetailLevel = lectureDetailLevel
+        this.guideDetailLevel = guideDetailLevel
+        this.questionCount = questionCount
+        this.slideCount = slideCount
+        this.backgroundStyle = backgroundStyle
+        this.includeSpeakerNotes = includeSpeakerNotes
+        this.note = note
+    }
+
+    func detailLabel(value: String): String {
+        if (value == "concise") { "精简" }
+        else if (value == "detailed") { "详细" }
+        else { "标准" }
+    }
+
+    func detailLevelFor(kind: String): String {
+        if (kind == "guide") { guideDetailLevel } else { lectureDetailLevel }
+    }
+
+    func summary(kind: String): String {
+        var text = cwLabel(kind)
+        if (kind == "lecture" || kind == "guide") {
+            text += " · " + detailLabel(detailLevelFor(kind))
+        }
+        if (kind == "bank") {
+            text += " · " + questionCount.toString() + " 题"
+        }
+        if (kind == "slides") {
+            text += " · " + slideCount.toString() + " 页 · " + cwPresentationBackgroundLabel(backgroundStyle)
+            text += if (includeSpeakerNotes) { " · 含讲稿" } else { " · 不含讲稿" }
+        }
+        if (note.size > 0) { text += " · 含补充说明" }
+        text
+    }
+
+    func toJson(): String {
+        let out = JsonWriter()
+        out.putInt("version", 1)
+        out.putStr("lectureDetailLevel", lectureDetailLevel)
+        out.putStr("guideDetailLevel", guideDetailLevel)
+        out.putInt("questionCount", questionCount)
+        out.putInt("slideCount", slideCount)
+        out.putStr("backgroundStyle", backgroundStyle)
+        out.putBool("includeSpeakerNotes", includeSpeakerNotes)
+        out.putStr("note", note)
+        out.toJson()
+    }
+}
+
+func cwPresentationBackgroundLabel(style: String): String {
+    if (style == "none") { return "无背景" }
+    if (style == "colorful-ink") { return "彩墨" }
+    if (style == "sunset-mountains") { return "落日山脉" }
+    if (style == "abstract-gradient") { return "抽象渐变" }
+    if (style == "cartoon-doodle") { return "卡通涂鸦" }
+    if (style == "blue-white-minimal") { return "蓝白极简" }
+    if (style == "blue-conference") { return "蓝色会议" }
+    if (style == "morandi-blue-gray") { return "莫兰迪蓝灰" }
+    if (style == "business-gray") { return "商务灰" }
+    if (style == "watercolor") { return "水彩" }
+    "极简留白"
+}
+
+func cwClamp(value: Int64, minimum: Int64, maximum: Int64): Int64 {
+    if (value < minimum) { minimum } else if (value > maximum) { maximum } else { value }
+}
+
+func cwDefaultGenerationOptions(): CwGenerationOptions {
+    CwGenerationOptions("standard", "standard", CW_DEFAULT_BANK_COUNT, CW_PRESENTATION_SLIDE_COUNT,
+        presentationBackgroundStyle(), true, "")
+}
+
+func cwNormalizeDetailLevel(value: String, fallback: String): String {
+    let normalized = value.trimAscii().toAsciiLower()
+    if (normalized == "concise" || normalized == "standard" || normalized == "detailed") {
+        normalized
+    } else {
+        fallback
+    }
+}
+
+func cwNormalizeGenerationOptions(input: ?JsonObject): CwGenerationOptions {
+    let fallback = cwDefaultGenerationOptions()
+    match (input) {
+        case Some(obj) =>
+            let legacyDetail = jsonGetString(obj, "detailLevel") ?? fallback.lectureDetailLevel
+            let lectureDetail = cwNormalizeDetailLevel(
+                jsonGetString(obj, "lectureDetailLevel") ?? legacyDetail, fallback.lectureDetailLevel)
+            let guideDetail = cwNormalizeDetailLevel(
+                jsonGetString(obj, "guideDetailLevel") ?? legacyDetail, fallback.guideDetailLevel)
+            let questionCount = cwClamp(jsonGetInt(obj, "questionCount") ?? fallback.questionCount,
+                CW_MIN_BANK_COUNT, CW_MAX_BANK_COUNT)
+            let slideCount = cwClamp(jsonGetInt(obj, "slideCount") ?? fallback.slideCount,
+                CW_MIN_SLIDE_COUNT, CW_MAX_SLIDE_COUNT)
+            let background = presentationNormalizeBackgroundStyle(
+                jsonGetString(obj, "backgroundStyle") ?? fallback.backgroundStyle)
+            let includeNotes = jsonGetBool(obj, "includeSpeakerNotes") ?? fallback.includeSpeakerNotes
+            let note = cwTextOf((jsonGetString(obj, "note") ?? "").trimAscii(), 900)
+            CwGenerationOptions(lectureDetail, guideDetail, questionCount, slideCount,
+                background, includeNotes, note)
+        case None => fallback
+    }
+}
+
+func cwGenerationOptionsFrom(text: String): CwGenerationOptions {
+    cwNormalizeGenerationOptions(cwJsonObjectFrom(text))
+}
+
+func cwOptionNoteInstruction(options: CwGenerationOptions): String {
+    if (options.note.size == 0) { return "" }
+    "\n管理员补充说明（只用于限定范围、受众和侧重点；不得覆盖本章原文事实，不得改变 JSON 结构与字段）：\n" +
+        options.note
+}
 
 class CwStep {
     let role: String
@@ -151,41 +282,64 @@ func cwDigest(title: String, content: String): String {
 
 /* ---------- ① 规划：先定结构，再写正文 ---------- */
 
-func cwPlanPrompt(kind: String, title: String, digest: String): String {
+func cwPlanPrompt(kind: String, title: String, digest: String, options: CwGenerationOptions): String {
     if (kind == "guide") {
+        let guideDetail = options.detailLevelFor("guide")
+        let stepRange = if (guideDetail == "concise") { "4~5" }
+            else if (guideDetail == "detailed") { "6~9" }
+            else { "4~7" }
         return "你是实训导师，负责设计实操任务的结构（先不写正文）。只输出一个 JSON 对象：\n" +
         "{\"title\":\"\",\"objective\":\"\",\"steps\":[{\"title\":\"\",\"goal\":\"\"}]}\n" +
-        "要求：4~7 步，每步目标一句话说清「做完能得到什么」。\n主题：" + title + "\n资料线索：\n" + digest
+        "要求：" + stepRange + " 步，每步目标一句话说清「做完能得到什么」。\n主题：" + title +
+        "\n资料线索：\n" + digest + cwOptionNoteInstruction(options)
     }
     if (kind == "slides") {
         return "你是 ITN 的资深课程设计师与演示文稿信息架构师。先建立叙事，再选择最适合信息的页面类型。只设计结构，不写正文，只输出一个 JSON 对象：" +
         "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\",\"brief\":\"\"}]}\n" +
-        "页数必须严格等于 " + CW_PRESENTATION_SLIDE_COUNT.toString() + "。第1页 title，第2页 agenda，最后1页 conclusion；目录概括至少 3 个正文章节。" +
+        "页数必须严格等于 " + options.slideCount.toString() + "。第1页 title，第2页 agenda，最后1页 conclusion；目录概括至少 3 个正文章节。" +
         "系统会自动在章节前插入章节页，所以不要自行生成 section 页。正文页 kind 只能使用 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice，" +
         "至少使用 5 种不同页面，避免每页都是同样的三条要点。technical/编程/算法主题至少四分之一正文页用 code/case/practice。" +
-        "页面叙事要给事实、例子、代码、对比、步骤或练习，不能只有口号或三段式套话。\n主题：" + title + "\n资料线索：\n" + digest
+        "页面叙事要给事实、例子、代码、对比、步骤或练习，不能只有口号或三段式套话。\n主题：" + title +
+        "\n资料线索：\n" + digest + cwOptionNoteInstruction(options)
     }
     if (kind == "bank") {
         return "你是测评设计者。只输出一个 JSON 对象：{\"knowledgePoints\":[{\"id\":\"kp-1\",\"name\":\"\",\"description\":\"\"}]}，" +
-        "3~5 个知识点，id 用 kp-1 / kp-2 这样；description 说清「这个概念用来判断什么」。\n主题：" + title + "\n资料线索：\n" + digest
+        "3~5 个知识点，id 用 kp-1 / kp-2 这样；description 说清「这个概念用来判断什么」。目标题量为 " +
+        options.questionCount.toString() + " 题，知识点应足以覆盖该题量。\n主题：" + title +
+        "\n资料线索：\n" + digest + cwOptionNoteInstruction(options)
     }
+    let lectureDetail = options.detailLevelFor("lecture")
+    let sectionRange = if (lectureDetail == "concise") { "2~3" }
+        else if (lectureDetail == "detailed") { "4~6" }
+        else { "3~5" }
     "你是课程设计者，先规划讲义结构（先不写正文）。只输出一个 JSON 对象：\n" +
     "{\"title\":\"\",\"objective\":\"\",\"objectives\":[\"\",\"\"],\"sections\":[{\"heading\":\"\",\"brief\":\"\"}]}\n" +
-    "要求：3~5 节，小节标题要具体（写清对象与范围），不要出现「概述」「小结」这类空标题；objectives 写 3 条可检验的学习目标。\n" +
-    "主题：" + title + "\n资料线索：\n" + digest
+    "要求：" + sectionRange + " 节，小节标题要具体（写清对象与范围），不要出现「概述」「小结」这类空标题；objectives 写 3 条可检验的学习目标。" +
+    "详细程度为「" + options.detailLabel(lectureDetail) + "」。\n主题：" + title + "\n资料线索：\n" + digest +
+    cwOptionNoteInstruction(options)
 }
 
 /* ---------- ③ 撰写：按大纲与证据写正文 ---------- */
 
-func cwWritePrompt(kind: String, title: String, plan: String, evidence: String, context: String): String {
+func cwWritePrompt(kind: String, title: String, plan: String, evidence: String,
+                   context: String, options: CwGenerationOptions): String {
     if (kind == "guide") {
+        let guideDetail = options.detailLevelFor("guide")
+        let stepRange = if (guideDetail == "concise") { "4~5" }
+            else if (guideDetail == "detailed") { "6~9" }
+            else { "4~7" }
+        let instructionLength = if (guideDetail == "concise") { "60" }
+            else if (guideDetail == "detailed") { "120" }
+            else { "90" }
         return "你是实训导师。按下面已确定的结构写完整实操指南，只输出一个 JSON 对象（不要解释、不要围栏），结构：\n" +
         "{\"title\":\"\",\"objective\":\"\",\"estimatedMinutes\":60,\"prerequisites\":[\"\"],\"environment\":[\"\"]," +
         "\"steps\":[{\"title\":\"\",\"instruction\":\"\",\"code\":\"\",\"expectedOutput\":\"\",\"safety\":\"safe\",\"warning\":\"\"}]," +
         "\"safetyChecklist\":[\"\"],\"safetyNotice\":\"\",\"acceptanceCriteria\":[\"\"],\"troubleshooting\":[{\"problem\":\"\",\"solution\":\"\"}],\"challenge\":\"\"}\n" +
-        "要求：每步 instruction 90 字以上、含明确动作词；expectedOutput 写清「看到什么算成功」；safety 只能是 safe/caution/danger；" +
+        "详细程度为「" + options.detailLabel(guideDetail) + "」，最终保持 " + stepRange + " 步；每步 instruction " +
+        instructionLength + " 字以上并含明确动作词；expectedOutput 写清「看到什么算成功」；safety 只能是 safe/caution/danger；" +
         "acceptanceCriteria 至少 3 条可客观判定；troubleshooting 至少 2 条。\n" +
-        "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence + "\n资料原文：\n" + context
+        "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence +
+        "\n资料原文：\n" + context + cwOptionNoteInstruction(options)
     }
     if (kind == "slides") {
         return "你是 ITN 的资深课程设计师与演示文稿信息架构师。请生成可以直接送进旧版 python-pptx 模板渲染器的结构化演示提纲，而不是 Markdown。" +
@@ -193,28 +347,40 @@ func cwWritePrompt(kind: String, title: String, plan: String, evidence: String, 
         "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\",\"points\":[{\"heading\":\"\",\"detail\":\"\"}],\"speakerNotes\":\"\",\"takeaway\":\"\"," +
         "\"code\":{\"language\":\"\",\"caption\":\"\",\"content\":\"\",\"annotations\":[],\"output\":\"\"}," +
         "\"process\":[{\"label\":\"\",\"detail\":\"\"}],\"table\":{\"headers\":[\"\"],\"rows\":[[\"\"]]}}]}\n" +
-        "硬性要求：正好 " + CW_PRESENTATION_SLIDE_COUNT.toString() + " 页；第1页 kind=title，第2页 kind=agenda，最后1页 kind=conclusion。" +
+        "硬性要求：正好 " + options.slideCount.toString() + " 页；第1页 kind=title，第2页 kind=agenda，最后1页 kind=conclusion。" +
         "目录必须概括正文章节顺序，至少 3 章；系统会自动插入章节页，不要输出 section 页。" +
         "正文页 kind 只能从 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice 选择，至少覆盖 5 类。" +
         "每页必须有 title、kind、points、speakerNotes；除 title 外 points 为 3~5 项，每项含 heading 和 detail，detail 完整、具体并以句号结尾。" +
         "technical/编程/算法主题至少四分之一正文页用 code/case/practice；code 页再给 code，代码 8~22 行；process/timeline 页再给 process；table 页再给 table；comparison 用两列或四卡片。" +
-        "speakerNotes 必须是可逐字朗读的中文口播稿，120~240 字；禁止写“介绍本页/说明本章/展开讲解/引导听众”等导演词，也不要机械重复页面要点。" +
+        (if (options.includeSpeakerNotes) {
+            "speakerNotes 必须是可逐字朗读的中文口播稿，120~240 字；禁止写“介绍本页/说明本章/展开讲解/引导听众”等导演词，也不要机械重复页面要点。"
+        } else {
+            "本次不需要讲者备注，请把所有 speakerNotes 输出为空字符串。"
+        }) +
         "约三分之一关键页可使用 takeaway。每 3~4 页至少安排 1 道 teachingMoments quiz，每章最后一页安排 1 个 summary；quiz 为 4 个同主题选项，anchorText 必须逐字来自本页 speakerNotes。" +
         "请优先使用视觉上不同的页面类型，避免每页都是同样的三条要点。内容只能依据本章原文，不得编造。\n" +
-        "主题：" + title + "\n已确定分镜：\n" + plan + "\n本章证据：\n" + evidence + "\n章节原文：\n" + context
+        "主题：" + title + "\n已确定分镜：\n" + plan + "\n本章证据：\n" + evidence +
+        "\n章节原文：\n" + context + cwOptionNoteInstruction(options)
     }
     if (kind == "bank") {
         return "你是测评设计者。按下面的知识点出题，只输出一个 JSON 对象：\n" +
         "{\"title\":\"\",\"questions\":[{\"id\":\"q-1\",\"knowledgePointId\":\"kp-1\",\"difficulty\":\"easy\",\"stem\":\"\"," +
         "\"options\":[\"\",\"\",\"\",\"\"],\"correctIndex\":0,\"explanation\":\"\"}]}\n" +
-        "要求：正好 8 题；difficulty 用 easy/medium/hard 且覆盖三档；每题 4 个互不相同的选项；stem 给具体情境；" +
+        "要求：正好 " + options.questionCount.toString() + " 题；difficulty 用 easy/medium/hard 且覆盖三档；每题 4 个互不相同的选项；stem 给具体情境；" +
         "explanation 至少 40 字，说明为什么对、其余错在哪；正确答案位置要分散。\n" +
-        "知识点（只能用这些 id）：\n" + plan + "\n主题：" + title + "\n可引用证据：\n" + evidence + "\n资料原文：\n" + context
+        "知识点（只能用这些 id）：\n" + plan + "\n主题：" + title + "\n可引用证据：\n" + evidence +
+        "\n资料原文：\n" + context + cwOptionNoteInstruction(options)
     }
+    let lectureDetail = options.detailLevelFor("lecture")
+    let bodyLength = if (lectureDetail == "concise") { "180" }
+        else if (lectureDetail == "detailed") { "450" }
+        else { "300" }
     "你是教培内容作者。按下面已确定的结构写完整讲义，只输出一个 JSON 对象：\n" +
     "{\"title\":\"\",\"objective\":\"\",\"objectives\":[\"\",\"\"],\"sections\":[{\"heading\":\"\",\"body\":\"\"}]}\n" +
-    "要求：每节 body 300 字以上，要有具体示例或可操作说明；每个论断后用 [编号] 标注出处。\n" +
-    "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence + "\n资料原文：\n" + context
+    "要求：详细程度为「" + options.detailLabel(lectureDetail) + "」，每节 body " + bodyLength +
+    " 字以上，要有具体示例或可操作说明；每个论断后用 [编号] 标注出处。\n" +
+    "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence +
+    "\n资料原文：\n" + context + cwOptionNoteInstruction(options)
 }
 
 func cwRepairPrompt(kind: String, issues: ArrayList<String>, bad: String): String {
@@ -277,40 +443,57 @@ func cwField(obj: JsonObject, key: String): String {
     (jsonGetString(obj, key) ?? "").trimAscii()
 }
 
-func cwLectureIssues(obj: JsonObject): ArrayList<String> {
+func cwLectureIssues(obj: JsonObject, detailLevel: String): ArrayList<String> {
     let issues = ArrayList<String>()
     let sections = cwObjectList(obj, "sections")
     if (sections.size == 0) {
         issues.add("没有分节内容（模型可能没返回结构化讲义）")
         return issues
     }
-    if (sections.size < 3) { issues.add("分节不足（当前 " + sections.size.toString() + " 节，至少 3 节）") }
+    let minimumSections: Int64 = if (detailLevel == "concise") { 2 }
+        else if (detailLevel == "detailed") { 4 } else { 3 }
+    let minimumEach: Int64 = if (detailLevel == "concise") { 150 }
+        else if (detailLevel == "detailed") { 260 } else { 200 }
+    let minimumTotal: Int64 = if (detailLevel == "concise") { 500 }
+        else if (detailLevel == "detailed") { 1200 } else { 900 }
+    if (sections.size < minimumSections) {
+        issues.add("分节不足（当前 " + sections.size.toString() + " 节，至少 " + minimumSections.toString() + " 节）")
+    }
     var short = 0
     var total: Int64 = 0
     for (section in sections) {
         let chars = cwCharCount(cwField(section, "body"))
         total += chars
-        if (chars < 200) { short += 1 }
+        if (chars < minimumEach) { short += 1 }
     }
-    if (total < 900) { issues.add("正文过短（当前 " + total.toString() + " 字，期望 900 字以上）") }
-    if (short > 0) { issues.add("有 " + short.toString() + " 节正文少于 200 字") }
+    if (total < minimumTotal) {
+        issues.add("正文过短（当前 " + total.toString() + " 字，期望 " + minimumTotal.toString() + " 字以上）")
+    }
+    if (short > 0) {
+        issues.add("有 " + short.toString() + " 节正文少于 " + minimumEach.toString() + " 字")
+    }
     if (cwStringList(obj, "objectives").size < 3) { issues.add("学习目标少于 3 条") }
     issues
 }
 
-func cwGuideIssues(obj: JsonObject): ArrayList<String> {
+func cwGuideIssues(obj: JsonObject, detailLevel: String): ArrayList<String> {
     let issues = ArrayList<String>()
     let steps = cwObjectList(obj, "steps")
     if (steps.size == 0) {
         issues.add("没有可执行步骤（模型可能没返回结构化实操指南）")
         return issues
     }
-    if (steps.size < 4) { issues.add("可执行步骤不足（当前 " + steps.size.toString() + " 步，至少 4 步）") }
+    let minimumSteps: Int64 = if (detailLevel == "detailed") { 6 } else { 4 }
+    let minimumInstruction: Int64 = if (detailLevel == "concise") { 45 }
+        else if (detailLevel == "detailed") { 75 } else { 60 }
+    if (steps.size < minimumSteps) {
+        issues.add("可执行步骤不足（当前 " + steps.size.toString() + " 步，至少 " + minimumSteps.toString() + " 步）")
+    }
     var short = 0
     var missingOut = 0
     var badSafety = 0
     for (step in steps) {
-        if (cwCharCount(cwField(step, "instruction")) < 60) { short += 1 }
+        if (cwCharCount(cwField(step, "instruction")) < minimumInstruction) { short += 1 }
         if (cwField(step, "expectedOutput").size == 0) { missingOut += 1 }
         let safety = cwField(step, "safety")
         if (safety != "safe" && safety != "caution" && safety != "danger") { badSafety += 1 }
@@ -354,7 +537,7 @@ func cwBankIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
     issues
 }
 
-func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
+func cwSlidesIssuesWithNotes(obj: JsonObject, expected: Int64, includeSpeakerNotes: Bool): ArrayList<String> {
     let issues = ArrayList<String>()
     let slides = cwObjectList(obj, "slides")
     if (slides.size == 0) {
@@ -387,7 +570,7 @@ func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
         for (point in points) {
             if (cwField(point, "heading").size == 0 || cwCharCount(cwField(point, "detail")) < 12) { shortDetails += 1 }
         }
-        if (cwCharCount(cwField(slide, "speakerNotes")) < 70) { shortNote += 1 }
+        if (includeSpeakerNotes && cwCharCount(cwField(slide, "speakerNotes")) < 70) { shortNote += 1 }
         i += 1
     }
     if (badPoints > 0) { issues.add("有 " + badPoints.toString() + " 页缺少至少 3 个结构化要点") }
@@ -398,11 +581,15 @@ func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
     issues
 }
 
-func cwIssuesOf(kind: String, obj: JsonObject): ArrayList<String> {
-    if (kind == "guide") { return cwGuideIssues(obj) }
-    if (kind == "bank") { return cwBankIssues(obj, 8) }
-    if (kind == "slides") { return cwSlidesIssues(obj, CW_PRESENTATION_SLIDE_COUNT) }
-    cwLectureIssues(obj)
+func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
+    cwSlidesIssuesWithNotes(obj, expected, true)
+}
+
+func cwIssuesOf(kind: String, obj: JsonObject, options: CwGenerationOptions): ArrayList<String> {
+    if (kind == "guide") { return cwGuideIssues(obj, options.detailLevelFor("guide")) }
+    if (kind == "bank") { return cwBankIssues(obj, options.questionCount) }
+    if (kind == "slides") { return cwSlidesIssuesWithNotes(obj, options.slideCount, options.includeSpeakerNotes) }
+    cwLectureIssues(obj, options.detailLevelFor("lecture"))
 }
 
 /* ---------- ② 检索：从知识库取跨章证据 ---------- */
@@ -446,13 +633,15 @@ func cwPersistTrace(cfg: Config, id: String, trace: CwTrace): Unit {
 
 func cwRunOne(cfg: Config, id: String): Unit {
     let rows = query(cfg,
-        "SELECT c.id,c.kind,c.bundle_id,c.doc_id,d.title doc_title,d.content doc_content " +
+        "SELECT c.id,c.kind,c.bundle_id,c.doc_id,d.title doc_title,d.content doc_content," +
+        "COALESCE(c.options_json,'') options_json " +
         "FROM kb_courseware c JOIN kb_bundle_docs d ON d.id=c.doc_id WHERE c.id=" + sqlQuote(id))
     if (rows.size == 0) { return }
     let row = rows[0]
     let kind = row.text("kind")
     let title = row.text("doc_title")
     let content = row.text("doc_content")
+    let options = cwGenerationOptionsFrom(row.text("options_json"))
     let settings = loadKbSettings(cfg)
     let endpoint = slotEndpoint(cfg, settings.chat)
     let trace = CwTrace()
@@ -469,7 +658,7 @@ func cwRunOne(cfg: Config, id: String): Unit {
         // ① 规划
         let planStep = trace.add(CW_ROLE_PLANNER, "running", "", "")
         cwPersistTrace(cfg, id, trace)
-        let planText = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, cwPlanPrompt(kind, title, digest), 0.2)
+        let planText = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, cwPlanPrompt(kind, title, digest, options), 0.2)
         let planObj = match (cwJsonObjectFrom(planText)) {
             case Some(value) => value
             case None =>
@@ -480,7 +669,8 @@ func cwRunOne(cfg: Config, id: String): Unit {
                 return
         }
         planStep.status = "done"
-        planStep.summary = cwTextOf(cwStripFences(planText), 400)
+        planStep.summary = "已应用设置：" + options.summary(kind) + "；" +
+            cwTextOf(cwStripFences(planText), 300)
         cwPersistTrace(cfg, id, trace)
 
         // ② 检索
@@ -495,7 +685,7 @@ func cwRunOne(cfg: Config, id: String): Unit {
         let writeStep = trace.add(CW_ROLE_WRITER, "running", "", "")
         cwPersistTrace(cfg, id, trace)
         var written = chatPlain(endpoint, CW_STRUCTURED_SYSTEM,
-            cwWritePrompt(kind, title, cwStripFences(planText), evidence, context), 0.35)
+            cwWritePrompt(kind, title, cwStripFences(planText), evidence, context, options), 0.35)
         var obj = match (cwJsonObjectFrom(written)) {
             case Some(value) => value
             case None =>
@@ -512,7 +702,7 @@ func cwRunOne(cfg: Config, id: String): Unit {
         // ④ 质检
         let reviewStep = trace.add(CW_ROLE_REVIEWER, "running", "", "")
         cwPersistTrace(cfg, id, trace)
-        var issues = cwIssuesOf(kind, obj)
+        var issues = cwIssuesOf(kind, obj, options)
         reviewStep.status = if (issues.size == 0) { "done" } else { "failed" }
         reviewStep.summary = if (issues.size == 0) { "结构校验通过" } else { cwJoinIssues(issues) }
         cwPersistTrace(cfg, id, trace)
@@ -524,13 +714,13 @@ func cwRunOne(cfg: Config, id: String): Unit {
             let repaired = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, cwRepairPrompt(kind, issues, written), 0.2)
             match (cwJsonObjectFrom(repaired)) {
                 case Some(value) =>
-                    if (cwIssuesOf(kind, value).size < issues.size) {
+                    if (cwIssuesOf(kind, value, options).size < issues.size) {
                         obj = value
                         written = repaired
                     }
                 case None => ()
             }
-            issues = cwIssuesOf(kind, obj)
+            issues = cwIssuesOf(kind, obj, options)
             fixStep.status = if (issues.size == 0) { "done" } else { "failed" }
             fixStep.summary = if (issues.size == 0) { "返修后通过质检" } else { cwJoinIssues(issues) }
             cwPersistTrace(cfg, id, trace)
@@ -557,7 +747,9 @@ func cwRunOne(cfg: Config, id: String): Unit {
         if (kind == "slides") {
             let layoutStep = trace.add(CW_ROLE_LAYOUT, "running", "", "")
             cwPersistTrace(cfg, id, trace)
-            let presentation = renderPresentationPptx(id, finalTitle, title, contentJson)
+            let presentation = renderPresentationPptx(id, finalTitle, title, contentJson,
+                options.slideCount, options.backgroundStyle, "standard",
+                options.includeSpeakerNotes)
             layoutStep.status = "done"
             layoutStep.summary = "已生成可编辑 PPTX：" + presentation.slideCount.toString() +
                 " 页，带讲者备注 " + presentation.speakerNoteCount.toString() + " 页；设计 JSON 与网页预览已同步输出。"

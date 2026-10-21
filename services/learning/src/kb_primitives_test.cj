@@ -142,6 +142,47 @@ class KbPrimitiveTests {
         kbPrimitiveCheck(cwLatestQueueMessage("[]") == "", "Queue feed must stay empty for a new task")
     }
     @TestCase
+    func coursewareOptionsNormalizeAndReachPrompts(): Unit {
+        let input = cwJsonObjectFrom("{\"lectureDetailLevel\":\"detailed\",\"guideDetailLevel\":\"concise\",\"questionCount\":10," +
+            "\"slideCount\":14,\"backgroundStyle\":\"watercolor\",\"includeSpeakerNotes\":false," +
+            "\"note\":\"面向零基础学生，侧重本章实操。\"}").getOrThrow()
+        let options = cwNormalizeGenerationOptions(Some(input))
+        kbPrimitiveCheck(options.lectureDetailLevel == "detailed", "Lecture detail level was not preserved")
+        kbPrimitiveCheck(options.guideDetailLevel == "concise", "Guide detail level was not preserved")
+        kbPrimitiveCheck(options.questionCount == 10, "Question count was not preserved")
+        kbPrimitiveCheck(options.slideCount == 14, "Slide count was not preserved")
+        kbPrimitiveCheck(options.backgroundStyle == "watercolor", "Background style was not preserved")
+        kbPrimitiveCheck(!options.includeSpeakerNotes, "Speaker note preference was not preserved")
+        let roundTrip = cwGenerationOptionsFrom(options.toJson())
+        kbPrimitiveCheck(roundTrip.questionCount == 10 && roundTrip.slideCount == 14, "Options JSON did not round-trip")
+        let prompt = cwWritePrompt("bank", "测试章节", "[]", "", "原文", options)
+        kbPrimitiveCheck(prompt.contains("正好 10 题"), "Question count did not reach the writer prompt")
+        let plan = cwPlanPrompt("lecture", "测试章节", "原文", options)
+        kbPrimitiveCheck(plan.contains("面向零基础学生"), "Administrator note did not reach the planner prompt")
+        let rendererRequest = presentationRequestJson("测试章节", "原文", options.slideCount,
+            options.backgroundStyle, options.lectureDetailLevel, options.includeSpeakerNotes)
+        kbPrimitiveCheck(rendererRequest.contains("\"detailLevel\":\"detailed\""),
+            "Renderer detail levels must use the legacy vocabulary")
+        let standardRequest = presentationRequestJson("测试章节", "原文", 12,
+            "clean-minimal", "standard", true)
+        kbPrimitiveCheck(standardRequest.contains("\"detailLevel\":\"balanced\""),
+            "The UI standard level must map to the legacy balanced renderer level")
+        let legacy = cwNormalizeGenerationOptions(cwJsonObjectFrom(
+            "{\"detailLevel\":\"concise\",\"questionCount\":8,\"slideCount\":12}").getOrThrow())
+        kbPrimitiveCheck(legacy.lectureDetailLevel == "concise" && legacy.guideDetailLevel == "concise",
+            "Legacy shared detail level must still load for both text resources")
+        let clamped = cwNormalizeGenerationOptions(cwJsonObjectFrom(
+            "{\"detailLevel\":\"unknown\",\"questionCount\":99,\"slideCount\":1," +
+            "\"backgroundStyle\":\"not-a-style\"}").getOrThrow())
+        kbPrimitiveCheck(clamped.lectureDetailLevel == "standard", "Unknown detail level must use the default")
+        kbPrimitiveCheck(clamped.questionCount == CW_MAX_BANK_COUNT, "Question count must be clamped")
+        kbPrimitiveCheck(clamped.slideCount == CW_MIN_SLIDE_COUNT, "Slide count must be clamped")
+        kbPrimitiveCheck(clamped.backgroundStyle == "clean-minimal", "Unknown background must use the default")
+        let invalid = cwGenerationOptionsFrom("not-json")
+        kbPrimitiveCheck(invalid.questionCount == CW_DEFAULT_BANK_COUNT && invalid.slideCount == CW_PRESENTATION_SLIDE_COUNT,
+            "Invalid persisted options must fall back to defaults")
+    }
+    @TestCase
     func learnerResourceContainersPreserveQuotedCode(): Unit {
         let text = "{\"guide\":{\"steps\":[{\"code\":\"print(\\\"[中文]\\\")\\n{a: 1}\",\"expectedOutput\":\"值 ] }\"}]}}"
         let guide = lrObject(text, "guide")
