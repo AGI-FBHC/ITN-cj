@@ -1075,14 +1075,16 @@ async function openKnowledgeLinkSuggestions(button){
       if(!data.suggestions?.length)list.appendChild(el('p','muted','这次没有发现新的连线建议。'));
       panel.appendChild(list);
       const actions=el('div','row');
-      actions.append(btn('关闭','ghost',close),btn('采纳选中项','primary',async()=>{
+      const accept=btn('采纳选中项','primary',null);
+      accept.onclick=()=>runGuarded('knowledge:accept-links',accept,'正在建立…',async()=>{
         const selected=[...list.querySelectorAll('input:checked')].map((input)=>data.suggestions[Number(input.value)]).filter(Boolean);
         if(!selected.length){toast('请先勾选至少一条建议');return;}
         try{
           for(const s of selected)await api('/api/knowledge/link',{from:s.from,to:s.to,label:s.label});
           close();await refreshKnowledgeNetwork();toast('已采纳 '+selected.length+' 条连线建议');
         }catch(e){toast('建立连线失败：'+e.message);}
-      }));
+      });
+      actions.append(btn('关闭','ghost',close),accept);
       panel.appendChild(actions);
     },true);
   }catch(e){toast('生成连线建议失败：'+e.message);}

@@ -5148,3 +5148,14 @@ read_chunk 读得到原文并带回库标识与正文。
 - 最终提交 34ac448，build=lumin-0.8.31-34ac448；ZIP dist/Lumin-0.8.31.zip，231326788 bytes，SHA256=2EBDFEADC5D0F78888BEF72D74CD6CBC4ED1CDB9208FC5723E32846C3D4C8776；解压目录 dist/portable/Lumin-0.8.31。文件名保持 0.8.31，无额外后缀；未发布线上、未推送远端、未替换用户正在运行的旧 dist/Lumin-0.8.31 实例。
 - 包内复验全部通过：38 项 manifest 资产哈希与关键 ZIP 条目一致、2763 条目、EXE 图标为 16/32/48/64/128/256 且产品信息为 Lumin 0.8.31；原生启动/关闭/再次启动 9/9（独立数据根，默认隐藏小鼋龙、外观设置可显示、再次启动仍隐藏、窗口文件图标存在）；包内 renderer 协作弹窗 34/34（点击节点不关闭、关闭后从对应回复重开、历史与多 run、快速完成）；包内 renderer+内核切页 18/18（旧响应不覆盖新页、旧遮罩与预览随切页清理、后台任务继续完成）。
 - 临时验收脚本 tmp/verify-package-0.8.31.ps1、tmp/package-branding-check.cjs 及日志保留；不进入提交。未跟踪的 .taste-skill 与两份既有调研文档继续排除。
+
+## 2026-10-22 05:55 · 分支按钮防重复与全页面写操作防抖审计
+
+- 用户反馈：「建立分支」不是失效，而是没有阻塞和防抖 —— 大约十秒后一次性多出好几段分支会话；要求优化，并检查全页面还有没有同类情况。
+- 根因：branchFromTurn 只有 try/catch，没有任何进行中互斥，按钮也不禁用；分支请求在建会话，慢的时候每次点击都是一次真实请求。另发现 /branch 斜杠命令调用的 branchFromLatest 从未定义（ReferenceError），该命令此前必失败。
+- 修复：app.js 新增 runGuarded(key, button, busyLabel, task)：同一 key 在飞行中忽略后续触发并提示"正在处理，请稍候…"，按钮进入 disabled + is-busy + aria-busy，结束后按原 disabled/文案/title 恢复；图标按钮只换 title，不破坏里面的 svg。branchFromTurn 用 key branch:<sid> 包住，三个入口（正文「从这里开分支」图标、顶栏 ⋯「新建分支」、/branch）共用同一守卫；补上 branchFromLatest。switchToBranch 也加互斥，避免连点 ‹ › 时并发改活动分支、返回乱序停在错的线上。style.css 增加 .is-busy（轻微呼吸 + progress 光标，遵守 prefers-reduced-motion）。
+- 全页面审计（逐个看 click→api 的写操作）：已自带禁用态的：抓取到暂存区、学习页准备资料/重建索引、生成/重建思维导图、连线建议（分析中）、读取网页两处、模型测试连通/试听/诊断连接、知识库重命名、停止生成。本轮补齐：导出报告、画像校准保存（还会额外写一条校准笔记）、标记已读、标记已掌握、保留/撤销草稿改动、保存档案、联网搜索保存/清除密钥、项目改名保存、会话归属保存、笔记保存、保存模型、设为对话/朗读模型、删除模型、允许运行命令开关、新建技能、知识库清除整理、连线建议「采纳选中项」。确认删除弹层在点击时同步移除自身，重复点击不可能发生，未加守卫。
+- 回归（真实 Edge + 真实 renderer，纯内存夹具、不调模型）：新增 tools/branch-guard-check.cjs。旧 renderer（git HEAD 版）3/9：真实复现连点后 branch=6、导出连点 4 次 save=4；修复后 9/9：飞行中按钮禁用且有忙碌态、重画后新按钮连点 5 次仍只 1 次请求、菜单连点 3 次只多 1 次、/branch 有实现且只 1 次、导出连点 4 次只写 1 次、全程无未捕获异常。BRANCH_UI_DIR 可指向任意 renderer 复现。
+- 既有套件回归：team-panel-check 34/34；route-lifecycle-check 18/18（与另一套并发运行时出现过一次 gate 超时，单独重跑 18/18，判定为并发负载导致的测试超时，不是产品竞态）；knowledge-check 92 项 OK；session-list-check 10 项 OK；pages-audit 13 项 OK。
+- chat-ux-check 修夹具：新增断言暴露了既有测试的不稳定 —— 它把 1800px 夹具直接塞进 #chat-thread，而生成期间每 220ms 重画会冲掉夹具（实测 scrollHeight 1925→572、dist 1353→0），按钮随之隐藏，悬停断言变成和重画赛跑。改为 MutationObserver 把夹具补回来，「点一下回到最新」改为等待真正到底（4s 上限）而不是固定 350ms。修后新旧 renderer 都 18/18，没有把断言迁就成本轮改动。
+- 未改内核与工具契约，因此未跑仓颉核心测试；未访问真实用户数据库、未调付费模型、未改 Web 端。

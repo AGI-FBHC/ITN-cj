@@ -111,10 +111,20 @@ async function main() {
       await page.waitForFunction(() => state.busyTurn === true, null, {timeout: 10000});
       await page.evaluate(() => {
         const thread = document.querySelector('#chat-thread');
-        const filler = document.createElement('div');
-        filler.id = 'jump-fixture';
-        filler.style.height = '1800px';
-        thread.appendChild(filler);
+        /* 生成期间线程每 220ms 重画一次，直接塞进去的夹具会被冲掉，
+           按钮跟着消失，悬停断言就变成和重画赛跑。用观察者把夹具补回来，
+           这样断言测的是悬停本身，不是重画时机。 */
+        const keepFixture = () => {
+          if (document.getElementById('jump-fixture')) return;
+          const filler = document.createElement('div');
+          filler.id = 'jump-fixture';
+          filler.style.height = '1800px';
+          thread.appendChild(filler);
+          thread.dispatchEvent(new Event('scroll'));
+        };
+        window.__jumpFixtureObserver = new MutationObserver(keepFixture);
+        window.__jumpFixtureObserver.observe(thread, {childList: true});
+        keepFixture();
         thread.scrollTop = 0;
         thread.dispatchEvent(new Event('scroll'));
       });
@@ -126,8 +136,14 @@ async function main() {
         arrow: getComputedStyle(node.querySelector('.jump-arrow')).display,
       }));
       check('jump button swaps to an arrow on hover', hoverStyle.dots === 'none' && hoverStyle.arrow === 'block', JSON.stringify(hoverStyle));
+      // 夹具留着（点一下本来就该滚到内容底部），但别让观察者再把线程撑高
+      await page.evaluate(() => { window.__jumpFixtureObserver?.disconnect(); });
       await page.locator('.chat-jump-latest').click();
-      await page.waitForTimeout(350);
+      // 平滑滚动本身要几百毫秒，而且生成中重画会改内容高度：等它真的到底，别和 350ms 赛跑
+      await page.waitForFunction(() => {
+        const node = document.querySelector('#chat-thread');
+        return node.scrollHeight - node.scrollTop - node.clientHeight < 90;
+      }, null, {timeout: 4000}).catch(() => {});
       const atBottom = await page.locator('#chat-thread').evaluate(node => node.scrollHeight - node.scrollTop - node.clientHeight < 90);
       check('jump button returns to the live bottom', atBottom);
       await page.evaluate(() => { if (state.busyTurn) document.querySelector('.composer-send')?.click(); });

@@ -482,6 +482,39 @@ function btn(label, cls, onClick) {
   return b;
 }
 
+/**
+ * 写操作 / 长任务的统一防重。
+ *
+ * 同一个 key 在飞行中时忽略后续触发；触发按钮进入禁用 + 忙碌态，结束后按原样恢复
+ * （包括原本就禁用的按钮）。分支、导出、保存这类动作要走内核，慢的时候用户会连点几下，
+ * 不拦住的话每次点击都是一次真实请求 —— 十秒后就会突然多出好几份资源。
+ */
+const busyActions = new Set();
+async function runGuarded(key, button, busyLabel, task) {
+  if (busyActions.has(key)) { toast("正在处理，请稍候…"); return undefined; }
+  busyActions.add(key);
+  // 图标按钮（正文下面那排 icon）没有文字，改文案会毁掉里面的 svg，只能换 title。
+  const iconOnly = !!(button && button.querySelector("svg") && !String(button.textContent || "").trim());
+  const prev = button ? { disabled: button.disabled, text: button.textContent, title: button.title } : null;
+  if (button) {
+    button.disabled = true;
+    button.classList.add("is-busy");
+    button.setAttribute("aria-busy", "true");
+    if (busyLabel) { if (iconOnly) button.title = busyLabel; else button.textContent = busyLabel; }
+  }
+  try {
+    return await task();
+  } finally {
+    busyActions.delete(key);
+    if (button && button.isConnected && prev) {
+      button.disabled = prev.disabled;
+      button.classList.remove("is-busy");
+      button.removeAttribute("aria-busy");
+      if (busyLabel) { if (iconOnly) button.title = prev.title; else button.textContent = prev.text; }
+    }
+  }
+}
+
 function tag(text, cls) {
   return el("span", "tag" + (cls ? " " + cls : ""), text);
 }
@@ -1372,7 +1405,8 @@ async function renderChapter(v) {
       // 已在卡头挂了"已读"标签，这里记住它，取消/恢复时一起改
       readTag = ch.querySelector(".tag");
     }
-    const readBtn = btn(c.read ? "取消已读标记？重读一次" : "标记已读", "sm " + (c.read ? "ghost" : ""), async () => {
+    const readBtn = btn(c.read ? "取消已读标记？重读一次" : "标记已读", "sm " + (c.read ? "ghost" : ""), null);
+    readBtn.onclick = () => runGuarded("read:" + c.id, readBtn, null, async () => {
       const next = !c.read;
       await api("/api/study/read", { kbId: state.kb, chunkId: c.id, chapter: state.chapter });
       c.read = next;
@@ -1900,13 +1934,15 @@ async function renderWrongSection(v) {
         if (r.reference) it.appendChild(el("div", "answer-line", "参考答案：" + r.reference));
         const acts = el("div", "row item-actions");
         acts.appendChild(btn(r.due ? "重做" : "再练一次", r.due ? "primary sm" : "sm", () => openRedo(r)));
-        acts.appendChild(btn(r.mastered ? "取消已掌握" : "标记已掌握", "sm ghost", async () => {
+        const masterBtn = btn(r.mastered ? "取消已掌握" : "标记已掌握", "sm ghost", null);
+        masterBtn.onclick = () => runGuarded("wrong:" + r.id, masterBtn, null, async () => {
           try {
             await api("/api/study/wrong/review", { id: r.id, mastered: !r.mastered });
             toast(r.mastered ? "已移回待复习" : "已标记掌握");
             openWrong();
           } catch (e) { toast("操作失败：" + e.message); }
-        }));
+        });
+        acts.appendChild(masterBtn);
         it.appendChild(acts);
         list.appendChild(it);
       }
@@ -2575,7 +2611,8 @@ function growthReportCard() {
     sub: "按当前记录现拼一份 Markdown",
   });
   const row = el("div", "row");
-  row.appendChild(btn("导出报告", "primary sm", async () => {
+  const exportBtn = btn("导出报告", "primary sm", null);
+  exportBtn.onclick = () => runGuarded("report:export", exportBtn, "正在导出…", async () => {
     const name = "我的成长-" + new Date().toLocaleDateString("sv-SE") + ".md";
     try {
       const r = await api("/api/artifacts/save", { name: name, content: growthReportText() });
@@ -2583,7 +2620,8 @@ function growthReportCard() {
       toast("已导出：" + r.name);
       go("report");
     } catch (e) { toast("导出失败：" + e.message); }
-  }));
+  });
+  row.appendChild(exportBtn);
   card.appendChild(row);
   if (state.lastReportArtifact) {
     const line = el("div", "row");
@@ -2770,7 +2808,8 @@ function calibrationCard() {
   }
 
   const foot = el("div", "row");
-  foot.appendChild(btn("保存", "primary", async () => {
+  const calibSave = btn("保存", "primary", null);
+  calibSave.onclick = () => runGuarded("calibration:save", calibSave, "正在保存…", async () => {
     const selfScores = {};
     dims.forEach((d) => { selfScores[d.key] = valueOf(d); });
     try {
@@ -2788,7 +2827,8 @@ function calibrationCard() {
       toast(state.calibWantNote ? "已保存，并记了一条校准笔记" : "已保存");
       go("report");
     } catch (e) { toast("保存失败：" + e.message); }
-  }));
+  });
+  foot.appendChild(calibSave);
   const wantNote = el("label", "muted sm calib-notebox");
   const cb = el("input");
   cb.type = "checkbox";
@@ -5473,7 +5513,8 @@ function editProjectDialog(project) {
   dlg.appendChild(fieldOf("名字", input));
   dlg.appendChild(el("p", "muted sm", "文件夹不变：" + project.root));
   const row = el("div", "row");
-  row.appendChild(btn("保存", "primary", async () => {
+  const projSave = btn("保存", "primary", null);
+  projSave.onclick = () => runGuarded("project:save:" + project.id, projSave, "正在保存…", async () => {
     const next = input.value.trim();
     if (!next) { toast("名字不能为空"); return; }
     try {
@@ -5483,7 +5524,8 @@ function editProjectDialog(project) {
       renderPanel();
       toast("已改名");
     } catch (e) { toast("失败：" + e.message); }
-  }));
+  });
+  row.appendChild(projSave);
   row.appendChild(btn("取消", "ghost", () => dlg.remove()));
   dlg.appendChild(row);
   v.insertBefore(dlg, v.firstChild);
@@ -5663,14 +5705,16 @@ function moveSessionDialog(s) {
   sel.value = s.projectId || "";
   dlg.appendChild(fieldOf("项目", sel));
   const row = el("div", "row");
-  row.appendChild(btn("保存", "primary", async () => {
+  const bindSave = btn("保存", "primary", null);
+  bindSave.onclick = () => runGuarded("session:bind:" + s.sessionId, bindSave, "正在保存…", async () => {
     try {
       await api("/api/sessions/bind", { sessionId: s.sessionId, projectId: sel.value });
       dlg.remove();
       await reloadSessions();
       toast(sel.value ? ("已归到 " + projectName(sel.value)) : "已移回未归档");
     } catch (e) { toast("失败：" + e.message); }
-  }));
+  });
+  row.appendChild(bindSave);
   row.appendChild(btn("取消", "ghost", () => dlg.remove()));
   dlg.appendChild(row);
   v.insertBefore(dlg, v.firstChild);
@@ -6181,7 +6225,7 @@ function renderTurnBlock(t, live) {
         side: "ai",
         at: t.answerAt || t.startedAt,
         onCopy: hasAnswer ? () => copyText(lastText) : null,
-        onBranch: (t.id && t.id !== "local") ? () => branchFromTurn(t) : null,
+        onBranch: (t.id && t.id !== "local") ? (ev) => branchFromTurn(t, ev && ev.currentTarget) : null,
         onRaw: (t.id && t.id !== "local") ? rawTurnToggle(t, box) : null,
       }));
     }
@@ -6275,17 +6319,21 @@ async function draftDiffDialog(f) {
   box.appendChild(pre);
   dlg.appendChild(box);
   const row = el("div", "row");
-  row.appendChild(btn("撤销这次改动", "ghost", async () => {
+  const discardBtn = btn("撤销这次改动", "ghost", null);
+  discardBtn.onclick = () => runGuarded("draft:discard:" + f.draftId, discardBtn, null, async () => {
     if (await draftDiscard(f)) dlg.remove();
-  }));
-  row.appendChild(btn("保留改动", "primary", async () => {
+  });
+  row.appendChild(discardBtn);
+  const mergeBtn = btn("保留改动", "primary", null);
+  mergeBtn.onclick = () => runGuarded("draft:merge:" + f.draftId, mergeBtn, null, async () => {
     try {
       const r = await api("/api/drafts/merge", { id: f.draftId });
       if (r.ok === true) { draftSettledMark(f.draftId, "merged"); toast("已保留这次改动"); }
       else toast("这条改动已经收摊了");
     } catch (e) { toast("保留失败：" + e.message); }
     dlg.remove();
-  }));
+  });
+  row.appendChild(mergeBtn);
   dlg.appendChild(row);
   v.insertBefore(dlg, v.firstChild);
   dlg.scrollIntoView({ block: "start" });
@@ -6354,13 +6402,17 @@ function branchSwitchRow(fam) {
 /** 切到另一条分支：换末端，然后按新分支重画这一段历史。 */
 async function switchToBranch(member) {
   if (!member) return;
-  try {
-    const d = await api("/api/sessions/set-active", { sessionId: state.chatSessionId, turnId: member.tipTurnId });
-    if (d.ok !== true) { toast("切不过去：这条分支找不到了"); return; }
-    if (typeof state.chatOpenSession === "function") await state.chatOpenSession(state.chatSessionId);
-  } catch (e) {
-    toast("切换失败：" + e.message);
-  }
+  const sid = state.chatSessionId;
+  // 连点 ‹ › 会并发改同一条会话的活动分支，返回顺序一乱就会停在错的那条线上。
+  await runGuarded("branch-switch:" + sid, null, null, async () => {
+    try {
+      const d = await api("/api/sessions/set-active", { sessionId: sid, turnId: member.tipTurnId });
+      if (d.ok !== true) { toast("切不过去：这条分支找不到了"); return; }
+      if (typeof state.chatOpenSession === "function") await state.chatOpenSession(sid);
+    } catch (e) {
+      toast("切换失败：" + e.message);
+    }
+  });
 }
 
 /** 输入框上面那条"待分叉"提示（取消 = 放弃这次分叉，什么都不会变）。 */
@@ -6432,26 +6484,42 @@ async function resendEdited(t, text, asBranch) {
 }
 
 /**
+ * 从这一轮开分支：原会话一字不动，新会话把这一轮（含）连同之前的历史一起带过去。
+ *
+ * 分支是一次真实的建会话请求，可能跑好几秒；同一个会话同一时刻只允许开一个，
+ * 否则连点几下就会在建好之后一次性多出好几段分支会话。
+ */
+async function branchFromTurn(t, trigger) {
+  const sid = state.chatSessionId;
+  if (!sid) { toast("先开一段对话"); return; }
+  if (!t || !t.id || t.id === "local") { toast("这一段还没有可以分支的轮次"); return; }
+  await runGuarded("branch:" + sid, trigger, "正在开分支…", async () => {
+    try {
+      const d = await api("/api/sessions/branch", { sessionId: sid, turnId: t.id });
+      // 新分支可能还没有事件（从第一轮分出去时"之前的历史"是空的）：先把名字记在界面里，
+      // 列表加载完之后 summary 会给出同一个名字（内核在分叉时就写进了 title:<sid>）
+      state.chatTitleHint = state.chatTitleHint || {};
+      if (d.title) state.chatTitleHint[d.sessionId] = d.title;
+      await loadProjects();
+      await reloadSessions();
+      openChatSession(d.sessionId);
+      toast(d.title ? ("已开新分支：" + d.title + "（原会话还在）") : "已从这一轮开出新分支（原会话还在）");
+    } catch (e) {
+      toast("分支失败：" + e.message);
+    }
+  });
+}
+
+/**
  * 从**最新的一条**开分支：整段对话（含最后一轮）复制到新会话，原会话一字不动。
  *
  * 与 branchFromTurn 的差别：那个是"从某一轮之前分"（连那一轮一起不要了，换个问法重来）；
- * 这个是"把这段对话整个带走，换条路继续走" —— 顶栏 ⋯ 里的「新建分支」用的是它。
+ * 这个是"把这段对话整个带走，换条路继续走" —— 顶栏 ⋯ 里的「新建分支」和 /branch 用的是它。
  */
-/** 从这一轮开分支：原会话一字不动，新会话把这一轮（含）连同之前的历史一起带过去。 */
-async function branchFromTurn(t) {
-  try {
-    const d = await api("/api/sessions/branch", { sessionId: state.chatSessionId, turnId: t.id });
-    // 新分支可能还没有事件（从第一轮分出去时"之前的历史"是空的）：先把名字记在界面里，
-    // 列表加载完之后 summary 会给出同一个名字（内核在分叉时就写进了 title:<sid>）
-    state.chatTitleHint = state.chatTitleHint || {};
-    if (d.title) state.chatTitleHint[d.sessionId] = d.title;
-    await loadProjects();
-    await reloadSessions();
-    openChatSession(d.sessionId);
-    toast(d.title ? ("已开新分支：" + d.title + "（原会话还在）") : "已从这一轮开出新分支（原会话还在）");
-  } catch (e) {
-    toast("分支失败：" + e.message);
-  }
+async function branchFromLatest() {
+  const turns = (state.chatTurns || []).filter((x) => x.id && x.id !== "local");
+  if (!turns.length) { toast("这一段还没有可以分支的轮次"); return; }
+  await branchFromTurn(turns[turns.length - 1]);
 }
 
 function attachmentKey() { return state.chatSessionId || ('new:' + (state.chatProject || 'chat')); }
@@ -7712,7 +7780,8 @@ async function settingsModels() {
     ], "")));
     mcard.appendChild(f4);
     const mact = el("div", "row");
-    mact.appendChild(btn("保存模型", "primary", async () => {
+    const modelSave = btn("保存模型", "primary", null);
+    modelSave.onclick = () => runGuarded("model:save", modelSave, "正在保存…", async () => {
       const id = $("m-id").value.trim();
       if (!id) { toast("请填写标识"); return; }
       const base = $("m-base").value.trim();
@@ -7736,7 +7805,8 @@ async function settingsModels() {
         toast("模型已保存");
         go("settings", "models");
       } catch (e) { toast("保存失败：" + e.message); }
-    }));
+    });
+    mact.appendChild(modelSave);
     mact.appendChild(btn("清空表单", "ghost", () => go("settings", "models")));
     mcard.appendChild(mact);
     v.appendChild(mcard);
@@ -7788,18 +7858,22 @@ async function settingsModels() {
             }
             b.disabled = false;
           }));
-          acts.appendChild(btn("设为对话模型", "sm", async () => {
+          const bindChat = btn("设为对话模型", "sm", null);
+          bindChat.onclick = () => runGuarded("model:bind-chat:" + m.id, bindChat, "绑定中…", async () => {
             await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: state.cfg.ttsModelId });
             toast("已绑定「对话与生成」");
             go("settings", "models");
-          }));
+          });
+          acts.appendChild(bindChat);
         }
         if (m.ttsModel) {
-          acts.appendChild(btn("设为朗读模型", "sm", async () => {
+          const bindTts = btn("设为朗读模型", "sm", null);
+          bindTts.onclick = () => runGuarded("model:bind-tts:" + m.id, bindTts, "绑定中…", async () => {
             await api("/api/models/roles", { chatModelId: state.cfg.chatModelId, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: m.id });
             toast("已绑定「语音朗读」");
             go("settings", "models");
-          }));
+          });
+          acts.appendChild(bindTts);
           if (m.hasApiKey) acts.appendChild(btn("试听", "sm ghost", async (ev) => {
             const b = ev.currentTarget;
             b.disabled = true;
@@ -7853,11 +7927,15 @@ async function settingsModels() {
             b.textContent = "诊断连接";
           }));
         }
-        acts.appendChild(btn("删除", "sm ghost", async () => {
-          await api("/api/models/delete", { id: m.id });
-          toast("已删除");
-          go("settings", "models");
-        }));
+        const delModel = btn("删除", "sm ghost", null);
+        delModel.onclick = () => runGuarded("model:delete:" + m.id, delModel, "删除中…", async () => {
+          try {
+            await api("/api/models/delete", { id: m.id });
+            toast("已删除");
+            go("settings", "models");
+          } catch (e) { toast("删除失败：" + e.message); }
+        });
+        acts.appendChild(delModel);
         it.appendChild(acts);
         box.appendChild(it);
       }
@@ -7946,7 +8024,8 @@ async function settingsModels() {
   hostRow.appendChild(fieldOf("禁止的域名（优先于允许名单）", inputOf("ws-block", "例如 *.doubleclick.net", ws.blockHosts || "")));
   wsCard.appendChild(hostRow);
   const wsActs = el("div", "row");
-  wsActs.appendChild(btn("保存", "primary", async () => {
+  const wsSave = btn("保存", "primary", null);
+  wsSave.onclick = () => runGuarded("websearch:save", wsSave, "正在保存…", async () => {
     try {
       await api("/api/websearch/save", {
         apiKey: $("ws-key").value.trim(),
@@ -7959,7 +8038,8 @@ async function settingsModels() {
       toast("联网搜索已保存");
       go("settings", "models");
     } catch (e) { toast("保存失败：" + e.message); }
-  }));
+  });
+  wsActs.appendChild(wsSave);
   wsActs.appendChild(btn("测试连接", "", async (ev) => {
     const b = ev.target;
     b.disabled = true;
@@ -7975,13 +8055,15 @@ async function settingsModels() {
     b.disabled = false;
   }));
   wsActs.appendChild(copyButton(() => "https://app.tavily.com/home", "复制申请地址"));
-  wsActs.appendChild(btn("清除密钥", "sm ghost", async () => {
+  const wsClear = btn("清除密钥", "sm ghost", null);
+  wsClear.onclick = () => runGuarded("websearch:clear", wsClear, "正在清除…", async () => {
     try {
       await api("/api/websearch/save", { clearKey: "1", enabled: "0", results: Number($("ws-results").value) || 5 });
       toast("已清除密钥，并关闭联网搜索");
       go("settings", "models");
     } catch (e) { toast("清除失败：" + e.message); }
-  }));
+  });
+  wsActs.appendChild(wsClear);
   wsCard.appendChild(wsActs);
   wsCard.appendChild(el("p", "muted sm", (ws.hasKey ? "搜索密钥 " + ws.keyHint : "还没有搜索密钥") +
     " · 搜索" + (ws.enabled ? "已启用" : "未启用") + "。抓网页不需要密钥；开了联网，「伴学助手」的工具里会多出「联网搜索」和「读取网页」。"));
@@ -8114,19 +8196,21 @@ function settingsGeneral() {
   const g = document.createDocumentFragment();
   const p = state.profile || {};
 
+  const profileSave = btn("保存档案", "primary sm", null);
+  profileSave.onclick = () => runGuarded("profile:save", profileSave, "正在保存…", async () => {
+    try {
+      await saveProfile({
+        nickname: $("pf-nick").value.trim(),
+        goal: $("pf-goal").value.trim(),
+        weeklyHours: Number($("pf-hours").value) || 0,
+      });
+      toast("档案已保存");
+      go("settings", "general");
+    } catch (e) { toast("保存失败：" + e.message); }
+  });
   const prof = cardOf({
     title: "学习者档案",
-    actions: [btn("保存档案", "primary sm", async () => {
-      try {
-        await saveProfile({
-          nickname: $("pf-nick").value.trim(),
-          goal: $("pf-goal").value.trim(),
-          weeklyHours: Number($("pf-hours").value) || 0,
-        });
-        toast("档案已保存");
-        go("settings", "general");
-      } catch (e) { toast("保存失败：" + e.message); }
-    })],
+    actions: [profileSave],
   });
   const prow1 = el("div", "row");
   prow1.appendChild(fieldOf("称呼", inputOf("pf-nick", "例如 李老师", p.nickname || "")));
@@ -8248,7 +8332,8 @@ function settingsAgent() {
   execLeft.appendChild(el("div", "muted sm", "两种模式都默认允许跑 PowerShell，每条命令仍然按上面的档位处理（ask 档每条都会先问你）。"));
   execLine.appendChild(execLeft);
   const execOn = state.cfg.agentExec === "1";
-  execLine.appendChild(btn(execOn ? "关掉" : "打开", "sm" + (execOn ? " ghost" : ""), async () => {
+  const execBtn = btn(execOn ? "关掉" : "打开", "sm" + (execOn ? " ghost" : ""), null);
+  execBtn.onclick = () => runGuarded("prefs:agent-exec", execBtn, "正在保存…", async () => {
     const next = execOn ? "0" : "1";
     try {
       await savePrefs({ agentExec: next });
@@ -8256,7 +8341,8 @@ function settingsAgent() {
       toast(next === "1" ? "已允许跑命令" : "已关掉跑命令");
       go("settings", "agent");
     } catch (e) { toast("保存失败：" + e.message); }
-  }));
+  });
+  execLine.appendChild(execBtn);
   permCard.appendChild(execLine);
   g.appendChild(permCard);
 
@@ -8655,18 +8741,20 @@ async function settingsSkills() {
     g.appendChild(cardOf({ title: "技能", body: el("p", "muted", "读不到技能清单：" + e.message) }));
     return g;
   }
+  const newSkill = btn("新建技能", "sm", null);
+  newSkill.onclick = () => runGuarded("skill:template", newSkill, "正在创建…", async () => {
+    try {
+      const r = await api("/api/skills/template", {});
+      toast("已创建技能：" + artifactNameFromPath(r.path));
+      go("settings", "skills");
+    } catch (e) { toast("创建失败：" + e.message); }
+  });
   const card = cardOf({
     title: "技能",
     sub: "扩展 Lumin 的工作方式",
     tag: (data.skills || []).length + " 个",
     actions: [
-      btn("新建技能", "sm", async () => {
-        try {
-          const r = await api("/api/skills/template", {});
-          toast("已创建技能：" + artifactNameFromPath(r.path));
-          go("settings", "skills");
-        } catch (e) { toast("创建失败：" + e.message); }
-      }),
+      newSkill,
       copyButton(() => data.userDir || "", "复制目录"),
     ],
   });
@@ -8874,7 +8962,8 @@ function openNoteEditor(note, kbId, chapter, chunk) {
   ta.value = text0;
   dlg.appendChild(fieldOf("内容（支持 Markdown）", ta));
   const row = el("div", "row");
-  row.appendChild(btn("保存", "primary", async () => {
+  const noteSave = btn("保存", "primary", null);
+  noteSave.onclick = () => runGuarded("note:save:" + (note ? note.id : "new"), noteSave, "正在保存…", async () => {
     try {
       await api("/api/study/notes/save", {
         id: note ? note.id : "", kbId: kbId || "", chapter: chapter || "",
@@ -8885,7 +8974,8 @@ function openNoteEditor(note, kbId, chapter, chunk) {
       await loadReport();
       if (current === "notes") go("notes"); else buildNav();
     } catch (e) { toast("保存失败：" + e.message); }
-  }));
+  });
+  row.appendChild(noteSave);
   row.appendChild(btn("取消", "ghost", () => dlg.remove()));
   dlg.appendChild(row);
   v.insertBefore(dlg, v.firstChild);
@@ -8915,15 +9005,19 @@ async function organizeKb(kbId) {
       (r.missing > 0 ? " · 模型没提到的 " + r.missing + " 篇已接在「其他资料」里" : "") +
       (r.dropped > 0 ? " · 丢掉了 " + r.dropped + " 条无效路径" : "")));
     const row = el("div", "row");
-    row.appendChild(btn("重建索引", "primary", () => { box.remove(); buildIndex(kbId); }));
-    row.appendChild(btn("清除整理", "ghost", async () => {
+    const rebuildBtn = btn("重建索引", "primary", null);
+    rebuildBtn.onclick = () => runGuarded("kb:rebuild:" + kbId, rebuildBtn, "正在重建…", async () => { box.remove(); await buildIndex(kbId); });
+    row.appendChild(rebuildBtn);
+    const clearOrg = btn("清除整理", "ghost", null);
+    clearOrg.onclick = () => runGuarded("kb:clear-organize:" + kbId, clearOrg, "正在清除…", async () => {
       try {
         await api("/api/kb/organize", { id: kbId, clear: true });
         toast("已清除，回到按材料标题分章");
         box.remove();
         go("settings", "kb");
       } catch (e) { toast("清除失败：" + e.message); }
-    }));
+    });
+    row.appendChild(clearOrg);
     row.appendChild(btn("收起", "ghost", () => box.remove()));
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
