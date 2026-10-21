@@ -12,7 +12,6 @@ import {
   NavLink,
 } from "react-router-dom";
 import {
-  AI_UNAVAILABLE,
   api,
   bootstrap,
   clearLearningSession,
@@ -34,6 +33,7 @@ import CoursewareReferences, { CoursewareMarkdown } from "./CoursewareReferences
 import { lessonReferences } from "./courseware-references.js";
 import PresentationArtifact from "./PresentationArtifact.jsx";
 import TutorChat from "./TutorChat.jsx";
+import { askTutor } from "./tutor.js";
 import SystemLogo from "./SystemLogo.jsx";
 import { LearningActivityGrid, PopularLearningResources, useDashboardInsights } from "./HomeLearningWidgets.jsx";
 import { RESOURCE_OPTIONS, resourceTypes, lessonSections, lessonSlides, ChapterCompletion } from "./LearnerResources.jsx";
@@ -6025,6 +6025,8 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
     [_, M] = React.useState(!1),
     [B, Q] = React.useState(""),
     [H, $] = React.useState([]),
+    [luminPending, setLuminPending] = React.useState(false),
+    [luminError, setLuminError] = React.useState(""),
     [O, P] = React.useState(0),
     answersRef = React.useRef([]),
     attemptRef = React.useRef(null),
@@ -6104,15 +6106,38 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
             ];
       (hu(W), E(!Z));
     },
-    xe = () => {
+    xe = async () => {
       const D = B.trim();
-      D &&
-        ($((K) => [
-          ...K,
-          `你：${D}`,
-          AI_UNAVAILABLE,
-        ]),
-        Q(""));
+      if (!D || luminPending) return;
+      const selected = m === null ? "未作答" : `${m + 1}. ${G.options?.[m] || ""}`;
+      const correct = G.correct === undefined ? "未知" : `${G.correct + 1}. ${G.options?.[G.correct] || ""}`;
+      const quote = [
+        `题目：${G.question || ""}`,
+        `选项：${(G.options || []).map((option, index) => `${index + 1}. ${option}`).join("；")}`,
+        `我的选择：${selected}`,
+        `正确答案：${correct}`,
+        `判定：${ne ? "回答正确" : "回答错误"}`,
+        `解析：${G.explanation || ""}`,
+      ].join("\n");
+      $((K) => [...K, `你：${D}`]);
+      Q("");
+      setLuminError("");
+      setLuminPending(true);
+      try {
+        const result = await askTutor({
+          message: D,
+          quote,
+          courseId: n.id,
+          lessonIndex: resolvedIndex,
+          lessonTitle: r,
+          conversationId: `lesson:${n.id}:${resolvedIndex}`,
+        });
+        $((K) => [...K, result.answer || "没有收到回答，请重试"]);
+      } catch (error) {
+        setLuminError(error.message || "Lumin 暂时无法回答，请稍后再试。");
+      } finally {
+        setLuminPending(false);
+      }
     };
   const saveQuiz = React.useCallback(async () => {
     if (submittedRef.current || !i.length) return;
@@ -6350,12 +6375,14 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
                             {
                               "code-path": "src\\pages\\QuizFlow.tsx:186:117",
                               className: `rounded-xl px-4 py-3 text-sm font-semibold leading-6 ${D.startsWith("你：") ? "ml-12 bg-[#6038ef] text-white" : "mr-12 bg-[#eef2ff] text-[#555a75]"}`,
-                              children: D,
+                              children: D.startsWith("你：") ? D : jsxRuntime.jsx(Markdown, { text: D, audience: "learner" }),
                             },
                             K,
                           ),
                         ),
                       }),
+                    luminPending && jsxRuntime.jsx("p", { className: "mr-12 rounded-xl bg-[#eef2ff] px-4 py-3 text-sm font-semibold leading-6 text-[#555a75]", role: "status", children: "Lumin 正在结合题目解析回答…" }),
+                    luminError && jsxRuntime.jsxs("div", { className: "mr-12 flex flex-wrap items-center gap-3 rounded-xl bg-[#fff2f4] px-4 py-3 text-sm font-semibold text-[#b63d52]", role: "alert", children: [jsxRuntime.jsx("span", { children: luminError }), jsxRuntime.jsx("button", { type: "button", className: "font-extrabold underline", onClick: xe, children: "重试" })] }),
                     jsxRuntime.jsxs("div", {
                       "code-path": "src\\pages\\QuizFlow.tsx:187:17",
                       className: "flex items-center gap-3",
@@ -6369,6 +6396,7 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
                           value: B,
                           onChange: (D) => Q(D.target.value),
                           onKeyDown: (D) => D.key === "Enter" && xe(),
+                          disabled: luminPending,
                           placeholder: "引用本题解析向 Lumin 老师提问...",
                           className:
                             "min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none",
@@ -6377,6 +6405,7 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
                           "code-path": "src\\pages\\QuizFlow.tsx:187:362",
                           type: "button",
                           onClick: xe,
+                          disabled: luminPending,
                           className:
                             "flex h-9 w-9 items-center justify-center rounded-full bg-[#6038ef] text-white",
                           children: jsxRuntime.jsx(ic, {

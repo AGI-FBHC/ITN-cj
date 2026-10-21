@@ -1075,3 +1075,10 @@
 - Bookmarks 的课程卡现在可点击进入课程详情；笔记卡提供“打开讲义”并滚动到保存的 section；练习页改名为“习题”，按 resourceKind=bank 或 quiz- id 过滤，只展示单独收藏的题目。习题卡显示题目文本、解析，以及“回答正确/回答错误/作答结果未记录”状态；旧书签缺少作答字段时明确显示未记录，不伪造结果。
 - 收藏题目时新增持久化字段：questionId、questionIndex、question、options、selectedIndex、correctIndex、correct、lessonIndex；笔记新增 lessonIndex/sectionId。删除书签继续通过 hu 同步 user_state，课程/笔记/习题入口均实际接入已有导航。
 - 验证：Vite build 成功，现有前端 15/15 测试通过；浏览器实测收藏夹课程卡进入课程详情、收藏讲义后从“笔记”打开对应讲义、测验解析收藏后“习题”显示“回答正确”并可重新打开第一题。本次只改前端和 TRACE，未重启后端、未调用模型、未动数据库或用户未跟踪脚本；本地提交，不推送。
+
+## 2026-10-22 答题页 Lumin 真实问答接线
+
+- 用户反馈答题解析页的“为什么”提问显示“Lumin 暂时无法回答，请稍后再试”。定位到 QuizFlow 的 `xe` 发送函数只把 `AI_UNAVAILABLE` 常量追加到本地消息列表，从未调用 `/api/tutor/chat`。
+- 前端改为调用现有 `askTutor`：发送时携带用户问题，并把当前题目、全部选项、用户选择、正确答案、判定结果、题目解析拼成引用上下文，同时传 courseId/lessonIndex/lessonTitle 和稳定 conversationId `lesson:{courseId}:{lessonIndex}`；回复使用现有 Markdown 渲染。发送中显示“Lumin 正在结合题目解析回答…”，失败显示真实错误并提供重试，不再用占位文案。
+- 浏览器实测：在“前言”章节测验解析页打开 Lumin，询问“为什么这道题选这个答案？”，成功收到带题目依据和选项逐项分析的真实模型回答；无模型配置时仍会显示后端返回的具体错误。
+- 验证：Vite build 成功，现有前端 15/15 测试通过；未重启后端、未迁移数据库、未修改模型配置或用户未跟踪脚本。本批本地提交，不推送。
