@@ -874,3 +874,11 @@
 - 修复：新增 zxAvatarDataUrl()，先中心裁最大正方形，再按 webp(512/384) → jpeg(384/256/192) 逐档降级编码，把头像控制在 36000 字符以内（浏览器不支持 webp 编码时自动落到 jpeg）；编辑器提交改为返回 Promise，失败时在保存按钮左侧以 role=alert 显示真实原因（含"头像或资料内容过大，请更换更小的头像图片"兜底），成功才由父组件更新本地画像并关闭编辑器；头像区文案改为"支持 JPG、PNG、WebP，大小不超过 5MB，将自动压缩为正方形"，accept 同步加入 image/webp。
 - 真实浏览器端到端验证（隐藏的 in-app 浏览器标签，验证后已关闭）：游客进入学员端 → 点击右上角头像直接打开编辑资料（此前 onNavigate 白名单里没有 "profile"，点击无反应）；编辑页只保留姓名的必填星号，性别/出生日期/所在地区/手机号均无星号，邮箱输入框已替换为"邮箱或工号是注册时的登录账号…"说明，头像下文案为"学员"；上传 0.55MB / 2400x1600 PNG 后预览被压缩为 30015 字符的 data:image/jpeg；保存后编辑器关闭、右上角头像立即变为新图；整页刷新后头像仍为新图（确认已写入 profile_json）；在编辑器内点击"课程"可正常退出编辑器并切换页面。
 - 验证补充：提交状态下再跑 npm run build --prefix apps/web 通过（仅既有 bundle-size 警告）。测试图片 data/qa/avatar-upload-test.png 位于 gitignore 覆盖的 data/ 目录，未进入版本库。
+
+## 2026-10-21 最终收尾：头像菜单、默认头像、Cangjie 标识与资源去重
+- 用户要求右上角头像先弹菜单，提供“编辑资料”和“退出登录”；同时新用户默认头像从 mojofamily 角色图随机稳定分配，并随机使用莫兰迪背景色。
+- 已实现头像菜单：点击头像不再直接进入资料页，菜单含编辑资料、退出登录；编辑资料进入现有 ProfileEditor，退出登录清除学习会话令牌/显示名并回到登录页；支持点击外部和 Escape 收起。保存资料通过 useLearning 快照立即刷新头像。
+- 默认头像：后端按用户 ID 稳定选择 `/login-characters/*.webp`，同时生成稳定莫兰迪 `avatarBackground`；账号注册、邮箱首次登录、游客和无头像资料在 PUT /profile 时补齐，刷新不变色。用户自行上传头像不会被覆盖。
+- mojofamily 21 张透明 PNG 已移动到项目 `data/imports/mojofamily-originals`，并压缩为 21 张 WebP 放在 `apps/web/public/login-characters`；登录页左侧使用角色图装饰，登录页、学员首页/导航显示 Powered by Cangjie。原文件夹已清空。
+- 修复课件唯一性查询：归档行 is_current=NULL，之前 `COALESCE(is_current,1)` 会把归档行误判为当前版本；现改为只查 `is_current=1`。数据库 016/017 迁移已执行并回填，当前列表 9 条，无重复章节/资源组合。
+- 验证：Cangjie 测试 14/14 通过；后端 main-next 构建成功并已替换运行（8312 健康）；Vite 构建成功；浏览器确认头像菜单、登录页角色图、Powered by Cangjie、课件库 9 条无重复、序号默认 18+“＋”。原图片目录保留为空目录，原文件已移入项目数据目录，未删除内容。

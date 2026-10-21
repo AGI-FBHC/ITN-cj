@@ -121,6 +121,18 @@ func kbOptionalCorpusAudit(): Unit {
 @Test
 class KbPrimitiveTests {
     @TestCase
+    func defaultAvatarAndResourceKindsAreStable(): Unit {
+        let first = defaultAvatarUrl("user-a")
+        kbPrimitiveCheck(first == defaultAvatarUrl("user-a"), "Default avatar must be stable per account")
+        kbPrimitiveCheck(first.startsWith("/login-characters/") && first.endsWith(".webp"), "Default avatar must use a bundled character")
+        kbPrimitiveCheck(defaultAvatarBackground("user-a").startsWith("#"), "Default avatar background must be a color")
+        let profile = defaultAvatarProfile("{\"name\":\"测试学员\"}", "user-a")
+        kbPrimitiveCheck(profile.contains("\"avatar\":\"/login-characters/"), "Profiles without avatars must receive a default avatar")
+        kbPrimitiveCheck(profile.contains("\"avatarBackground\":\"#"), "Default avatars must receive a Morandi background")
+        kbPrimitiveCheck(cwBookmarkKind(cwJsonObjectFrom("{\"id\":\"quiz-course-1\"}").getOrThrow()) == "bank",
+            "Quiz bookmarks must be tied to the bank resource")
+    }
+    @TestCase
     func passwordResetCodesAndMailStaySeparateFromLogin(): Unit {
         kbPrimitiveCheck(validVerificationCode("012345"), "Numeric verification codes must preserve leading zeros")
         kbPrimitiveCheck(!validVerificationCode("12345a") && !validVerificationCode("12345"), "Verification codes must contain six digits")

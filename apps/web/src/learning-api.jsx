@@ -137,6 +137,11 @@ export async function loginWithEmailCode(email, verificationCode, inviteCode = '
   return bootstrapData;
 }
 export const api = (path, method = 'GET', body) => request(path, { method, body });
+export function clearLearningSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem('zhixun-display-name');
+  emit({ ready: false, loading: false, error: '', data: null });
+}
 export async function saveProfile(profile) {
   const saved = await api('/profile', 'PUT', profile);
   const value = saved.profile ?? saved;

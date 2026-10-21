@@ -1286,7 +1286,7 @@ func cwSelect(): String {
     "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
     "COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title," +
     "COALESCE(d.order_index,0)+1 source_order,COALESCE(c.options_json,'') options_json," +
-    "COALESCE(c.is_current,1) is_current,c.generation," +
+    "COALESCE(c.is_current,0) is_current,c.generation," +
     "COALESCE((SELECT ch.order_no FROM kb_courseware_chapters ch WHERE ch.bundle_id=c.bundle_id " +
     "AND ch.doc_id=c.doc_id),0) chapter_order " +
     "FROM kb_courseware c LEFT JOIN kb_bundle_docs d ON d.id=c.doc_id " +
@@ -1325,7 +1325,7 @@ func cwRowJson(row: Row): String {
 }
 
 func cwListBody(cfg: Config, bundleId: String): String {
-    var filter = "WHERE COALESCE(c.is_current,1)=1 "
+    var filter = "WHERE c.is_current=1 "
     if (bundleId.size > 0) { filter = filter + "AND c.bundle_id=" + sqlQuote(bundleId) + " " }
     // The admin library filters client-side, so the list must include all
     // practical rows instead of silently hiding records after the first 100.

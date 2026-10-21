@@ -15,6 +15,7 @@ import {
   AI_UNAVAILABLE,
   api,
   bootstrap,
+  clearLearningSession,
   LoadPanel,
   persistState,
   refreshLearning,
@@ -2307,8 +2308,21 @@ function AppNavigation({
 }) {
   const learning = useLearning();
   const profile = learning.data?.profile;
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const menuRef = React.useRef(null);
   const displayName = localStorage.getItem("zhixun-display-name") || "学习者";
   const avatarText = Array.from((profile?.name || displayName).trim())[0] || "学";
+  React.useEffect(() => {
+    if (!menuOpen) return undefined;
+    const close = (event) => { if (!menuRef.current?.contains(event.target)) setMenuOpen(false); };
+    const escape = (event) => { if (event.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("pointerdown", close, true);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close, true);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [menuOpen]);
   return jsxRuntime.jsx("header", {
     "code-path": "src\\components\\AppNavigation.tsx:35:5",
     className:
@@ -2392,19 +2406,35 @@ function AppNavigation({
                 }),
               ],
             }),
-            jsxRuntime.jsxs("button", {
+            jsxRuntime.jsxs("div", {
+              ref: menuRef,
+              className: "relative",
+              children: [
+              jsxRuntime.jsx("span", { className: "zx-powered-badge zx-powered-badge-light hidden lg:inline-flex", children: "Powered by Cangjie" }),
+              jsxRuntime.jsxs("button", {
               "code-path": "src\\components\\AppNavigation.tsx:89:11",
               type: "button",
-              onClick: () => r("profile"),
+              onClick: () => setMenuOpen((value) => !value),
+              "aria-expanded": menuOpen,
+              "aria-haspopup": "menu",
               className:
                 "flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-[#D7DEE8] text-lg font-black text-white shadow-sm transition hover:ring-4 hover:ring-[#6038ef]/12 sm:h-12 sm:w-12",
               style: profile?.avatarBackground ? { backgroundColor: profile.avatarBackground } : undefined,
-              title: "编辑资料",
-              "aria-label": "编辑资料",
+              title: "账号菜单",
+              "aria-label": "账号菜单",
               children: profile?.avatar
                 ? jsxRuntime.jsx("img", { src: profile.avatar, alt: "", className: "h-full w-full object-cover" })
                 : avatarText,
-            }),
+              }),
+              menuOpen ? jsxRuntime.jsxs("div", {
+                role: "menu",
+                className: "absolute right-0 top-[calc(100%+10px)] z-[80] w-44 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-[0_18px_45px_rgba(24,18,40,0.16)]",
+                children: [
+                  jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-bold text-[#34313d] hover:bg-[#f6f3ff] hover:text-[#6038ef]", onClick: () => { setMenuOpen(false); r("profile"); }, children: "编辑资料" }),
+                  jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-bold text-[#a23a50] hover:bg-[#fff1f4]", onClick: () => { clearLearningSession(); window.location.assign("/login"); }, children: "退出登录" }),
+                ],
+              }) : null,
+            ]}),
           ],
         }),
       ],
