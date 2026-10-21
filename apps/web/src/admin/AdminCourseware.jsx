@@ -950,8 +950,7 @@ export default function AdminCourseware() {
                 <tr>
                   <th>课件</th>
                   <th>类型</th>
-                  <th>来源章节</th>
-                  <th>状态 / 上架</th>
+                  <th>状态</th>
                   <th>更新时间</th>
                   <th aria-label="操作" />
                 </tr>
@@ -961,7 +960,7 @@ export default function AdminCourseware() {
                 const sourceLabel = group.sourceOrder > 0 ? `第 ${group.sourceOrder} 章` : '章节';
                 return <tbody key={group.key}>
                   <tr className="zx-cw-library-group">
-                    <td colSpan={6}>
+                    <td colSpan={5}>
                       <div>
                         <button type="button" className="zx-cw-library-group-toggle" aria-expanded={!collapsed} onClick={() => toggleGroup(group.key)}>
                           <svg className={collapsed ? '' : 'open'} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m7 5 5 5-5 5"/></svg>
@@ -986,7 +985,10 @@ export default function AdminCourseware() {
                     return (
                       <tr key={item.id}>
                         <td><div className="zx-cw-title-with-detail">
-                          <div className="zx-cell-title">{item.title || item.kindLabel}</div>
+                          <div className="zx-cw-title-copy">
+                            <div className="zx-cell-title">{item.title || item.kindLabel}</div>
+                            <small>{item.bundleTitle} · {itemSource} · {item.docTitle}</small>
+                          </div>
                           <button
                             type="button"
                             className="zx-cw-detail-icon"
@@ -999,28 +1001,21 @@ export default function AdminCourseware() {
                         </div></td>
                         <td className="zx-nowrap"><span className="zx-cw-kind-badge">{item.kindLabel}</span></td>
                         <td>
-                          <div className="zx-cw-source-cell">
-                            <strong>{item.bundleTitle}</strong>
-                            <span>{itemSource} · {item.docTitle}</span>
-                            <button type="button" onClick={() => navigate(`/admin/knowledge/bundles/${item.bundleId}?docId=${encodeURIComponent(item.docId)}`)}>查看原文</button>
-                          </div>
-                        </td>
-                        <td>
                           <div className="zx-cw-status-stack">
                             <span className={`zx-pill ${status.kind === 'live' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{status.label}</span>
                             {liveOrder && item.published ? <small>学员端第 {liveOrder} 章</small> : null}
                           </div>
-                          {item.status === 'failed' && item.errorMessage ? <div className="zx-cell-sub">{item.errorMessage}</div> : null}
+                          {item.status === 'failed' && item.errorMessage ? <div className="zx-cw-error-inline" title={item.errorMessage}>{item.errorMessage}</div> : null}
                         </td>
-                        <td className="zx-num">{item.updatedAt}</td>
+                        <td className="zx-num">{String(item.updatedAt || '').slice(5)}</td>
                         <td className="zx-actions">
-                          <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={item.status !== 'ready'} onClick={() => navigate(`/admin/courseware/${item.id}`)}>预览</button>
+                          <button type="button" className="zx-cw-row-action" disabled={item.status !== 'ready'} onClick={() => navigate(`/admin/courseware/${item.id}`)}>预览</button>
                           {item.published ? (
-                            <button type="button" className="zx-btn zx-btn-sm" onClick={() => act(() => adminApi.cwUnpublish(item.id))}>取消发布</button>
+                            <button type="button" className="zx-cw-row-action" onClick={() => act(() => adminApi.cwUnpublish(item.id))}>撤回</button>
                           ) : (
-                            <button type="button" className="zx-btn zx-btn-sm" disabled={item.status !== 'ready'} onClick={() => act(() => adminApi.cwPublish(item.id))}>发布</button>
+                            <button type="button" className="zx-cw-row-action is-primary" disabled={item.status !== 'ready'} onClick={() => act(() => adminApi.cwPublish(item.id))}>发布</button>
                           )}
-                          <button type="button" className="zx-btn zx-btn-sm zx-btn-danger" onClick={() => { if (window.confirm('删除这份课件？')) act(() => adminApi.cwDelete(item.id)); }}>删除</button>
+                          <button type="button" className="zx-cw-row-action is-danger" onClick={() => { if (window.confirm('删除这份课件？')) act(() => adminApi.cwDelete(item.id)); }}>删除</button>
                         </td>
                       </tr>
                     );

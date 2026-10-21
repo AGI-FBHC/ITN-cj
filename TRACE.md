@@ -882,3 +882,9 @@
 - mojofamily 21 张透明 PNG 已移动到项目 `data/imports/mojofamily-originals`，并压缩为 21 张 WebP 放在 `apps/web/public/login-characters`；登录页左侧使用角色图装饰，登录页、学员首页/导航显示 Powered by Cangjie。原文件夹已清空。
 - 修复课件唯一性查询：归档行 is_current=NULL，之前 `COALESCE(is_current,1)` 会把归档行误判为当前版本；现改为只查 `is_current=1`。数据库 016/017 迁移已执行并回填，当前列表 9 条，无重复章节/资源组合。
 - 验证：Cangjie 测试 14/14 通过；后端 main-next 构建成功并已替换运行（8312 健康）；Vite 构建成功；浏览器确认头像菜单、登录页角色图、Powered by Cangjie、课件库 9 条无重复、序号默认 18+“＋”。原图片目录保留为空目录，原文件已移入项目数据目录，未删除内容。
+
+## 2026-10-21 Markdown/Mermaid 渲染与课件库精简
+- Markdown 渲染修复：识别普通 fenced code 的语言标记；对 `mermaid` 围栏以及被外层 code fence 包裹的嵌套 Mermaid 代码块提取并异步渲染为 SVG，普通代码继续按代码块显示，渲染失败回退为代码。新增 mermaid 依赖，构建生成独立异步 chunk。
+- 课件库精简：移除重复“来源章节”列，来源信息收进课件标题下方；状态、更新时间、操作列对齐居中/右对齐；失败错误改为单行省略并保留完整 title；操作按钮压缩为预览、撤回/发布、删除。
+- 浏览器验证：课件库显示 9 条且无重复组合；简化表格对齐正常；Mermaid 页面生成 2 个 SVG；Vite 构建通过（既有 bundle 警告）。后端本轮无新改动，8312 保持健康。
+- 本轮改动单独本地提交，未推送。

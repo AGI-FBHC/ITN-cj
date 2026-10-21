@@ -36,12 +36,13 @@ function protectFencedCode(text, placeholders) {
   const lines = text.split('\n');
   const result = [];
   for (let index = 0; index < lines.length; index += 1) {
-    const opening = /^ {0,3}(`{3,}|~{3,})/.exec(lines[index]);
+    const opening = /^ {0,3}(`{3,}|~{3,})([^\n]*)/.exec(lines[index]);
     if (!opening) {
       result.push(lines[index]);
       continue;
     }
     const fence = opening[1];
+    const language = (opening[2] || '').trim().split(/\s+/)[0].toLowerCase();
     const closing = new RegExp(`^ {0,3}${fence[0]}{${fence.length},}\\s*$`);
     const block = [lines[index]];
     while (index + 1 < lines.length) {
@@ -49,11 +50,25 @@ function protectFencedCode(text, placeholders) {
       block.push(lines[index]);
       if (closing.test(lines[index])) break;
     }
+    const body = block.slice(1, closing.test(block[block.length - 1]) ? -1 : undefined);
+    const nestedMermaid = body.findIndex((line) => /^ {0,3}`{3,}mermaid\s*$/.test(line));
+    const mermaidBody = language === 'mermaid'
+      ? body
+      : nestedMermaid >= 0
+        ? body.slice(nestedMermaid + 1, (() => {
+            for (let cursor = nestedMermaid + 1; cursor < body.length; cursor += 1) {
+              if (/^ {0,3}`{3,}\s*$/.test(body[cursor])) return cursor;
+            }
+            return body.length;
+          })())
+        : [];
     const token = `ZXFENCE${placeholders.length}END`;
     placeholders.push({
       token,
       block: true,
-      html: DOMPurify.sanitize(marked.parse(block.join('\n'), { async: false })),
+      html: mermaidBody.length > 0
+        ? `<div class="zx-md-mermaid" data-zx-mermaid="${escapeHtml(encodeURIComponent(mermaidBody.join('\n')))}"><span>正在绘制流程图…</span></div>`
+        : DOMPurify.sanitize(marked.parse(block.join('\n'), { async: false })),
     });
     result.push('', token, '');
   }
@@ -235,6 +250,37 @@ export default function Markdown({ text, audience = 'admin' }) {
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [html, audience]);
+
+  React.useEffect(() => {
+    const element = root.current;
+    if (!element) return undefined;
+    const diagrams = Array.from(element.querySelectorAll('[data-zx-mermaid]'));
+    if (!diagrams.length) return undefined;
+    let active = true;
+    import('mermaid').then(({ default: mermaid }) => {
+      if (!active) return;
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' });
+      diagrams.forEach(async (node, index) => {
+        try {
+          const source = decodeURIComponent(node.getAttribute('data-zx-mermaid') || '');
+          const { svg } = await mermaid.render(`zx-mermaid-${Date.now()}-${index}`, source);
+          if (active) node.innerHTML = svg;
+        } catch {
+          if (active) node.innerHTML = '<pre><code></code></pre>';
+          const code = node.querySelector('code');
+          if (code) code.textContent = decodeURIComponent(node.getAttribute('data-zx-mermaid') || '');
+        }
+      });
+    }).catch(() => {
+      if (!active) return;
+      diagrams.forEach((node) => {
+        node.innerHTML = '<pre><code></code></pre>';
+        const code = node.querySelector('code');
+        if (code) code.textContent = decodeURIComponent(node.getAttribute('data-zx-mermaid') || '');
+      });
+    });
+    return () => { active = false; };
+  }, [html]);
 
   if (!html) return null;
   // eslint-disable-next-line react/no-danger
