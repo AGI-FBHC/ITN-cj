@@ -469,6 +469,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
     sendLock.current = true;
     setSending(true);
     setFailed(null);
+    setToolTrace([]);
     setImageError('');
     setSpeechError('');
     speech.stop();

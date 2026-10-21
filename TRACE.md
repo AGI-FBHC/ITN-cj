@@ -1091,3 +1091,4 @@
 - 新增 tutor_agent.cj，把学员 Agent 从“预取章节 + 单次 chatStreamText”改为真实工具循环：系统提示明确 Agent 必须自行判断检索；暴露 search_course_material（lesson/course/all 范围，调用现有 tutorLessonHits 或 kbSearch 混合向量+关键词检索）和 search_web（Tavily）；最多 4 步 tool_calls，按 assistant.tool_calls / role=tool 消息回填，工具结果带稳定来源编号，最终 citations 与 toolTrace 返回。Tutor SSE meta 和普通响应均包含 toolTrace；前端 Agent 显示“Agent 已调用”工具轨迹，保留引用列表和 Markdown 回答。
 - 真实回归：关闭课程上下文询问“2025 年 AI Agent 最新发展趋势”，模型实际调用 2 次 Tavily 检索，返回 mode=Agent 工具调用、12 条 citation、1738 字回答；课程问题询问“TCP 为什么能在 IP 不可靠时提供可靠传输”，模型实际连续调用 3 次课程检索，返回 18 条 citation、781 字回答。临时匿名测试用户已清理。
 - 验证：仓颉 56/56、前端 Node 15/15 通过；后端 release 和前端 Vite build 成功；8312 health 正常，运行 itn_learning_v2_dev。新增 tutor_agent_test.cj 覆盖工具 schema、参数边界、引用编号、工具轨迹、Tavily 参数和密钥脱敏。迁移、管理员配置、真实 Agent 回归均已完成；后续可继续优化工具重试、网页引用质量与多轮记忆压缩。本批本地提交，不推送；用户未跟踪 tools/build_course_resource_packs.py 保持不动。
+- 追加优化：每次发送新问题时先清空上一轮工具轨迹，避免旧检索记录在新回答等待期间造成误导；SSE 真实回归确认 meta 同时返回 citations 和 toolTrace。
