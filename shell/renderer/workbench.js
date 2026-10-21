@@ -116,17 +116,23 @@ renderResourceDock = function () {
 };
 
 function closeResourceDock() {
+  ++workbench.loadToken;
   workbench.open = false;
   ensureResourceDock();
   (current === 'resources' ? document.querySelector('.outcome-grid .resource-entry.selected') : $('wb-artifacts'))?.focus();
 }
 
 async function openLearningResource(id, version) {
+  let generation = state.navigationGeneration;
   try {
     const token = ++workbench.loadToken;
     const resource = await api('/api/learning/resource', {id, version: version || 0});
-    if (token !== workbench.loadToken) return;
-    if (current !== 'chat' && !(current === 'resources' && $('outcome-reader'))) await go('chat');
+    if (token !== workbench.loadToken || generation !== state.navigationGeneration) return;
+    if (current !== 'chat' && !(current === 'resources' && $('outcome-reader'))) {
+      const navigation = go('chat'); generation = state.navigationGeneration;
+      await navigation;
+      if (generation !== state.navigationGeneration) return;
+    }
     workbench.file=null;workbench.selected = resource;
     workbench.open = true;
     renderResourceDock();
@@ -134,7 +140,7 @@ async function openLearningResource(id, version) {
       const selected = node.dataset.resource === resource.id;
       node.classList.toggle('selected', selected); node.setAttribute('aria-pressed', String(selected));
     });
-  } catch (e) { toast('读取资源失败：' + e.message); }
+  } catch (e) { if (generation === state.navigationGeneration) toast('读取资源失败：' + e.message); }
 }
 
 /** 把当前这份资源导出成 Office 文件（壳里弹"另存为"，写完给一句实话）。 */
@@ -220,7 +226,7 @@ function fileArtifactCard(artifact) {
 }
 async function openFilePreview(file,metadata={}) {
   if(!window.itnWindow?.readResourceFile){toast('文件预览只在桌面窗口中可用');return;}
-  const token=++workbench.loadToken,data=await window.itnWindow.readResourceFile(file);if(token!==workbench.loadToken)return;
+  const generation=state.navigationGeneration,token=++workbench.loadToken,data=await window.itnWindow.readResourceFile(file);if(token!==workbench.loadToken||generation!==state.navigationGeneration)return;
   if(!data.ok){workbench.file={kind:'file',path:file,name:String(file).replace(/\\/g,'/').split('/').pop(),error:data.error,...metadata};workbench.selected=null;workbench.open=true;renderResourceDock();return;}
   workbench.file={...data,...metadata,path:data.path};workbench.selected=null;workbench.open=true;renderResourceDock();
 }
@@ -516,6 +522,7 @@ function renderResourcePractice(container, res) {
 }
 
 async function workbenchAfterPage() {
+  const generation = state.navigationGeneration;
   if (workbench.stateTimer) clearInterval(workbench.stateTimer);
   decorateWorkspace();
   const dock = ensureResourceDock();
@@ -533,6 +540,7 @@ async function workbenchAfterPage() {
   document.querySelector('.main').insertBefore(bar, $('view'));
   if (workbench.open) renderResourceDock();
   await refreshWorkbenchState();
+  if (generation !== state.navigationGeneration) return;
   workbench.stateTimer = setInterval(async () => {
     if (current !== 'chat') return;
     await refreshWorkbenchState();
@@ -573,11 +581,12 @@ function refreshChatHeader() {
 }
 
 async function refreshWorkbenchState() {
+  const generation = state.navigationGeneration;
   const sid = state.chatSessionId;
   if (!sid || current !== 'chat') return;
   try {
     const task = await api('/api/sessions/state', {sessionId: sid});
-    if (state.chatSessionId !== sid) return;
+    if (state.chatSessionId !== sid || generation !== state.navigationGeneration || current !== 'chat') return;
     workbench.task = task;
     if (['running', 'cancelling'].includes(task.status) && !state.chatRequest) {
       state.chatRequest = {sessionId: sid, turnId: task.turnId, external: true};

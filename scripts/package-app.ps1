@@ -110,6 +110,10 @@ if (Test-Path -LiteralPath $srcExe) {
     Move-Item -LiteralPath $srcExe -Destination (Join-Path $OutDir "Lumin.exe") -Force
 }
 
+# Explorer reads the embedded Windows icon, not BrowserWindow's PNG.
+& node (Join-Path $repo 'tools/app-icon.cjs') (Join-Path $OutDir 'Lumin.exe') --apply
+if ($LASTEXITCODE -ne 0) { throw 'Failed to embed and verify the Lumin executable icon' }
+
 # 4.5) 随包附带说明书，让解压的人不必翻仓库
 Copy-Item -LiteralPath (Join-Path $repo "docs\07-使用说明.md") -Destination (Join-Path $OutDir "Lumin-使用说明.md") -Force
 Copy-Item -LiteralPath (Join-Path $repo "docs\05-仓颉杯提交说明.md") -Destination (Join-Path $OutDir "Lumin-系统说明.md") -Force
@@ -123,6 +127,7 @@ if ([string]::IsNullOrWhiteSpace($Build)) {
 }
 $assetHashes = [ordered]@{}
 $assetFiles = @(
+    'Lumin.exe', 'resources/app/assets/lumin.ico', 'resources/app/assets/logo.png',
     'resources/app/main.js', 'resources/app/preload.js', 'resources/app/pptx.js',
     'resources/app/renderer/index.html', 'resources/app/renderer/app.js',
     'resources/app/renderer/style.css', 'resources/app/renderer/workbench.js',

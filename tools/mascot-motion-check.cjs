@@ -13,6 +13,16 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
     browser=await chromium.launch({channel:'msedge',headless:true});page=await browser.newPage({viewport:{width:1440,height:960}});
     page.on('pageerror',e=>errors.push(e.message));await page.goto(base);await page.waitForFunction(()=>!document.getElementById('boot'));
     const actor=page.locator('.lumin-mascot-actor'),pet=page.locator('.lumin-mascot-root'),menu=page.locator('.lumin-mascot-menu');
+    check('a fresh launch keeps the mascot hidden',await pet.isHidden());
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('lumin:activity',{detail:{state:'working',busyCount:1}})));
+    check('background task activity does not reveal the mascot',await pet.isHidden());
+    await page.evaluate(()=>go('settings','appearance'));
+    await page.getByRole('button',{name:'显示小鼋龙',exact:true}).click();
+    check('appearance settings show the mascot on demand',await pet.isVisible());
+    await page.reload();await page.waitForFunction(()=>!document.getElementById('boot'));
+    check('a new launch is hidden even after the previous launch showed the mascot',await pet.isHidden());
+    await page.evaluate(()=>go('settings','appearance'));
+    await page.getByRole('button',{name:'显示小鼋龙',exact:true}).click();
     const inBounds=async locator=>locator.evaluate(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth+.5&&r.bottom<=innerHeight+.5;});
     const drag=async(x,y)=>{const b=await actor.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(x,y,{steps:8});await page.mouse.up();};
     for(const key of ['Enter','Space']){
@@ -49,6 +59,9 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
     check('closing the player after resize restores the whole mascot',await inBounds(pet));
     await page.evaluate(()=>localStorage.setItem('lumin.mascot.position',JSON.stringify({x:8000,y:8000})));
     await page.reload();await page.waitForFunction(()=>!document.getElementById('boot'));
+    check('reloading with an offscreen saved position still starts hidden',await pet.isHidden());
+    await page.evaluate(()=>go('settings','appearance'));
+    await page.getByRole('button',{name:'显示小鼋龙',exact:true}).click();
     check('offscreen saved position is recovered on startup',await inBounds(pet));
     check('recovered position is also saved within the window',await page.evaluate(()=>{const p=JSON.parse(localStorage.getItem('lumin.mascot.position'));return p.x<innerWidth-100&&p.y<innerHeight-110;}));
     // Record real frame changes under frequent activity notifications, like streaming output.

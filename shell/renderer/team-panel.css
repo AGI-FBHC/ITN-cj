@@ -763,43 +763,6 @@
   }
 }
 
-/* The collaboration view is a right-side drawer, not a centered modal. */
-.team-modal {
-  place-items: stretch end;
-  justify-items: end;
-  padding: 0;
-}
-
-.team-panel {
-  width: min(560px, calc(100vw - 18px));
-  height: 100%;
-  max-height: 100%;
-  border-radius: 20px 0 0 20px;
-  transform: translateX(100%);
-}
-
-.team-panel.open {
-  transform: translateX(0);
-}
-
-.team-panel.collapsed {
-  width: 58px;
-}
-
-.team-panel.collapsed .team-panel-title,
-.team-panel.collapsed .team-panel-body {
-  display: none;
-}
-
-.team-panel.collapsed .team-panel-head {
-  justify-content: center;
-  padding: 14px 8px;
-}
-
-.team-panel.collapsed #team-panel-collapse {
-  transform: rotate(180deg);
-}
-
 .team-open-btn {
   align-self: flex-start;
   margin-top: 8px;

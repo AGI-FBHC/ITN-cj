@@ -113,7 +113,9 @@ async function startTtsMock(){
     check('all mascot frames keep the original 362x362 canvas',assets.every(a=>a.width===362&&a.height===362));
 
     const mascot=page.locator('.lumin-mascot-root');
-    check('mascot mounts visible in the desktop UI',await mascot.isVisible()&&await page.locator('.lumin-mascot-image').isVisible());
+    check('mascot starts hidden in the desktop UI',await mascot.isHidden());
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('lumin:mascot-visibility',{detail:{visible:true}})));
+    check('mascot can be shown for the current launch',await mascot.isVisible()&&await page.locator('.lumin-mascot-image').isVisible());
     await page.evaluate(()=>window.luminMascotActivity?.('idle',0));
     const firstFrame=await page.locator('.lumin-mascot-image').getAttribute('src');
     await sleep(1450);

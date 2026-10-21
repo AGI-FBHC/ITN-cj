@@ -956,10 +956,40 @@ function updateNavButtons() {
 
 let currentSection = "";
 
+// 页面附属 UI 到切页为止；会话请求和内核任务不属于页面生命周期。
+function clearRouteUi() {
+  closePopover();
+  closePalette();
+  document.querySelectorAll('.course-modal-overlay, .task-modal').forEach(node => node.remove());
+  document.querySelector('.course-stage')?._courseObserver?.disconnect();
+  document.querySelector('.wb-toolbar')?.remove();
+  if (typeof workbench !== 'undefined') {
+    ++workbench.loadToken;
+    workbench.open = false;
+    clearInterval(workbench.stateTimer);
+    workbench.stateTimer = null;
+  }
+  const dock = $('resource-dock');
+  if (dock) { dock.hidden = true; dock.replaceChildren(); }
+  document.body.classList.remove('resource-open');
+  document.querySelectorAll('#view audio, #view video, #player audio, #player video').forEach(media => media.pause());
+  if (ttsPreviewAudio) { ttsPreviewAudio.pause(); ttsPreviewAudio = null; }
+  const player = $('player');
+  if (player && !player.hidden) {
+    // closePlayer() 会等保存进度并触发路由；切页只同步收起 UI。
+    Promise.resolve(savePlayProgress(true)).catch(() => {});
+    player.hidden = true;
+    player.replaceChildren();
+    document.body.classList.remove('player-open');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }
+}
+
 async function go(page, section, opts) {
   if(page==="settings"&&section==="kb"){page="kb";section="manage";}
   if(page==="resources"&&section==="files")section="";
   const navigation = state.navigationGeneration = (state.navigationGeneration || 0) + 1;
+  clearRouteUi();
   state.knowledgeObserver?.disconnect();state.knowledgeObserver=null;
   state.notesListObserver?.disconnect(); state.notesListObserver = null;
   state.objectFocus = opts?.focus || null;
@@ -1021,6 +1051,7 @@ async function go(page, section, opts) {
     await renderPanel();
     if (navigation !== state.navigationGeneration) return;
   } catch (e) {
+    if (navigation !== state.navigationGeneration) return;
     $("panel-body").innerHTML = '<div class="panel-empty">面板没能加载：' + esc(e.message) + "</div>";
   }
   try {
@@ -3795,6 +3826,7 @@ function popoverAt(anchor, build, opts) {
   };
   activePopover = entry;
   setTimeout(() => {
+    if (activePopover !== entry) return;
     document.addEventListener("click", entry.away, true);
     document.addEventListener("keydown", entry.onKey, true);
     window.addEventListener("resize", entry.onAway);
@@ -4829,6 +4861,7 @@ let panelSig = "";
 let panelSigFor = "";
 
 async function renderPanel(force) {
+  const renderingGeneration = state.navigationGeneration;
   const def = PANELS[current];
   const body = $("panel-body");
   const foot = $("panel-foot");
@@ -4839,6 +4872,7 @@ async function renderPanel(force) {
   if (def && typeof def.load === "function") {
     try { await def.load(); } catch (e) { /* 取数失败就按现有 state 画 */ }
   }
+  if (renderingGeneration !== state.navigationGeneration) return;
   const sig = def && def.sig ? String(def.sig()) : "";
   // 数据没变、还是同一块面板：连 DOM 都不碰（这是"列表老闪一下"的正解）
   if (!force && sig && sig === panelSig && key === panelSigFor && body.childNodes.length) {
@@ -4859,7 +4893,6 @@ async function renderPanel(force) {
   /* 渲染到**离屏片段**里，最后一次性换上去。
      以前是先 body.innerHTML = "" 再 await 数据，于是"空面板"要挂着一个来回，
      用户看到的就是闪一下；顺带把滚动位置与正在输入的搜索词也保住了。 */
-  const renderingGeneration = state.navigationGeneration;
   const nextBody = document.createDocumentFragment();
   const nextFoot = document.createDocumentFragment();
   const scrollTop = body.scrollTop;
@@ -5755,7 +5788,10 @@ function turnsFromEvents(events) {
     const t = byKey[key];
     const p = e.payload || {};
     if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; }
-    else if (e.type === "team/run_started") { t.teamRunId = p.runId || ""; t.teamTitle = p.goal || "协作流程"; }
+    else if (String(e.type || "").startsWith("team/") && p.runId) {
+      t.teamRunIds ||= [];
+      if (!t.teamRunIds.includes(p.runId)) t.teamRunIds.push(p.runId);
+    }
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
     else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
     else if (e.type === 'model/retry') t.activity='retrying';
@@ -6059,8 +6095,10 @@ function renderTurnBlock(t, live) {
   };
   for(const item of processBlocks){if(item.t==='think'||item.t==='tool')pending.push(item);else{flushProcess();appendContent(item);}}
   flushProcess();answerBlocks.forEach(appendContent);
-  if (t.teamRunId) {
-    box.appendChild(btn('打开协作流程','ghost sm team-open-btn',()=>window.LuminTeamPanel?.open(t.teamRunId)));
+  for (const runId of t.teamRunIds || (t.teamRunId ? [t.teamRunId] : [])) {
+    const open = btn('打开协作流程','ghost sm team-open-btn',()=>window.LuminTeamPanel?.open(runId));
+    open.dataset.runId = runId;
+    box.appendChild(open);
   }
   // 这一轮改了哪些文件：一张小卡（逐文件 +/-），有就显示，没有就不占地方
   if (t.fileChanges && t.fileChanges.length) {
@@ -6464,11 +6502,15 @@ async function imageFromBlob(file) {
 
 PAGES.chat = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     // 会话总览（原「会话记录」页）并进来的入口：同一个页面，两种视图
     if (currentSection === "overview") { await renderSessionsOverview(); return; }
     await loadCfg();
+    if (renderingGeneration !== state.navigationGeneration) return;
     await loadWebMode(state.chatSessionId);
+    if (renderingGeneration !== state.navigationGeneration) return;
     await loadSkills(state.chatSessionId);
+    if (renderingGeneration !== state.navigationGeneration) return;
     setChatMode(true);
     const v = $("view");
     v.innerHTML = "";
@@ -7006,6 +7048,7 @@ PAGES.chat = {
       const parts = [t.kind || "", t.user || "", t.ok === null ? "" : String(t.ok), t.message || "",
                      t.activity || "", t.activityTool || '', t.toolInputBytes || 0, t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
                      t.resourceProgress ? (t.resourceProgress.name || "1") : ""];
+      parts.push("team:" + JSON.stringify(t.teamRunIds || (t.teamRunId ? [t.teamRunId] : [])));
       // 会话树的分支行（‹ n/m ›）也要进指纹：这一轮跑完时先用旧树画过一版并进了缓存，
       // 随后才拉到带 families 的新树 —— 指纹不含它的话，切换行要等整页重画才出现（实测踩过）
       const famSig = (t.id && t.id !== "local") ? branchFamilyFor(t.id) : null;
@@ -7236,6 +7279,7 @@ PAGES.chat = {
           state.lastEventId = d.lastId || state.lastEventId || 0;
           state.chatTree = d.tree || null;
           state.chatTurns = turnsFromEvents(state.chatEvents);
+          window.LuminTeamPanel?.ingest(state.chatEvents, sid, {autoOpen: false});
           splitBarHide();   // 这一轮已经发出去了，"待分叉"提示可以收了
         }
       } catch (e) {
@@ -7324,6 +7368,7 @@ PAGES.chat = {
        会话栏只把高亮挪过去 —— 点一次就闪一次"加载中…"的问题就出在原来走的是整页 go()。 */
     state.chatOpenSession = async (id) => {
       state.chatSessionId = id;
+      window.LuminTeamPanel?.syncSession(id, []);
       syncChatBusy();
       state.chatEvents = [];
       state.lastEventId = 0;
@@ -7336,6 +7381,7 @@ PAGES.chat = {
         state.lastEventId = d.lastId || 0;
         state.chatTree = d.tree || null;
         state.chatTurns = turnsFromEvents(state.chatEvents);
+        window.LuminTeamPanel?.syncSession(id, state.chatEvents);
       } catch (e) {
         toast("读取会话失败：" + e.message);
       }
@@ -8300,8 +8346,7 @@ function settingsAppearance() {
     title: "小鼋龙",
     sub: "桌宠会跟随对话状态变化，可拖动到任意位置；隐藏后可在这里恢复",
   });
-  let petHidden = false;
-  try { petHidden = localStorage.getItem("lumin.mascot.hidden") === "1"; } catch (e) { /* 浏览器禁用存储时仍允许本次显示 */ }
+  const petHidden = window.LuminMascot?.isHidden() ?? true;
   const petRow = el("div", "row switch-row");
   petRow.appendChild(el("div", "grow switch-label", petHidden ? "当前已隐藏" : "当前显示在窗口右下角"));
   petRow.appendChild(btn(petHidden ? "显示小鼋龙" : "隐藏小鼋龙", "sm", () => {

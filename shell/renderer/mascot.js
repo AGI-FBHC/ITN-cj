@@ -17,6 +17,10 @@
   const ACTIVITY_STATES = new Set(["idle", "wake", "thinking", "speaking", "working", "success", "listening"]);
 
   const root = document.createElement("div");
+  // Start hidden before mounting, including when the previous launch showed it.
+  let userHidden = true;
+  root.hidden = true;
+  window.LuminMascot = { isHidden: () => userHidden };
   root.className = "lumin-mascot-root";
   root.dataset.state = "idle";
   root.innerHTML = `
@@ -149,6 +153,7 @@
   }
 
   function setHidden(hidden) {
+    userHidden = !!hidden;
     try { localStorage.setItem(HIDDEN_KEY, hidden ? "1" : "0"); } catch (e) { /* ignore */ }
     root.hidden = !!hidden || playerVisible();
     if (hidden) openMenu(false);
@@ -161,9 +166,7 @@
   }
 
   function syncVisibility() {
-    let hidden = false;
-    try { hidden = localStorage.getItem(HIDDEN_KEY) === "1"; } catch (e) { /* ignore */ }
-    root.hidden = hidden || playerVisible();
+    root.hidden = userHidden || playerVisible();
     place(position || defaultPosition());
     savePosition();
   }
@@ -267,6 +270,6 @@
   const player = document.getElementById("player");
   if (player) new MutationObserver(syncVisibility).observe(player, { attributes: true, attributeFilter: ["hidden"] });
 
-  syncVisibility();
+  setHidden(true);
   setState("idle");
 })();

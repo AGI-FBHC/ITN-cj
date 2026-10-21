@@ -1,7 +1,103 @@
 const path = require('node:path');
-const {chromium} = require('D:/Desktop/ITN/ITN/src/frontend/agent-demo/node_modules/playwright');
+const fs = require('node:fs');
+const {chromium} = require(require.resolve('playwright', {paths: [
+  path.resolve(path.dirname(process.execPath), '..'),
+  'D:/Desktop/ITN/ITN/src/frontend/agent-demo',
+]}));
 
 const root = path.resolve(__dirname, '..');
+const ui = path.resolve(process.env.TEAM_UI || path.join(root, 'shell/renderer'));
+
+async function checkReplyEntrypoints(browser, events, check) {
+  const page = await browser.newPage({viewport: {width: 1280, height: 820}});
+  page.setDefaultTimeout(5000);
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const base = [{type: 'turn/start', turnId: 'reply', payload: {kind: 'ask'}},
+    {type: 'user/message', turnId: 'reply', payload: {text: '测试协作流程'}},
+    {type: 'tool/call', turnId: 'reply', payload: {callId: 'team-tool', tool: 'research_topic_team', args: {}}}];
+  const forRun = (runId, turnId = 'reply') => events.map(e => ({...e, turnId, payload: {...e.payload, runId}}));
+  const history = [...base, ...forRun('history-run'), ...forRun('history-second'),
+    {type: 'tool/result', turnId: 'reply', payload: {callId: 'team-tool', tool: 'research_topic_team', ok: true, summary: '已完成'}},
+    {type: 'assistant/message', turnId: 'reply', payload: {text: '历史任务最终回复'}},
+    {type: 'turn/end', turnId: 'reply', payload: {ok: true}}];
+  const sessions = {live: base, history, empty: []};
+  let mockAsks = 0;
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.hostname !== 'team-panel.test') return route.abort();
+    if (url.pathname.startsWith('/api/')) {
+      const body = route.request().postDataJSON() || {};
+      let data = {};
+      if (url.pathname === '/api/settings') data = {models: [{id: 'fixture', name: 'Fixture', model: 'fixture'}], chatModelId: 'fixture', knowledgeBases: []};
+      if (url.pathname === '/api/sessions/list') data = {sessions: Object.keys(sessions).map(sessionId => ({sessionId, title: sessionId, projectId: ''}))};
+      if (url.pathname === '/api/sessions/events') data = {events: sessions[body.sessionId] || [], lastId: (sessions[body.sessionId] || []).length};
+      if (url.pathname === '/api/agent/ask-pi') {
+        mockAsks++;
+        sessions[body.sessionId] = [...base, ...forRun('fast-run'),
+          {type: 'assistant/message', turnId: 'reply', payload: {text: '轮询前即完成的测试回复'}},
+          {type: 'turn/end', turnId: 'reply', payload: {ok: true}}];
+        data = {ok: true};
+      }
+      return route.fulfill({json: {code: 0, data}});
+    }
+    const file = path.join(ui, url.pathname === '/' ? 'index.html' : path.basename(url.pathname));
+    if (!fs.existsSync(file)) return route.fulfill({status: 404, body: ''});
+    const body = fs.readFileSync(file);
+    if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: body.toString().replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')});
+    return route.fulfill({body, contentType: file.endsWith('.css') ? 'text/css' : 'application/octet-stream'});
+  });
+  await page.goto('http://team-panel.test/');
+  await page.addScriptTag({path: path.join(ui, 'app.js')});
+  await page.addScriptTag({path: path.join(ui, 'team-panel.js')});
+  await page.evaluate(async () => {
+    document.getElementById('boot')?.remove();
+    current = 'chat'; currentSection = ''; state.chatSessionId = 'live';
+    await PAGES.chat.render();
+  });
+  await page.evaluate(events => {
+    state.chatEvents = state.chatEvents.concat(events);
+    state.chatTurns = turnsFromEvents(state.chatEvents);
+    window.LuminTeamPanel.ingest(events, 'live', {autoOpen: true});
+    state.chatPaint();
+  }, forRun('live-run').slice(0, 6));
+  check('team-only live events invalidate the real reply cache and expose a reopen button', await page.locator('.team-open-btn[data-run-id="live-run"]').count() === 1);
+  await page.locator('#team-panel-close').click();
+  await page.locator('#team-panel').waitFor({state: 'hidden'});
+  await page.locator('.work-head').click();
+  await page.locator('.team-open-btn[data-run-id="live-run"]').click();
+  await page.waitForSelector('#team-panel.open');
+  await page.locator('[data-node-id="n3"] .team-node-title').click();
+  check('the live reply button reopens the running tree after toggling tool process', await page.evaluate(() => window.LuminTeamPanel.isOpen()) && await page.locator('.team-detail-title').innerText() === '定义与术语');
+  await page.locator('#team-panel-close').click();
+  await page.locator('#team-panel').waitFor({state: 'hidden'});
+  await page.locator('#panel-body .panel-item[data-id="history"]').click();
+  await page.waitForFunction(() => document.getElementById('chat-thread')?.dataset.session === 'history' && state.chatTurns.some(t => t.ok === true));
+  check('history loading stays closed and restores all runs on the corresponding reply', await page.locator('#team-panel').isHidden() && await page.locator('.team-open-btn').count() === 2 && (await page.locator('.turn-block').innerText()).includes('历史任务最终回复'));
+  await page.locator('.team-open-btn[data-run-id="history-run"]').click();
+  await page.waitForSelector('#team-panel.open');
+  await page.locator('[data-node-id="n3"] .team-node-title').click();
+  check('a history reply button restores completed child process and answer', await page.evaluate(() => window.LuminTeamPanel.isOpen()) && (await page.locator('#team-detail').innerText()).includes('MCP 负责模型与工具连接'));
+  await page.locator('#team-panel-close').click();
+  await page.locator('#team-panel').waitFor({state: 'hidden'});
+  await page.locator('.team-open-btn[data-run-id="history-second"]').click();
+  await page.waitForSelector('#team-panel.open');
+  check('multiple team tools in one reply each reopen their own run', await page.locator('.team-node').count() === 3);
+  await page.locator('#team-panel-close').click();
+  await page.locator('#team-panel').waitFor({state: 'hidden'});
+  await page.locator('#panel-body .panel-item[data-id="empty"]').click();
+  await page.waitForFunction(() => document.getElementById('chat-thread')?.dataset.session === 'empty' && state.chatTurns.length === 0);
+  check('switching to a session without teams clears old reply entries', await page.locator('.team-open-btn').count() === 0 && await page.locator('#team-panel').isHidden());
+  await page.locator('#chat-input').fill('只走内存夹具，不调用模型');
+  await page.locator('#chat-input').press('Enter');
+  await page.waitForFunction(() => !state.busyTurn && state.chatEvents.some(e => e.type === 'team/run_completed'));
+  await page.locator('.team-open-btn[data-run-id="fast-run"]').click();
+  await page.waitForSelector('#team-panel.open');
+  await page.locator('[data-node-id="n3"] .team-node-title').click();
+  check('final event fetch restores a run completed before the first poll', mockAsks === 1 && (await page.locator('#team-detail').innerText()).includes('MCP 负责模型与工具连接'));
+  check('real app integration produces no uncaught browser errors', errors.length === 0, errors.join('; '));
+  await page.close();
+}
 
 async function main() {
   const browser = await chromium.launch({channel: 'msedge', headless: true, args: ['--no-proxy-server']});
@@ -13,13 +109,13 @@ async function main() {
   };
   try {
     const page = await browser.newPage({viewport: {width: 1280, height: 820}});
-  await page.setContent(`<!doctype html><html><body>
-      <div id="team-panel-scrim" class="team-modal" hidden><section id="team-panel" class="team-panel task-modal-card" hidden>
-        <header class="team-panel-head"><div class="team-panel-title"><span class="team-panel-kicker">AGENT TREE</span><strong id="team-panel-title"></strong><span id="team-panel-meta"></span></div><button id="team-panel-close" class="team-panel-close"></button></header>
-        <div class="team-panel-body"><section class="team-tree-wrap"><div class="team-tree-head"><strong>协作树</strong><span></span></div><div class="team-tree-canvas"><svg id="team-tree-lines" class="team-tree-lines"></svg><div id="team-tree" class="team-tree"></div></div></section><section id="team-detail" class="team-detail"></section></div>
-      </section></div></body></html>`);
-    await page.addStyleTag({path: path.join(root, 'shell/renderer/team-panel.css')});
-    await page.addScriptTag({path: path.join(root, 'shell/renderer/team-panel.js')});
+    const html = fs.readFileSync(path.join(ui, 'index.html'), 'utf8');
+    const modal = html.slice(html.indexOf('<div id="team-panel-scrim"'), html.indexOf('<div id="toast"'));
+    console.log('TEAM_UI ' + ui);
+    await page.setContent('<!doctype html><html><body>' + modal + '</body></html>');
+    await page.addStyleTag({path: path.join(ui, 'style.css')});
+    await page.addStyleTag({path: path.join(ui, 'team-panel.css')});
+    await page.addScriptTag({path: path.join(ui, 'team-panel.js')});
 
     const runId = 'team-ui-check';
     const events = [
@@ -46,10 +142,35 @@ async function main() {
     check('header shows the learning team name', (await page.locator('#team-panel-title').innerText()) === '主题研究小组');
 
     await page.locator('.team-node[data-node-id="n3"]').click();
+    await page.waitForTimeout(340);
+    check('node click keeps the popup open after the close animation window', await page.locator('#team-panel').isVisible() && await page.evaluate(() => window.LuminTeamPanel.isOpen()));
     check('node click selects the node', await page.locator('.team-node[data-node-id="n3"]').getAttribute('class').then(v => v.includes('selected')));
     const detail = await page.locator('#team-detail').innerText();
     check('detail shows simplified process', detail.includes('检索与任务相关的资料') && detail.includes('分析资料并形成节点结论'));
     check('detail shows the final node answer', detail.includes('MCP 负责模型与工具连接'));
+
+    for (const selector of [
+      '[data-node-id="n2"]', '[data-node-id="n3"] .team-node-title',
+      '[data-node-id="n2"] .team-node-role', '[data-node-id="n3"] .team-node-caption',
+      '[data-node-id="n1"] .team-node-title', '[data-node-id="n3"]',
+    ]) {
+      await page.locator('.team-node' + selector).click();
+      check('real click stays open: ' + selector, await page.locator('#team-panel').isVisible() && await page.evaluate(() => window.LuminTeamPanel.isOpen()));
+    }
+    const nodeHandle = await page.locator('[data-node-id="n3"]').elementHandle();
+    const answerHandle = await page.locator('.team-answer').elementHandle();
+    await page.evaluate(({runId}) => {
+      window.LuminTeamPanel.ingest([{type: 'team/node_stage', payload: {runId, nodeId: 'n2', label: '新的运行事件'}}], 's1', {autoOpen: true});
+    }, {runId});
+    check('live events preserve the selected child, its DOM and keyboard focus', await nodeHandle.evaluate(n => n.isConnected && n.classList.contains('selected') && document.activeElement === n));
+    check('other-node events preserve the answer being read', await answerHandle.evaluate(n => n.isConnected && n.textContent.includes('MCP 负责模型与工具连接')));
+    await page.evaluate(({runId, events}) => window.LuminTeamPanel.syncSession('s1', events), {runId, events});
+    check('same-session refresh keeps the popup and selected child open', await page.evaluate(() => window.LuminTeamPanel.isOpen()) && await nodeHandle.evaluate(n => n.isConnected && n.classList.contains('selected')));
+    await page.evaluate(() => window.LuminTeamPanel.ingest([{type: 'team/run_started', payload: {runId: 'other-run', tool: 'plan_study_team', goal: '另一个任务'}}], 's1', {autoOpen: true}));
+    check('a new run does not replace the tree being inspected', await page.locator('#team-panel-title').innerText() === '主题研究小组' && await nodeHandle.evaluate(n => n.isConnected && n.classList.contains('selected')));
+
+    const popup = await page.locator('#team-panel').boundingBox();
+    check('Agent Tree uses the original centered popup', popup.width > 900 && popup.x > 20 && Math.abs(popup.x + popup.width / 2 - 640) < 2);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     check('popup does not create page horizontal overflow', overflow <= 1);
@@ -58,9 +179,27 @@ async function main() {
       return {visible: !!node.offsetParent, width: rect.width, height: rect.height, top: rect.top, left: rect.left};
     });
     check('close button stays visible in the popup header', closeState.visible && closeState.width > 20 && closeState.height > 20, JSON.stringify(closeState));
-    await page.evaluate(() => document.querySelector('#team-panel-close').click());
+    await page.locator('#team-panel-close').click();
     await page.waitForTimeout(340);
     check('close button hides the panel', await page.locator('#team-panel').isHidden());
+    await page.evaluate(({runId}) => window.LuminTeamPanel.ingest([{type: 'team/node_stage', payload: {runId, nodeId: 'n2', label: '关闭后继续执行'}}], 's1', {autoOpen: true}), {runId});
+    check('events keep running without reopening a dismissed popup', await page.locator('#team-panel').isHidden());
+    await page.evaluate(runId => window.LuminTeamPanel.open(runId), runId);
+    await page.waitForSelector('#team-panel.open');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(340);
+    check('Escape dismisses the popup', await page.locator('#team-panel').isHidden());
+    await page.evaluate(runId => window.LuminTeamPanel.open(runId), runId);
+    await page.waitForSelector('#team-panel.open');
+    await page.locator('#team-panel-scrim').click({position: {x: 4, y: 4}});
+    await page.waitForTimeout(340);
+    check('only an actual backdrop click dismisses the popup', await page.locator('#team-panel').isHidden());
+    // Closing in the same frame as opening must cancel the queued show callback.
+    await page.evaluate(runId => { window.LuminTeamPanel.open(runId); window.LuminTeamPanel.close(); }, runId);
+    await page.waitForTimeout(340);
+    check('immediate close cancels a queued open frame', await page.locator('#team-panel').isHidden() && !await page.evaluate(() => window.LuminTeamPanel.isOpen()));
+
+    await checkReplyEntrypoints(browser, events, check);
     console.log('RESULT ' + passed + ' passed');
   } finally {
     await browser.close();

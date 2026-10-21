@@ -1,4 +1,4 @@
-/* 学习型多智能体协作树的右侧面板。
+/* 学习型多智能体协作树弹窗。
  * 只消费 team/* 事件，不修改对话状态。 */
 (() => {
   const panel = document.getElementById("team-panel");
@@ -9,7 +9,6 @@
   const title = document.getElementById("team-panel-title");
   const meta = document.getElementById("team-panel-meta");
   const closeBtn = document.getElementById("team-panel-close");
-  const collapseBtn = document.getElementById("team-panel-collapse");
   if (!panel || !scrim || !tree || !lines || !detail) return;
 
   const runs = new Map();
@@ -17,6 +16,11 @@
   let activeRunId = "";
   let selectedNodeId = "";
   let visible = false;
+  let showFrame = 0;
+  let renderedRunId = "";
+  let detailKey = "";
+  let detailHtml = "";
+  const nodeButtons = new Map();
   const dismissed = new Set();
 
   const toolNames = {
@@ -106,7 +110,7 @@
         run.goal = String(payload.goal || "");
         run.status = "running";
         run.startedAt = Date.now();
-        if (options.autoOpen && !dismissed.has(run.runId)) openRunId = run.runId;
+        if (options.autoOpen && !visible && !dismissed.has(run.runId)) openRunId = run.runId;
       } else if (type === "team/node_created") {
         nodeFor(run, payload);
       } else if (type === "team/node_started") {
@@ -151,6 +155,11 @@
   }
 
   function syncSession(nextSessionId, events) {
+    if (nextSessionId && String(nextSessionId) === sessionId) {
+      ingest(events, sessionId, {autoOpen: false});
+      return;
+    }
+    hide();
     sessionId = String(nextSessionId || "");
     runs.clear();
     activeRunId = "";
@@ -169,12 +178,16 @@
     title.textContent = toolNames[run.tool] || "多智能体协作";
     const done = Array.from(run.nodes.values()).filter((n) => n.status === "completed").length;
     meta.textContent = `${run.goal || "学习任务"} · ${done}/${run.nodes.size} 节点`;
-    renderTree(run);
     renderDetail(run);
+    renderTree(run);
   }
 
   function renderTree(run) {
-    tree.innerHTML = "";
+    if (renderedRunId !== run.runId) {
+      tree.innerHTML = "";
+      nodeButtons.clear();
+      renderedRunId = run.runId;
+    }
     lines.innerHTML = "";
     if (!run.nodes.size) {
       tree.innerHTML = `<div class="team-detail-empty">协作树正在规划</div>`;
@@ -250,24 +263,36 @@
     Array.from(run.nodes.values()).forEach((node) => {
       const position = positions.get(node.id);
       if (!position) return;
-      const button = document.createElement("button");
-      button.type = "button";
+      let entry = nodeButtons.get(node.id);
+      if (!entry) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.nodeId = node.id;
+        button.addEventListener("click", () => {
+          selectedNodeId = node.id;
+          render();
+        });
+        entry = {button, html: ""};
+        nodeButtons.set(node.id, entry);
+        if (tree.querySelector(".team-detail-empty")) tree.innerHTML = "";
+        tree.appendChild(button);
+      }
+      const {button} = entry;
       button.className = `team-node status-${node.status}${node.id === selectedNodeId ? " selected" : ""}${node.depth === 0 ? " root" : ""}`;
-      button.dataset.nodeId = node.id;
+      button.setAttribute("aria-pressed", String(node.id === selectedNodeId));
       button.style.left = position.x + "px";
       button.style.top = position.y + "px";
       button.style.width = nodeWidth + "px";
       button.style.height = nodeHeight + "px";
-      button.innerHTML =
+      const html =
         `<span class="team-node-top"><span class="team-node-role">${escapeHtml(node.role)}</span>` +
         `<span class="team-node-state">${escapeHtml(statusNames[node.status] || node.status)}</span></span>` +
         `<span class="team-node-title">${escapeHtml(node.title)}</span>` +
         `<span class="team-node-caption">${escapeHtml(node.status === "running" ? (node.stage || "正在执行") : (node.objective || "等待执行"))}</span>`;
-      button.addEventListener("click", () => {
-        selectedNodeId = node.id;
-        render();
-      });
-      tree.appendChild(button);
+      if (entry.html !== html) {
+        button.innerHTML = html;
+        entry.html = html;
+      }
     });
   }
 
@@ -278,6 +303,8 @@
     const node = run.nodes.get(selectedNodeId);
     if (!node) {
       detail.innerHTML = `<div class="team-detail-empty">点击左侧节点查看执行过程</div>`;
+      detailKey = "";
+      detailHtml = "";
       return;
     }
     const steps = node.process || [];
@@ -292,27 +319,37 @@
     if (node.answer) answer = `<div class="team-answer">${renderMarkdown(node.answer)}</div>`;
     else if (node.error) answer = `<div class="team-answer-empty">${escapeHtml(node.error)}</div>`;
     else answer = `<div class="team-answer-empty">${node.status === "running" ? "正在生成节点回答…" : "尚未产生最终回答"}</div>`;
-    detail.innerHTML =
+    const html =
       `<div class="team-detail-head"><div><h3 class="team-detail-title">${escapeHtml(node.title)}</h3>` +
       `<div class="team-detail-role">${escapeHtml(node.role)} · 深度 ${node.depth}</div></div>` +
       `<span class="team-detail-status">${escapeHtml(statusNames[node.status] || node.status)}${node.elapsedMs ? " · " + duration(node.elapsedMs) : ""}</span></div>` +
       `<p class="team-detail-objective">${escapeHtml(node.objective)}</p>` +
       `<div class="team-section-label">执行流程</div><div class="team-steps">${processHtml}</div>` +
       `<div class="team-section-label">最终回答</div>${answer}`;
+    const key = run.runId + ":" + node.id;
+    if (detailKey !== key || detailHtml !== html) {
+      const scrollTop = detailKey === key ? detail.scrollTop : 0;
+      detail.innerHTML = html;
+      detail.scrollTop = scrollTop;
+      detailKey = key;
+      detailHtml = html;
+    }
   }
 
   function show() {
     if (!activeRunId) return;
     panel.hidden = false;
     scrim.hidden = false;
-    requestAnimationFrame(() => {
+    visible = true;
+    cancelAnimationFrame(showFrame);
+    showFrame = requestAnimationFrame(() => {
       panel.classList.add("open");
       scrim.classList.add("open");
-      visible = true;
     });
   }
 
   function hide() {
+    cancelAnimationFrame(showFrame);
     if (!visible) {
       panel.hidden = true;
       scrim.hidden = true;
@@ -331,6 +368,7 @@
 
   function openRun(runId) {
     if (!runs.has(runId)) return;
+    if (activeRunId !== runId) selectedNodeId = "";
     activeRunId = runId;
     selectedNodeId = selectedNodeId || "";
     render();
@@ -341,10 +379,9 @@
     if (activeRunId) dismissed.add(activeRunId);
     hide();
   });
-  collapseBtn?.addEventListener("click", () => {
-    panel.classList.toggle("collapsed");
-  });
-  scrim?.addEventListener("click", () => {
+  scrim?.addEventListener("click", (event) => {
+    // The dialog is a child of the scrim; only clicks on the backdrop dismiss it.
+    if (event.target !== scrim) return;
     if (activeRunId) dismissed.add(activeRunId);
     hide();
   });

@@ -18,10 +18,8 @@ foreach($asset in $manifest.assets.PSObject.Properties){
 }
 $build=Join-Path $repo ('tmp\installer-build-'+(Get-Date -Format yyyyMMdd-HHmmss))
 New-Item -ItemType Directory -Force -Path $build | Out-Null
-$icon=Join-Path $build 'lumin.ico'
-$runtime='C:\Users\GeJie\.cache\codex-runtimes\codex-primary-runtime\dependencies'
-& "$runtime\node\bin\node.exe" "$repo\tools\make-installer-icon.cjs" "$repo\shell\assets\logo.png" $icon "$runtime\node\node_modules"
-if($LASTEXITCODE -ne 0){throw 'Icon generation failed'}
+$icon=Join-Path $repo 'shell/assets/lumin.ico'
+if(!(Test-Path -LiteralPath $icon)){throw 'Lumin Windows icon is missing'}
 $files=@(Get-ChildItem -LiteralPath $AppDir -File -Recurse)
 $dirs=@(Get-ChildItem -LiteralPath $AppDir -Directory -Recurse|Sort-Object {$_.FullName.Length} -Descending)
 $lines=@($files|ForEach-Object {'Delete "$INSTDIR\'+$_.FullName.Substring($AppDir.Length+1).Replace('$','$$')+'"'})

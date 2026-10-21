@@ -5123,3 +5123,15 @@ read_chunk 读得到原文并带回库标识与正文。
 - 回归：`chat-ux-check` 18/18；协作树弹窗/多级树 16/16；核心 `cjpm test` 176/176；活跃度 `growth-activity-check` 21/21。
 - 最终本地包：`dist/Lumin-0.8.30-final.zip`，231,287,029 bytes，SHA256=7FA6862151A9A41F4DA0C5BA5A4D62B2F0C59D34F29359312A7F0DEA6085649B；未发布线上。
 - 后续收口：Agent Tree 改为右侧可折叠抽屉，关闭后可由回复中的“打开协作流程”重开；连线建议增加分析中禁用态；工作区首条会话的临时列表行继承 projectId，修复落入普通会话的问题。版本更新为 0.8.31，本地包 `dist/Lumin-0.8.31.zip`。
+
+## 2026-10-22 04:55 · 0.8.31 图标、桌宠默认隐藏、协作弹窗与切页竞态修复
+
+- 用户本轮先要求把 EXE 的 Electron 标志换成 Lumin 项目标志，随后追加：小鼋龙每次启动默认隐藏；Agent Tree 恢复弹窗，修复点击节点误关闭且无法重开；左侧切页时旧组件延迟/滞留在新页的问题。保留前轮版本 0.8.31、ZIP 文件名不加后缀，仅做本地迭代打包，不发布、不推送、不恢复定时任务。
+- 实际业务仓库仍为 D:/Desktop/ITN/ITN-Desktop；当前聊天 bf21/ITN 是另一个工作树，未在该工作树写业务。先读取根 AGENTS.md、TRACE 尾部、上一轮提交 9a2afe8、打包流程与正在运行的进程。旧 dist/Lumin-0.8.31 的用户实例正在运行（主进程 PID 152796），保留进程及目录，旧 ZIP 已备份到 tmp/before-icon-0.8.31/Lumin-0.8.31.zip（231287472 bytes）。新解压目录使用 dist/portable/Lumin-0.8.31，ZIP 仍输出 dist/Lumin-0.8.31.zip。
+- EXE 根因：窗口/托盘已使用 assets/logo.png，但 package-app 仅把 electron.exe 改名，未改 PE 内嵌资源。旧包运行 app-icon 检查实际失败（4 个原图标 vs 项目 ICO 的 6 个尺寸）。由现有 logo.png 生成 shell/assets/lumin.ico（16/32/48/64/128/256），不重画或替换项目图形。新增 tools/app-icon.cjs，构建时用锁定的开发依赖 resedit 3.1.0 写所有图标组及 Lumin 产品名/版本/文件名，再读回 PE 验证每幅图标实际字节和版本。resedit 不进入生产依赖。曾试装的 rcedit 5.0.0 包缺 JS 实现且已弃用，已卸载，无残余提交。未增加 Python 或非仓颉业务内核。
+- 打包脚本在压缩前嵌入/校验图标，release.json 新增 EXE、ICO、源 PNG 哈希。安装器复用同一 ICO，去掉原先依赖某个用户本机受管运行时生成安装图标的硬编码。临时 EXE 的 Windows 文件属性显示 Lumin/0.8.31.0；使用 Windows ExtractAssociatedIcon 真实提取并目视核对项目金色 Logo，输出 tmp/app-icon-probe/windows-exe-icon.png。与原 Electron 比对，14 个非资源 PE 节 SHA256 全相同。
+- 小鼋龙：DOM 挂载前即 hidden；每次启动重新设为隐藏，即使上次选择显示。本次启动的显示选择用内存状态控制，设置页读取真实选择；课件/全屏结束遵循本次选择，位置仍保留。tools/mascot-motion-check.cjs 实际使用独立仓颉内核、临时库及 Edge，33/33：新启动、显示后重载、后台任务不唤出、设置恢复、四角边界、窗口缩放、课件隐藏恢复、9.6 秒浮动、约521ms动作间隔和无页面异常。更新旧 mascot-tts 回归的初始可见性预期，未冒充本轮跑过整套 TTS 或真实模型。
+- 协作树任务并行交给子 agent Hubble，本轮使用 UI/UX Pro Max 的浮层/关闭路径准则。真实复现点击节点冒泡到遮罩，无条件 hide；修复为只有背景自身点击才关闭。恢复居中弹窗并移除抽屉按钮；复用节点 DOM、保留选择和焦点，别的节点事件不重建当前回答，取消尚未执行的显示动画避免关后重开。回复缓存指纹纳入所有 run ID、每个 run 各有“打开协作流程”入口，兼容旧单 run 字段；历史加载/快速完成后的最终补取同步树，关闭不取消任务、不被同任务事件强行重弹。源码 Edge 回归 team-panel-check 34/34，覆盖真实节点及文本点击、过程折叠后从回复重开、运行事件、历史/多run、快于首次轮询完成等。全部使用内存网络夹具，非付费模型测试。
+- 切页任务并行交给子 agent Faraday，发现侧栏在 await 后才记录导航代次，聊天/课程等异步渲染缺少返回检查，body 弹层不归页面清理。app.js/workbench.js/coursemap.js 加导航代次和资源加载令牌检查；切页清理旧弹层/预览/视图轮询、暂停媒体并移除旧 iframe，不取消后台会话或内核任务。tools/route-lifecycle-check.cjs 用真实 Edge、独立仓颉夹具与可控延迟 HTTP，在原代码复现 5 项失败（12/17），修复后17/17；生成和对话离页继续完成、回来可见，连续左栏切页和浏览器前后退均通过。基线 C:/Users/GeJie/AppData/Local/Temp/lumin-route-RdBsbg/result.json；修后 lumin-route-VPoHlN/result.json。
+- 先更新 docs/02-接口契约.md 中显示/导航生命周期约定，本轮没有改变内核 API 或 Lumin 工具语义，因此不新增无业务意义的工具。未访问真实用户数据库、未打印密钥、未修改 Web 项目。核心仓颉无变更，未重跑176项核心测试，不沿用旧结果冒充本轮。
+- 已检查 JavaScript 及 PowerShell 脚本语法和 git diff --check；未跟踪的 .taste-skill 与两份用户原有调研文档继续排除。下一步按本提交构建新包，复测包内而不是只测源码，并追加实际包大小/哈希、启动和包内回归结果。
