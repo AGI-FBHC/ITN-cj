@@ -94,6 +94,34 @@ func kbTitleFromFile(fileName: String): String {
     if (trimmed.size == 0) { fileName } else { trimmed }
 }
 
+func kbBundleTitleValid(value: String): Bool {
+    let title = value.trimAscii()
+    if (title.size == 0 || charCount(title) > 160) { return false }
+    for (byte in title.toArray()) {
+        let code = Int64(byte)
+        if (code < 32 || code == 127) { return false }
+    }
+    true
+}
+
+/** Rename the bundle and its published/learning course as one operation. */
+func kbRenameBundle(cfg: Config, bundleId: String, title: String): Bool {
+    let rows = query(cfg, "SELECT COALESCE(course_id,'') course_id FROM kb_bundles WHERE id=" +
+        sqlQuote(bundleId) + " LIMIT 1")
+    if (rows.size == 0) { return false }
+    let clean = title.trimAscii()
+    let statements = ArrayList<String>()
+    statements.add("UPDATE kb_bundles SET title=" + sqlQuote(clean) +
+        ",updated_at=NOW(6) WHERE id=" + sqlQuote(bundleId))
+    if (rows[0].text("course_id").size > 0) {
+        statements.add("UPDATE courses SET name=" + sqlQuote(clean) +
+            ",updated_at=NOW(6) WHERE id=" + sqlQuote(rows[0].text("course_id")))
+    }
+    transaction(cfg, statements.toArray())
+    kbBumpVersion()
+    true
+}
+
 /** 收集 out/ 下整理好的 Markdown，按文件名顺序作为章节顺序。 */
 func kbCollectResult(workspace: KbWorkspace): ArrayList<KbBundleDoc> {
     let outDir = workspace.root + "/out"

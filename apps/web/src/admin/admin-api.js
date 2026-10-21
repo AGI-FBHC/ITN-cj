@@ -120,6 +120,7 @@ export const adminApi = {
     return result;
   },
   kbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}?metadata=1`),
+  renameKbBundle: (id, title) => request(`/kb/bundles/${encodeURIComponent(id)}/title`, { method: 'PUT', body: { title } }),
   kbBundleSources: async (id) => {
     const token = adminToken();
     const scope = await previewScope();

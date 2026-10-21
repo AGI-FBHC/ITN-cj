@@ -10,6 +10,9 @@ export default function AdminBundles({ onNeedModel }) {
   const [uploading, setUploading] = React.useState('');
   const [error, setError] = React.useState('');
   const [message, setMessage] = React.useState('');
+  const [editingId, setEditingId] = React.useState('');
+  const [titleDraft, setTitleDraft] = React.useState('');
+  const [savingTitleId, setSavingTitleId] = React.useState('');
   const bundles = state.data?.bundles || [];
   useProcessingPoll(state, bundles.some(bundleBusy));
 
@@ -31,6 +34,40 @@ export default function AdminBundles({ onNeedModel }) {
       if (failure.message.includes('对话模型') && onNeedModel) onNeedModel();
     } finally {
       setUploading('');
+    }
+  }
+
+  function beginRename(bundle) {
+    setError('');
+    setMessage('');
+    setEditingId(bundle.id);
+    setTitleDraft(bundle.title || bundle.name || '');
+  }
+
+  async function saveTitle(event, bundle) {
+    event.preventDefault();
+    const title = titleDraft.trim();
+    if (!title) {
+      setError('课件名称不能为空。');
+      return;
+    }
+    if (Array.from(title).length > 160) {
+      setError('课件名称不能超过 160 个字符。');
+      return;
+    }
+    setSavingTitleId(bundle.id);
+    setError('');
+    setMessage('');
+    try {
+      await adminApi.renameKbBundle(bundle.id, title);
+      setEditingId('');
+      setTitleDraft('');
+      setMessage(`课件名称已更新为“${title}”，学员端课程名称已同步。`);
+      state.reload();
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      setSavingTitleId('');
     }
   }
 
@@ -82,8 +119,37 @@ export default function AdminBundles({ onNeedModel }) {
                   <td>
                     <div className="zx-bundle-name">
                       <BundleLogo bundle={bundle} />
-                      <div>
-                        <div className="zx-cell-title">{bundle.title || bundle.name}</div>
+                      <div className="zx-bundle-title-area">
+                        {editingId === bundle.id ? (
+                          <form className="zx-bundle-title-form" onSubmit={(event) => saveTitle(event, bundle)}>
+                            <input
+                              autoFocus
+                              maxLength={160}
+                              value={titleDraft}
+                              onChange={(event) => setTitleDraft(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                  event.preventDefault();
+                                  setEditingId('');
+                                  setTitleDraft('');
+                                }
+                              }}
+                              aria-label="课件名称"
+                              disabled={savingTitleId === bundle.id}
+                            />
+                            <button type="submit" className="zx-btn zx-btn-sm zx-btn-primary" disabled={savingTitleId === bundle.id}>
+                              {savingTitleId === bundle.id ? '保存中…' : '保存'}
+                            </button>
+                            <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={savingTitleId === bundle.id} onClick={() => { setEditingId(''); setTitleDraft(''); }}>
+                              取消
+                            </button>
+                          </form>
+                        ) : (
+                          <button type="button" className="zx-bundle-title-edit" onClick={() => beginRename(bundle)} title="修改课件名称">
+                            <span className="zx-cell-title">{bundle.title || bundle.name}</span>
+                            <span>修改名称</span>
+                          </button>
+                        )}
                         <div className="zx-cell-sub">
                           {bundle.name} · {Math.round(bundle.bytes / 1024)} KB
                           {bundle.errorMessage ? ` · ${bundle.errorMessage}` : ''}

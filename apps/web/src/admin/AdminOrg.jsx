@@ -301,35 +301,51 @@ export default function AdminOrg() {
     </section>
 
     {state.error ? <ErrorBlock message={state.error} onRetry={state.reload} /> : !org || !form || form.orgId !== org.id ? <Loading label="正在读取机构信息…" /> : <>
-      <form className="zx-card" onSubmit={save}>
-        <h2 className="zx-card-title">基础信息与邀请码</h2>
+      <form className="zx-card zx-org-basic-card" onSubmit={save}>
+        <div className="zx-org-section-heading">
+          <div>
+            <h2 className="zx-card-title">基础信息</h2>
+            <p>机构名称、品牌入口和注册邀请码统一在这里维护。</p>
+          </div>
+        </div>
+
         <div className="zx-form">
           <div className="zx-field"><label htmlFor="org-name">机构全称</label><input id="org-name" required value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.target.value })} /></div>
           <div className="zx-field"><label htmlFor="org-short">机构简称</label><input id="org-short" required value={form.shortName} maxLength={64} onChange={(event) => setForm({ ...form, shortName: event.target.value })} /></div>
-          <div className="zx-field zx-field-full"><label htmlFor="org-invite">注册邀请码</label><input id="org-invite" required minLength={6} pattern="[A-Za-z0-9_-]{6,64}" autoComplete="off" autoCapitalize="characters" spellCheck={false} value={form.inviteCode} maxLength={64} onChange={(event) => setForm({ ...form, inviteCode: event.target.value })} /><small>6–64 位字母、数字、短横线或下划线。新用户凭此码加入机构；已有账号无须填写。</small></div>
+          <div className="zx-field zx-field-full">
+            <label htmlFor="org-website">机构官网</label>
+            <input id="org-website" type="url" inputMode="url" maxLength={512} placeholder="https://www.example.edu.cn" value={form.websiteUrl} onChange={(event) => setForm({ ...form, websiteUrl: event.target.value })} />
+            <small>可留空；仅支持 http:// 或 https:// 地址。用户端机构 Logo 和简称标签将链接到此地址。</small>
+          </div>
         </div>
-        <div className="zx-org-invite-saved"><span>已保存邀请码：</span><code>{org.inviteCode || '尚未设置'}</code><button type="button" className="zx-btn zx-btn-ghost" disabled={Boolean(busy) || !org.inviteCode} onClick={copyInvite}>复制邀请码</button></div>
+
+        <div className="zx-org-basic-block">
+          <div className="zx-org-basic-block-head">
+            <div><h3>机构 Logo</h3><p>学员端显示所属机构 Logo，管理端仍使用系统 Logo。</p></div>
+          </div>
+          <div className="zx-org-logo">
+            <div className="zx-org-logo-box">{org.logoUrl ? <img key={org.logoUrl} src={org.logoUrl} alt={org.shortName} /> : <span>还没有设置</span>}</div>
+            <div className="zx-org-logo-actions">
+              <label className={`zx-btn zx-btn-primary${busy ? ' zx-org-upload-busy' : ''}`}>
+                {busy === 'logo' ? '上传中…' : '上传 Logo'}
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" className="zx-org-file" disabled={Boolean(busy)} onChange={(event) => { upload(event.target.files?.[0]); event.target.value = ''; }} />
+              </label>
+              {org.logoUrl && <button type="button" className="zx-btn zx-btn-danger" disabled={Boolean(busy)} onClick={removeLogo}>移除</button>}
+              <small>支持 PNG / JPEG / WebP / GIF / SVG，不超过 4MB。</small>
+            </div>
+          </div>
+        </div>
+
+        <div className="zx-org-basic-block">
+          <div className="zx-field zx-field-full">
+            <label htmlFor="org-invite">注册邀请码</label>
+            <input id="org-invite" required minLength={6} pattern="[A-Za-z0-9_-]{6,64}" autoComplete="off" autoCapitalize="characters" spellCheck={false} value={form.inviteCode} maxLength={64} onChange={(event) => setForm({ ...form, inviteCode: event.target.value })} />
+            <small>6–64 位字母、数字、短横线或下划线。新用户凭此码加入机构；已有账号无须填写。</small>
+          </div>
+          <div className="zx-org-invite-saved"><span>已保存邀请码：</span><code>{org.inviteCode || '尚未设置'}</code><button type="button" className="zx-btn zx-btn-ghost" disabled={Boolean(busy) || !org.inviteCode} onClick={copyInvite}>复制邀请码</button></div>
+        </div>
+
         <div className="zx-org-save-row"><button type="submit" className="zx-btn zx-btn-primary" disabled={Boolean(busy) || !form.name.trim() || !form.shortName.trim() || !form.inviteCode.trim()}>{busy === 'save' ? '保存中…' : '保存基础信息'}</button></div>
-      </form>
-
-      <section className="zx-card">
-        <h2 className="zx-card-title">机构 Logo</h2>
-        <div className="zx-org-logo"><div className="zx-org-logo-box">{org.logoUrl ? <img key={org.logoUrl} src={org.logoUrl} alt={org.shortName} /> : <span>还没有设置</span>}</div><div className="zx-org-logo-actions"><label className={`zx-btn zx-btn-primary${busy ? ' zx-org-upload-busy' : ''}`}>
-          {busy === 'logo' ? '上传中…' : '上传 Logo'}
-          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" className="zx-org-file" disabled={Boolean(busy)} onChange={(event) => { upload(event.target.files?.[0]); event.target.value = ''; }} />
-        </label>{org.logoUrl && <button type="button" className="zx-btn zx-btn-danger" disabled={Boolean(busy)} onClick={removeLogo}>移除</button>}<small>支持 PNG / JPEG / WebP / GIF / SVG，不超过 4MB。学员登录后使用所属机构的 Logo。</small></div></div>
-      </section>
-
-      <form className="zx-card zx-org-website-card" onSubmit={save}>
-        <div className="zx-org-section-heading">
-          <div><h2 className="zx-card-title">机构官网</h2><p>用于机构品牌展示与后续官网入口，可留空。</p></div>
-        </div>
-        <div className="zx-field">
-          <label htmlFor="org-website">官网链接</label>
-          <input id="org-website" type="url" inputMode="url" maxLength={512} placeholder="https://www.example.edu.cn" value={form.websiteUrl} onChange={(event) => setForm({ ...form, websiteUrl: event.target.value })} />
-          <small>仅支持 http:// 或 https:// 地址；保存基础信息时一并提交，最长 512 个字符。</small>
-        </div>
-        <div className="zx-org-save-row"><button type="submit" className="zx-btn zx-btn-primary" disabled={Boolean(busy)}>{busy === 'save' ? '保存中…' : '保存基础信息'}</button></div>
       </form>
 
       <section className="zx-card zx-onboarding-card">

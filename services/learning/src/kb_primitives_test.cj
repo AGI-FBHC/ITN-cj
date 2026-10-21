@@ -342,4 +342,14 @@ class KbPrimitiveTests {
             root + "<circle r=\"1\" style=\"fill:red\"/></svg>"
         ]) { kbPrimitiveRejects({ => let _value = kbValidateLogoSvg(invalidSvg) }) }
     }
+
+    @TestCase
+    func bundleRenameTitleIsSafeAndBounded(): Unit {
+        kbPrimitiveCheck(kbBundleTitleValid("计算机网络资料包说明"), "A normal Chinese course title was rejected")
+        kbPrimitiveCheck(kbBundleTitleValid("Hello-Agents《从零开始构建智能体》"), "A mixed course title was rejected")
+        kbPrimitiveCheck(!kbBundleTitleValid(""), "Empty bundle title must be rejected")
+        kbPrimitiveCheck(!kbBundleTitleValid("   "), "Whitespace-only bundle title must be rejected")
+        kbPrimitiveCheck(!kbBundleTitleValid("bad\nname"), "Control characters must be rejected")
+        kbPrimitiveCheck(!kbBundleTitleValid(kbPrimitiveRepeated("长", 161)), "Bundle title must be bounded")
+    }
 }

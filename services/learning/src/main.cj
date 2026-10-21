@@ -2932,6 +2932,28 @@ main(): Int64 {
         }
     }
 
+    app.mapPut("api/admin/kb/bundles/{bundle_id}/title") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "课件名称格式不正确")
+                    case Some(body) =>
+                        let title = (jsonGetString(body, "title") ?? "").trimAscii()
+                        if (!kbBundleTitleValid(title)) {
+                            writeError(ctx.response, 400, "课件名称需要 1–160 个字符，且不能包含控制字符")
+                        } else if (!kbRenameBundle(cfg, routeText(ctx, "bundle_id"), title)) {
+                            writeError(ctx.response, 404, "没有找到这个资料包")
+                        } else {
+                            match (kbBundleDetailBody(cfg, routeText(ctx, "bundle_id"), false)) {
+                                case Some(result) => writeJson(ctx.response, 200, result)
+                                case None => writeError(ctx.response, 404, "没有找到这个资料包")
+                            }
+                        }
+                }
+        }
+    }
+
     app.mapGet("api/admin/kb/bundles/{bundle_id}/docs/{doc_id}") { ctx =>
         match (adminUserId(ctx, cfg)) {
             case None => ()

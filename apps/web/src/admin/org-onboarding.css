@@ -24,6 +24,38 @@
   margin-top: 16px;
 }
 
+.zx-org-basic-card .zx-form {
+  margin-top: 16px;
+}
+
+.zx-org-basic-block {
+  margin-top: 18px;
+  border-top: 1px solid var(--zx-line);
+  padding-top: 16px;
+}
+
+.zx-org-basic-block-head h3 {
+  margin: 0;
+  color: #2f293b;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.zx-org-basic-block-head p {
+  margin: 5px 0 0;
+  color: var(--zx-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.zx-org-basic-block .zx-org-logo {
+  margin-top: 12px;
+}
+
+.zx-org-basic-block .zx-org-invite-saved {
+  margin-top: 12px;
+}
+
 .zx-onboarding-card {
   overflow: visible;
 }
