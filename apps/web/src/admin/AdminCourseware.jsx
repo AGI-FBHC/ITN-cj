@@ -279,6 +279,8 @@ export default function AdminCourseware() {
   const [picked, setPicked] = React.useState([]);
   const [publishDocId, setPublishDocId] = React.useState('');
   const [order, setOrder] = React.useState(1);
+  const [orderSlotCount, setOrderSlotCount] = React.useState(18);
+  const [submittingGeneration, setSubmittingGeneration] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -327,6 +329,7 @@ export default function AdminCourseware() {
   const activeChapter = chapters.find((item) => item.id === activeDocId) || null;
   const activeLive = activeDocId ? liveByDoc.get(activeDocId) : null;
   const items = listState.data?.items || [];
+  const generationResources = resourceByKind(items.filter((item) => item.docId === doc?.id));
   const sourceGroups = React.useMemo(() => {
     const bundlesById = new Map();
     for (const item of items) {
@@ -561,25 +564,33 @@ export default function AdminCourseware() {
   }
 
   async function generate() {
-    if (picked.length === 0 || !doc) return;
-    setShowPicker(false);
+    if (picked.length === 0 || !doc || submittingGeneration) return;
+    const replaced = picked.filter((kind) => generationResources[kind]);
+    if (replaced.length && !window.confirm(`重新生成「${replaced.map((kind) => TYPE_LABEL[kind]).join('、')}」？\n\n确认后将立即下架这些资源并清空对应的学员学习、测验和书签记录。其他资源及章节的记录保留。\n\n生成完成后需要重新发布，学员才能继续使用。`)) return;
+    setSubmittingGeneration(true);
     setError('');
     try {
       await adminApi.cwGenerate({
         bundleId,
         docId: doc.id,
         kinds: picked,
+        replaceExisting: replaced.length > 0,
+        expectedGenerations: Object.fromEntries(replaced.map((kind) => [kind, generationResources[kind].generation || 1])),
         options: {
           ...generationOptions,
           note: generationOptions.note.trim(),
         },
       });
+      setShowPicker(false);
       setMessage(`已提交 ${picked.length} 份课件，使用了当前生成设置。`);
       setPicked([]);
       setGenerationOptions({ ...DEFAULT_GENERATION_OPTIONS });
-      listState.reload();
+      reloadAll();
     } catch (failure) {
       setError(failure.message);
+      listState.reload();
+    } finally {
+      setSubmittingGeneration(false);
     }
   }
 
@@ -629,6 +640,7 @@ export default function AdminCourseware() {
     const live = liveByDoc.get(docId);
     setPublishDocId(docId);
     setOrder(live ? live.orderNo : nextFree);
+    setOrderSlotCount(Math.max(18, nextFree, ...liveChapters.map((chapter) => chapter.orderNo || 0)));
     setError('');
     setMessage('');
   }
@@ -662,7 +674,7 @@ export default function AdminCourseware() {
   const publishResources = resourceByKind(items.filter((item) => item.docId === publishDocId));
   const publishedCount = RESOURCES.filter((resource) => publishResources[resource.key]?.published).length;
   const orderTaken = liveChapters.find((item) => item.orderNo === order && item.docId !== publishDocId);
-  const orderSlots = Math.max(12, liveChapters.length + 6);
+  const orderSlots = Math.max(18, orderSlotCount, order, ...liveChapters.map((chapter) => chapter.orderNo || 0));
 
   return (
     <div className="zx-admin-page">
@@ -1039,6 +1051,8 @@ export default function AdminCourseware() {
               <div className="zx-cw-picker">
                 {RESOURCES.map((item) => {
                   const active = picked.includes(item.key);
+                  const existing = generationResources[item.key];
+                  const working = existing && ['queued', 'generating'].includes(existing.status);
                   return (
                     <button
                       key={item.key}
@@ -1046,10 +1060,12 @@ export default function AdminCourseware() {
                       className={`zx-cw-resource ${active ? 'picked' : ''}`}
                       onClick={() => togglePick(item.key)}
                       aria-pressed={active}
+                      disabled={Boolean(working) || submittingGeneration}
                     >
                       <span className="zx-cw-resource-badge">{item.badge}</span>
                       <span className="zx-cw-resource-main">
                         <strong>{item.label}</strong>
+                        {existing ? <em className={`zx-cw-existing-resource${existing.published ? ' is-live' : ''}`}>{working ? '生成任务进行中' : existing.published ? '已发布 · 可重新生成' : existing.status === 'failed' ? '生成失败 · 可重试' : '已生成 · 可重新生成'}</em> : null}
                         <span>{item.desc}</span>
                         <small>{resourceOptionSummary(item.key, generationOptions)} · {item.meta}</small>
                       </span>
@@ -1072,7 +1088,7 @@ export default function AdminCourseware() {
                 : `已选 ${picked.length} 项 · ${generationOptionsAreDefault(generationOptions) ? '使用默认设置' : '已应用自定义设置'}`}</span>
               <span className="zx-cw-modal-actions">
                 <button type="button" className="zx-btn zx-btn-ghost" onClick={() => setShowPicker(false)}>取消</button>
-                <button type="button" className="zx-btn zx-btn-primary" disabled={picked.length === 0} onClick={generate}>生成所选</button>
+                <button type="button" className="zx-btn zx-btn-primary" disabled={picked.length === 0 || submittingGeneration} onClick={generate}>{submittingGeneration ? '提交中…' : picked.some((kind) => generationResources[kind]) ? '确认重新生成' : '生成所选'}</button>
               </span>
             </footer>
           </div>
@@ -1117,6 +1133,7 @@ export default function AdminCourseware() {
                       </div>
                     );
                   })}
+                  {orderSlots < 999 ? <button type="button" className="zx-cw-order zx-cw-order-add" aria-label={`添加序号 ${orderSlots + 1}`} title={`添加第 ${orderSlots + 1} 个序号`} onClick={() => setOrderSlotCount(orderSlots + 1)}><strong>＋</strong><small>添加序号</small></button> : null}
                 </div>
               </div>
 

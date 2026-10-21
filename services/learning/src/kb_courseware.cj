@@ -938,7 +938,7 @@ func cwPublishChapter(cfg: Config, bundleId: String, docId: String, order: Int64
     if (docs.size == 0) { return "这个章节不属于所选知识库" }
     let ready = query(cfg,
         "SELECT COUNT(*) n FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
-        " AND status='ready' AND published=1")
+        " AND is_current=1 AND status='ready' AND published=1")
     if (ready.size == 0 || ready[0].int("n") == 0) { return "这个章节还没有已发布的资源" }
     if (cwChapterOrderTaken(cfg, bundleId, order, docId)) { return "序号 " + order.toString() + " 已被占用" }
     transaction(cfg, [
@@ -1031,6 +1031,7 @@ func cwSyncBundleCourseLocked(cfg: Config, bundleId: String, forceStatus: String
 
         let resources = query(cfg,
             "SELECT kind,content_json FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
+            " AND is_current=1" +
             " AND status='ready' AND published=1 ORDER BY CASE kind WHEN 'lecture' THEN 1 WHEN 'guide' THEN 2 " +
             "WHEN 'slides' THEN 3 ELSE 4 END")
         let sections = JsonArrWriter()
@@ -1154,7 +1155,7 @@ func cwSyncChapterCourse(cfg: Config, bundleId: String, docId: String): Unit {
 func cwChaptersBody(cfg: Config, bundleId: String): String {
     let published = query(cfg,
         "SELECT c.doc_id,c.order_no,d.title doc_title," +
-        "(SELECT COUNT(*) FROM kb_courseware w WHERE w.doc_id=c.doc_id AND w.published=1 AND w.status='ready') live_count " +
+        "(SELECT COUNT(*) FROM kb_courseware w WHERE w.doc_id=c.doc_id AND w.is_current=1 AND w.published=1 AND w.status='ready') live_count " +
         "FROM kb_courseware_chapters c JOIN kb_bundle_docs d ON d.id=c.doc_id " +
         "WHERE c.bundle_id=" + sqlQuote(bundleId) + " ORDER BY c.order_no")
     let arr = JsonArrWriter()

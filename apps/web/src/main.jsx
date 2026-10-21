@@ -10,8 +10,8 @@ import './login.css';
 import './admin/admin.css';
 
 // The admin console is a separate route tree so the recovered learner bundle stays untouched.
-loadOrgBrand();
 const isAdmin = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
+if (!isAdmin) loadOrgBrand();
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>{isAdmin ? <AdminApp /> : <App />}</BrowserRouter>

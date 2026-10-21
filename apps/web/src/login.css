@@ -390,3 +390,98 @@
   text-decoration: none;
 }
 .zhixun-login-admin a:hover { text-decoration: underline; }
+.zhixun-login-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.zhixun-login-footer .zhixun-login-quote { margin-bottom: 0; }
+.zx-powered-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font: 750 10px/1 "Courier New", monospace;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.zx-powered-badge-light { border: 1px solid #e4ddf1; background: #faf8ff; color: #6c56a1; }
+.zx-powered-badge-dark { border: 1px solid rgb(255 255 255 / 24%); background: rgb(255 255 255 / 10%); color: rgb(255 255 255 / 78%); }
+@media (max-width: 720px) {
+  .zx-powered-badge-light { display: none; }
+  .zhixun-login-footer { justify-content: flex-start; }
+}
+
+.zhixun-login-mascots {
+  height: 330px;
+  margin-top: 2px;
+  isolation: isolate;
+}
+.zhixun-login-mascot-glow {
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  filter: blur(4px);
+}
+.zhixun-login-mascot-glow.glow-a {
+  left: 16%;
+  top: 16%;
+  width: 300px;
+  height: 230px;
+  background: radial-gradient(circle, rgb(255 227 126 / 65%), transparent 70%);
+}
+.zhixun-login-mascot-glow.glow-b {
+  right: 6%;
+  bottom: 5%;
+  width: 280px;
+  height: 220px;
+  background: radial-gradient(circle, rgb(167 139 250 / 35%), transparent 70%);
+}
+.zhixun-login-mascot-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 350px;
+  height: 245px;
+  translate: -50% -50%;
+  rotate: -8deg;
+  border: 1.5px dashed rgb(96 56 239 / 28%);
+  border-radius: 50%;
+}
+.zhixun-login-mascot {
+  position: absolute;
+  z-index: 2;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 16px 22px rgb(64 45 108 / 18%));
+  animation: zhixun-mascot-float 5s ease-in-out infinite;
+}
+.mascot-strawberry { left: 50%; top: 49%; width: 175px; translate: -50% -50%; }
+.mascot-pear { left: 13%; top: 41%; width: 118px; rotate: -9deg; animation-delay: -1.4s; }
+.mascot-donut { right: 8%; top: 36%; width: 125px; rotate: 8deg; animation-delay: -2.3s; }
+.mascot-cherries { left: 9%; top: 7%; width: 84px; rotate: -8deg; animation-delay: -.8s; }
+.mascot-apple { right: 12%; top: 5%; width: 80px; rotate: 9deg; animation-delay: -3s; }
+.mascot-chick { left: 5%; bottom: 5%; width: 92px; rotate: -5deg; animation-delay: -2.7s; }
+.mascot-milk { right: 5%; bottom: 3%; width: 88px; rotate: 7deg; animation-delay: -1.9s; }
+.mascot-orange { left: 39%; top: 1%; width: 67px; animation-delay: -.4s; }
+.mascot-peas { right: 36%; bottom: 1%; width: 70px; rotate: -5deg; animation-delay: -3.4s; }
+.zhixun-login-mascot-note {
+  position: absolute;
+  z-index: 3;
+  padding: 7px 11px;
+  border: 1px solid rgb(255 255 255 / 85%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 86%);
+  color: #5d4d70;
+  box-shadow: 0 8px 22px rgb(94 75 140 / 10%);
+  backdrop-filter: blur(8px);
+  font-size: 10px;
+  font-weight: 750;
+}
+.zhixun-login-mascot-note.note-a { left: 22%; bottom: 9%; rotate: -4deg; }
+.zhixun-login-mascot-note.note-b { right: 21%; top: 13%; rotate: 4deg; }
+@keyframes zhixun-mascot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zhixun-login-mascot { animation: none; }
+}

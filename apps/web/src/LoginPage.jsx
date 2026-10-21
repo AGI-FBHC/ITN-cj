@@ -1,6 +1,6 @@
 import React from "react";
 import ForgotPasswordForm from './ForgotPasswordForm.jsx';
-import { orgLogoUrl, orgShortName } from './org-brand.js';
+import BrandText, { useOrgBrand } from './BrandText.jsx';
 import {
   authenticate,
   loginWithEmailCode,
@@ -37,6 +37,7 @@ function FlameLogo({ size = 118 }) {
 }
 
 export default function LoginPage({ onBack, onAuthenticated }) {
+  const brand = useOrgBrand();
   const learning = useLearning();
   const [registering, setRegistering] = React.useState(false);
   const [recovering, setRecovering] = React.useState(false);
@@ -129,25 +130,32 @@ export default function LoginPage({ onBack, onAuthenticated }) {
         <div className="zhixun-login-orbit zhixun-login-orbit-b" />
         <button type="button" className="zhixun-login-logo" onClick={onBack} aria-label="返回首页">
           <img
-            src={orgLogoUrl() || '/brand/logo-transparent.png'}
+            src={brand?.logoUrl || '/brand/logo-transparent.png'}
             alt=""
             aria-hidden="true"
             style={{ width: 38, height: 38, objectFit: 'contain' }}
           />
-          <span>{orgShortName()}</span>
+          <BrandText />
         </button>
         <div className="zhixun-login-editorial">
           <p className="zhixun-login-kicker">ZHIXUN · INTELLIGENT LEARNING</p>
           <h1>智启<span>未来</span><br />训见<span>成长</span></h1>
           <p>智训云枢致力于为每一位计算机学习者，提供专业、高效、个性化的学习体验。</p>
-          <div className="zhixun-login-figure" aria-hidden="true">
-            <i className="zhixun-login-orbit-shape" />
-            <span className="zhixun-login-flame"><FlameLogo /></span>
-            <span className="zhixun-login-stage" />
-            <span className="zhixun-login-chip chip-a">&lt;/&gt;</span>
-            <span className="zhixun-login-chip chip-b">讲义</span>
-            <span className="zhixun-login-chip chip-c">▥</span>
-            <span className="zhixun-login-chip chip-d">&gt;_</span>
+          <div className="zhixun-login-figure zhixun-login-mascots" aria-hidden="true">
+            <span className="zhixun-login-mascot-glow glow-a" />
+            <span className="zhixun-login-mascot-glow glow-b" />
+            <span className="zhixun-login-mascot-ring" />
+            <img className="zhixun-login-mascot mascot-strawberry" src="/login-characters/strawberry.webp" alt="" />
+            <img className="zhixun-login-mascot mascot-pear" src="/login-characters/pear.webp" alt="" />
+            <img className="zhixun-login-mascot mascot-donut" src="/login-characters/donut-pink.webp" alt="" />
+            <img className="zhixun-login-mascot mascot-cherries" src="/login-characters/cherries.webp" alt="" />
+            <img className="zhixun-login-mascot mascot-apple" src="/login-characters/apple.webp" alt="" />
+            <img className="zhixun-login-mascot mascot-chick" src="/login-characters/chick.webp" alt="" />
+            <img className="zhixun-login-mascot mascot-milk" src="/login-characters/milk.webp" alt="" />
+            <img className="zhixun-login-mascot mascot-orange" src="/login-characters/orange.webp" alt="" />
+            <img className="zhixun-login-mascot mascot-peas" src="/login-characters/peas.webp" alt="" />
+            <span className="zhixun-login-mascot-note note-a">今天也要元气满满</span>
+            <span className="zhixun-login-mascot-note note-b">开始你的学习旅程</span>
           </div>
           <div className="zhixun-login-steps">
             {STEPS.map((step, index) => (
@@ -159,18 +167,21 @@ export default function LoginPage({ onBack, onAuthenticated }) {
           </div>
           <small>首次使用先填写基本信息，再次登录可以继续上次的学习。</small>
         </div>
-        <p className="zhixun-login-quote">学习、练习与复习，在这里形成完整闭环。</p>
+        <div className="zhixun-login-footer">
+          <p className="zhixun-login-quote">学习、练习与复习，在这里形成完整闭环。</p>
+          <span className="zx-powered-badge zx-powered-badge-dark">Powered by Cangjie</span>
+        </div>
       </section>
 
       <main className="zhixun-login-main">
         <div className="zhixun-login-mobile-logo">
           <img
-            src={orgLogoUrl() || '/brand/logo-transparent.png'}
+            src={brand?.logoUrl || '/brand/logo-transparent.png'}
             alt=""
             aria-hidden="true"
             style={{ width: 30, height: 30, objectFit: 'contain' }}
           />
-          {orgShortName()}
+          <BrandText />
         </div>
         <div className="zhixun-login-card">
           <div className="zhixun-login-card-head">

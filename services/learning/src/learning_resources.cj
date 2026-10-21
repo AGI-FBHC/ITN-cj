@@ -221,6 +221,7 @@ func lrAdaptLesson(cfg: Config, row: Row): ?Row {
     var typed = ""
     if (managed) {
         let records = queryIndependent(cfg, "SELECT id,kind,content_json FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
+            " AND is_current=1" +
             " AND status='ready' AND published=1 ORDER BY created_at,id")
         if (records.size == 0) { return None }
         typed = lrTypedResources(records)
@@ -278,7 +279,7 @@ func lrAvailability(cfg: Config): HashMap<String, Row> {
         "COALESCE(JSON_LENGTH(l.content_json,'$.sections'),0) sections,COALESCE(JSON_LENGTH(l.content_json,'$.slides'),0) slides," +
         "JSON_LENGTH(l.quiz_json) questions," +
         "COALESCE((SELECT GROUP_CONCAT(DISTINCT w.kind) FROM kb_courseware w WHERE w.doc_id=" + sourceId +
-        " AND w.status='ready' AND w.published=1),'') kinds," +
+        " AND w.is_current=1 AND w.status='ready' AND w.published=1),'') kinds," +
         "COALESCE((SELECT c.order_no FROM kb_courseware_chapters c WHERE c.doc_id=" + sourceId + " LIMIT 1)," +
         "COALESCE(l.display_index,l.lesson_index)+1) order_no FROM lessons l JOIN courses c ON c.id=l.course_id " +
         "WHERE l.is_visible=1 AND c.status='published'")

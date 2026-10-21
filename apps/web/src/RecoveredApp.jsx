@@ -24,13 +24,14 @@ import {
   useLesson,
 } from "./learning-api.jsx";
 import LoginPage from "./LoginPage.jsx";
-import { orgLogoUrl, orgShortName } from "./org-brand.js";
+import { orgShortName } from "./org-brand.js";
+import BrandText, { useOrgBrand } from "./BrandText.jsx";
 import Markdown from "./admin/Markdown.jsx";
 import PresentationArtifact from "./PresentationArtifact.jsx";
 import { RESOURCE_OPTIONS, resourceTypes, lessonSections, lessonSlides, ChapterCompletion } from "./LearnerResources.jsx";
 import "./lesson-start-modal.css";
 function ProductLogo({ className: n = "", animated: r = !1, color: u = "#111318" }) {
-  const src = orgLogoUrl();
+  const src = useOrgBrand()?.logoUrl;
   return jsxRuntime.jsx("img", {
     "code-path": "src\\components\\ProductLogo.tsx:12:5",
     src: src || "/brand/logo-light.png",
@@ -63,16 +64,25 @@ function Navbar({ onGetStarted: n }) {
             jsxRuntime.jsx("span", {
               "code-path": "src\\components\\Navbar.tsx:9:11",
               className: "text-xl font-extrabold tracking-wide text-[#111318]",
-              children: orgShortName(),
+              children: jsxRuntime.jsx(BrandText, {}),
             }),
           ],
         }),
-        jsxRuntime.jsx("button", {
-          "code-path": "src\\components\\Navbar.tsx:12:9",
-          onClick: n,
-          className:
-            "rounded-full bg-[#6c0ef2] px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_4px_14px_rgba(108,14,242,0.35)] transition-all hover:-translate-y-0.5 hover:bg-[#5a0bd2] hover:shadow-[0_8px_20px_rgba(108,14,242,0.45)] active:translate-y-0",
-          children: "开始学习",
+        jsxRuntime.jsxs("div", {
+          className: "flex items-center gap-3",
+          children: [
+            jsxRuntime.jsx("span", {
+              className: "zx-powered-badge zx-powered-badge-light",
+              children: "Powered by Cangjie",
+            }),
+            jsxRuntime.jsx("button", {
+              "code-path": "src\\components\\Navbar.tsx:12:9",
+              onClick: n,
+              className:
+                "rounded-full bg-[#6c0ef2] px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_4px_14px_rgba(108,14,242,0.35)] transition-all hover:-translate-y-0.5 hover:bg-[#5a0bd2] hover:shadow-[0_8px_20px_rgba(108,14,242,0.45)] active:translate-y-0",
+              children: "开始学习",
+            }),
+          ],
         }),
       ],
     }),
@@ -857,7 +867,7 @@ function Footer() {
             "code-path": "src\\sections\\Footer.tsx:14:9",
             className:
               "mt-10 text-4xl font-extrabold tracking-[0.2em] md:text-5xl",
-            children: orgShortName(),
+            children: jsxRuntime.jsx(BrandText, { inverse: true }),
           }),
           jsxRuntime.jsx("p", {
             "code-path": "src\\sections\\Footer.tsx:15:9",
@@ -2295,8 +2305,10 @@ function AppNavigation({
   searchValue: u,
   onSearchChange: i,
 }) {
+  const learning = useLearning();
+  const profile = learning.data?.profile;
   const displayName = localStorage.getItem("zhixun-display-name") || "学习者";
-  const avatarText = Array.from(displayName.trim())[0] || "学";
+  const avatarText = Array.from((profile?.name || displayName).trim())[0] || "学";
   return jsxRuntime.jsx("header", {
     "code-path": "src\\components\\AppNavigation.tsx:35:5",
     className:
@@ -2321,7 +2333,7 @@ function AppNavigation({
               "code-path": "src\\components\\AppNavigation.tsx:44:11",
               className:
                 "hidden text-xl font-black tracking-wide text-[#111318] sm:inline xl:text-2xl",
-              children: orgShortName(),
+              children: jsxRuntime.jsx(BrandText, {}),
             }),
           ],
         }),
@@ -2380,12 +2392,18 @@ function AppNavigation({
                 }),
               ],
             }),
-            jsxRuntime.jsx("div", {
+            jsxRuntime.jsxs("button", {
               "code-path": "src\\components\\AppNavigation.tsx:89:11",
+              type: "button",
+              onClick: () => r("profile"),
               className:
-                "flex h-11 w-11 items-center justify-center rounded-full bg-[#449729] text-lg font-black text-white shadow-sm sm:h-12 sm:w-12",
-              children: avatarText,
-              title: displayName,
+                "flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-[#D7DEE8] text-lg font-black text-white shadow-sm transition hover:ring-4 hover:ring-[#6038ef]/12 sm:h-12 sm:w-12",
+              style: profile?.avatarBackground ? { backgroundColor: profile.avatarBackground } : undefined,
+              title: "编辑资料",
+              "aria-label": "编辑资料",
+              children: profile?.avatar
+                ? jsxRuntime.jsx("img", { src: profile.avatar, alt: "", className: "h-full w-full object-cover" })
+                : avatarText,
             }),
           ],
         }),
@@ -5952,6 +5970,9 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
                 lessonTitle: r,
                 heading: G.theoryTitle,
                 text: G.explanation,
+                resourceKind: "bank",
+                resourceVersion: remote.lesson?.resourceVersions?.bank,
+                sourceDocId: remote.lesson?.sources?.[0]?.id || "",
                 savedAt: new Date().toISOString(),
               },
               ...K,
@@ -5978,6 +5999,8 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
         attemptId: attemptRef.current,
         answers: answersRef.current,
         durationSeconds: O,
+        resourceKind: "bank",
+        resourceVersion: remote.lesson?.resourceVersions?.bank,
       });
       await refreshLearning();
       setQuizSave({ pending: false, error: "", result });
@@ -6556,7 +6579,11 @@ function Lecture({
   }, [N]);
   React.useEffect(() => {
     if (!remote.lesson) return;
-    api(`/courses/${encodeURIComponent(n.id)}/lessons/${u}/progress`, "PUT", { read: true }).catch(
+    api(`/courses/${encodeURIComponent(n.id)}/lessons/${u}/progress`, "PUT", {
+      read: true,
+      resourceKind,
+      resourceVersion: remote.lesson.resourceVersions?.[resourceKind],
+    }).catch(
       () => undefined,
     );
   }, [n.id, u, remote.lesson]);
@@ -6573,6 +6600,9 @@ function Lecture({
                 lessonTitle: r,
                 heading: G.heading,
                 text: G.text,
+                resourceKind,
+                resourceVersion: remote.lesson?.resourceVersions?.[resourceKind],
+                sourceDocId: remote.lesson?.sources?.[0]?.id || "",
                 savedAt: new Date().toISOString(),
               },
               ...be,
@@ -6827,7 +6857,7 @@ function Lecture({
                         );
                       }),
                     }),
-                    jsxRuntime.jsx(ChapterCompletion, { course: n, index: u, lesson: remote.lesson, onQuiz: () => R(!0) }),
+                    jsxRuntime.jsx(ChapterCompletion, { course: n, index: u, lesson: remote.lesson, resourceKind, onQuiz: () => R(!0) }),
                   ],
                 }),
               }),
@@ -7514,7 +7544,7 @@ function Presentation({
                   className: "mt-4 text-3xl font-black text-[#111318]",
                   children: "本节 PPT 讲解已完成",
                 }),
-                jsxRuntime.jsx(ChapterCompletion, { course: n, index: u, lesson: remote.lesson, onQuiz: () => { R(!1); M(!0); } }),
+                jsxRuntime.jsx(ChapterCompletion, { course: n, index: u, lesson: remote.lesson, resourceKind: "slides", onQuiz: () => { R(!1); M(!0); } }),
                 jsxRuntime.jsx("button", {
                   "code-path": "src\\pages\\Presentation.tsx:274:13",
                   type: "button",
@@ -9954,40 +9984,128 @@ const p3 = [
   "其他地区",
 ];
 
+// Keeps uploaded avatars small enough for the profile API (64KB body limit):
+// center-crop to a square, downscale, and re-encode before it reaches the server.
+function zxAvatarDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("头像读取失败"));
+    reader.onload = () => {
+      const raw = typeof reader.result === "string" ? reader.result : "";
+      if (!raw) {
+        reject(new Error("头像读取失败"));
+        return;
+      }
+      if (raw.length <= 36000) {
+        resolve(raw);
+        return;
+      }
+      const image = new Image();
+      image.onerror = () => resolve(raw);
+      image.onload = () => {
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        const side = Math.min(width, height);
+        if (!side) {
+          resolve(raw);
+          return;
+        }
+        const attempts = [
+          { type: "image/webp", size: 512, quality: 0.82 },
+          { type: "image/webp", size: 384, quality: 0.78 },
+          { type: "image/jpeg", size: 384, quality: 0.82 },
+          { type: "image/jpeg", size: 256, quality: 0.8 },
+          { type: "image/jpeg", size: 192, quality: 0.72 },
+        ];
+        let best = "";
+        for (const attempt of attempts) {
+          const canvas = document.createElement("canvas");
+          canvas.width = attempt.size;
+          canvas.height = attempt.size;
+          const context = canvas.getContext("2d");
+          if (!context) break;
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = "high";
+          if (attempt.type === "image/jpeg") {
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, attempt.size, attempt.size);
+          }
+          context.drawImage(
+            image,
+            (width - side) / 2,
+            (height - side) / 2,
+            side,
+            side,
+            0,
+            0,
+            attempt.size,
+            attempt.size,
+          );
+          let candidate = "";
+          try {
+            candidate = canvas.toDataURL(attempt.type, attempt.quality);
+          } catch {
+            candidate = "";
+          }
+          if (!candidate || !candidate.startsWith("data:" + attempt.type)) continue;
+          if (!best || candidate.length < best.length) best = candidate;
+          if (candidate.length <= 36000) break;
+        }
+        resolve(best || raw);
+      };
+      image.src = raw;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
   const [d, p] = React.useState(n),
     [m, b] = React.useState(""),
+    [S, T] = React.useState(""),
     [h, x] = React.useState(!1),
     y = React.useRef(null),
     j = (N, E) => {
-      (p((_) => ({ ..._, [N]: E })), x(!1));
+      (p((_) => ({ ..._, [N]: E })), x(!1), T(""));
     },
     z = (N) => {
       const E = N.target.files?.[0];
+      N.target.value = "";
       if (!E) return;
-      if (!["image/jpeg", "image/png"].includes(E.type)) {
-        b("请上传 JPG 或 PNG 格式的图片");
+      if (!["image/jpeg", "image/png", "image/webp"].includes(E.type)) {
+        b("请上传 JPG、PNG 或 WebP 格式的图片");
         return;
       }
       if (E.size > 5 * 1024 * 1024) {
         b("头像大小不能超过 5MB");
         return;
       }
-      const _ = new FileReader();
-      ((_.onload = () => {
-        (typeof _.result == "string" && j("avatar", _.result), b(""));
-      }),
-        _.readAsDataURL(E));
+      b("");
+      zxAvatarDataUrl(E)
+        .then((_) => j("avatar", _))
+        .catch(() => b("图片读取失败，请换一张重试"));
     },
     R = (N) => {
       N.preventDefault();
       const E = {
         ...d,
-        name: d.name.trim(),
-        phone: d.phone.trim(),
-        email: d.email.trim(),
+        name: (d.name || "").trim(),
+        phone: (d.phone || "").trim(),
+        email: (d.email || "").trim(),
       };
-      (p(E), x(!0), window.setTimeout(() => u(E), 450));
+      p(E);
+      b("");
+      T("");
+      x(!0);
+      Promise.resolve()
+        .then(() => u(E))
+        .then(() => {
+          x(!1);
+        })
+        .catch((error) => {
+          x(!1);
+          T((error && error.message) || "保存失败，请稍后重试");
+        });
     };
   return jsxRuntime.jsxs("div", {
     "code-path": "src\\pages\\ProfileEditor.tsx:78:5",
@@ -10057,6 +10175,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                         "code-path": "src\\pages\\ProfileEditor.tsx:99:15",
                         className:
                           "mx-auto -mt-14 flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-[6px] border-white bg-[#55aa32] text-4xl font-black text-white shadow-lg",
+                        style: d.avatarBackground ? { backgroundColor: d.avatarBackground } : undefined,
                         children: d.avatar
                           ? jsxRuntime.jsx("img", {
                               "code-path":
@@ -10065,7 +10184,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                               alt: d.name,
                               className: "h-full w-full object-cover",
                             })
-                          : d.name.trim().slice(0, 1) || "李",
+                          : (d.name || "").trim().slice(0, 1) || "李",
                       }),
                       jsxRuntime.jsx("h2", {
                         "code-path": "src\\pages\\ProfileEditor.tsx:106:15",
@@ -10075,7 +10194,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                       jsxRuntime.jsx("p", {
                         "code-path": "src\\pages\\ProfileEditor.tsx:107:15",
                         className: "mt-1 text-sm font-bold text-[#858995]",
-                        children: orgShortName() + "学习者",
+                        children: "学员",
                       }),
                       jsxRuntime.jsxs("div", {
                         "code-path": "src\\pages\\ProfileEditor.tsx:109:15",
@@ -10145,7 +10264,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                                   "src\\pages\\ProfileEditor.tsx:128:19",
                                 className:
                                   "text-xs font-semibold text-[#9296a1]",
-                                children: "支持 JPG、PNG，大小不超过 5MB",
+                                children: "支持 JPG、PNG、WebP，大小不超过 5MB，将自动压缩为正方形",
                               }),
                             ],
                           }),
@@ -10211,7 +10330,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                             "code-path": "src\\pages\\ProfileEditor.tsx:148:17",
                             ref: y,
                             type: "file",
-                            accept: "image/jpeg,image/png",
+                            accept: "image/jpeg,image/png,image/webp",
                             onChange: z,
                             className: "hidden",
                           }),
@@ -10303,15 +10422,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                                   "src\\pages\\ProfileEditor.tsx:172:19",
                                 className:
                                   "text-sm font-extrabold text-[#454852]",
-                                children: [
-                                  "性别 ",
-                                  jsxRuntime.jsx("b", {
-                                    "code-path":
-                                      "src\\pages\\ProfileEditor.tsx:172:80",
-                                    className: "text-[#e54747]",
-                                    children: "*",
-                                  }),
-                                ],
+                                children: ["性别"],
                               }),
                               jsxRuntime.jsx("div", {
                                 "code-path":
@@ -10360,19 +10471,12 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                                       "src\\pages\\ProfileEditor.tsx:184:101",
                                     className: "h-4 w-4 text-[#858995]",
                                   }),
-                                  "出生日期 ",
-                                  jsxRuntime.jsx("b", {
-                                    "code-path":
-                                      "src\\pages\\ProfileEditor.tsx:184:157",
-                                    className: "text-[#e54747]",
-                                    children: "*",
-                                  }),
+                                  "出生日期",
                                 ],
                               }),
                               jsxRuntime.jsx("input", {
                                 "code-path":
                                   "src\\pages\\ProfileEditor.tsx:185:19",
-                                required: !0,
                                 type: "date",
                                 value: d.birthday,
                                 onChange: (N) => j("birthday", N.target.value),
@@ -10396,19 +10500,12 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                                       "src\\pages\\ProfileEditor.tsx:189:101",
                                     className: "h-4 w-4 text-[#858995]",
                                   }),
-                                  "所在地区 ",
-                                  jsxRuntime.jsx("b", {
-                                    "code-path":
-                                      "src\\pages\\ProfileEditor.tsx:189:151",
-                                    className: "text-[#e54747]",
-                                    children: "*",
-                                  }),
+                                  "所在地区",
                                 ],
                               }),
                               jsxRuntime.jsxs("select", {
                                 "code-path":
                                   "src\\pages\\ProfileEditor.tsx:190:19",
-                                required: !0,
                                 value: d.region,
                                 onChange: (N) => j("region", N.target.value),
                                 className:
@@ -10452,13 +10549,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                                       "src\\pages\\ProfileEditor.tsx:197:101",
                                     className: "h-4 w-4 text-[#858995]",
                                   }),
-                                  "手机号 ",
-                                  jsxRuntime.jsx("b", {
-                                    "code-path":
-                                      "src\\pages\\ProfileEditor.tsx:197:149",
-                                    className: "text-[#e54747]",
-                                    children: "*",
-                                  }),
+                                  "手机号",
                                 ],
                               }),
                               jsxRuntime.jsxs("div", {
@@ -10504,7 +10595,6 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                                   jsxRuntime.jsx("input", {
                                     "code-path":
                                       "src\\pages\\ProfileEditor.tsx:205:21",
-                                    required: !0,
                                     inputMode: "tel",
                                     pattern: "[0-9]{6,15}",
                                     value: d.phone,
@@ -10521,41 +10611,17 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                               }),
                             ],
                           }),
-                          jsxRuntime.jsxs("label", {
+                          jsxRuntime.jsxs("div", {
                             "code-path": "src\\pages\\ProfileEditor.tsx:209:17",
-                            className: "sm:col-span-2",
+                            className:
+                              "flex items-start gap-2 rounded-2xl border border-black/[0.06] bg-[#f8f8fa] px-4 py-3.5 text-xs font-semibold leading-5 text-[#777b86] sm:col-span-2",
                             children: [
-                              jsxRuntime.jsxs("span", {
+                              jsxRuntime.jsx(G2, {
                                 "code-path":
-                                  "src\\pages\\ProfileEditor.tsx:210:19",
-                                className:
-                                  "flex items-center gap-1.5 text-sm font-extrabold text-[#454852]",
-                                children: [
-                                  jsxRuntime.jsx(G2, {
-                                    "code-path":
-                                      "src\\pages\\ProfileEditor.tsx:210:101",
-                                    className: "h-4 w-4 text-[#858995]",
-                                  }),
-                                  "邮箱 ",
-                                  jsxRuntime.jsx("b", {
-                                    "code-path":
-                                      "src\\pages\\ProfileEditor.tsx:210:147",
-                                    className: "text-[#e54747]",
-                                    children: "*",
-                                  }),
-                                ],
+                                  "src\\pages\\ProfileEditor.tsx:210:101",
+                                className: "mt-0.5 h-4 w-4 shrink-0 text-[#858995]",
                               }),
-                              jsxRuntime.jsx("input", {
-                                "code-path":
-                                  "src\\pages\\ProfileEditor.tsx:211:19",
-                                required: !0,
-                                type: "email",
-                                value: d.email,
-                                onChange: (N) => j("email", N.target.value),
-                                placeholder: "请输入邮箱地址",
-                                className:
-                                  "mt-2 w-full rounded-2xl border border-black/[0.10] bg-white px-4 py-3.5 text-sm font-bold text-[#262930] outline-none transition placeholder:text-[#b2b5be] focus:border-[#6038ef]/45 focus:ring-4 focus:ring-[#6038ef]/[0.07]",
-                              }),
+                              "邮箱或工号是注册时的登录账号，无需在此重复填写；如需更换，请联系机构管理员。",
                             ],
                           }),
                         ],
@@ -10565,8 +10631,16 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                   jsxRuntime.jsxs("div", {
                     "code-path": "src\\pages\\ProfileEditor.tsx:216:13",
                     className:
-                      "mt-9 flex flex-col-reverse gap-3 border-t border-black/[0.06] pt-6 sm:flex-row sm:justify-end",
+                      "mt-9 flex flex-col-reverse gap-3 border-t border-black/[0.06] pt-6 sm:flex-row sm:items-center sm:justify-end",
                     children: [
+                      S &&
+                        jsxRuntime.jsx("p", {
+                          "code-path": "src\\pages\\ProfileEditor.tsx:216:31",
+                          role: "alert",
+                          className:
+                            "text-xs font-bold text-[#e54747] sm:mr-auto sm:max-w-[420px]",
+                          children: S,
+                        }),
                       jsxRuntime.jsx("button", {
                         "code-path": "src\\pages\\ProfileEditor.tsx:217:15",
                         type: "button",
@@ -10586,7 +10660,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                                 "src\\pages\\ProfileEditor.tsx:221:27",
                               className: "h-4 w-4",
                             }),
-                          h ? "保存成功" : "保存修改",
+                          h ? "保存中…" : "保存修改",
                         ],
                       }),
                     ],
@@ -10712,14 +10786,15 @@ function Dashboard({ profile: n }) {
     },
     [b, h] = React.useState(!1),
     [x, y] = React.useState({
-      avatar: "",
-      name: n.name || "学习者",
-      gender: "男",
-      birthday: "",
-      region: "",
-      dialCode: "+86",
-      phone: "",
-      email: "",
+      avatar: n.avatar || "",
+      avatarBackground: n.avatarBackground || "",
+      name: n.name || "",
+      gender: n.gender || "",
+      birthday: n.birthday || "",
+      region: n.region || "",
+      dialCode: n.dialCode || "+86",
+      phone: n.phone || "",
+      email: n.email || "",
     }),
     [j, z] = React.useState(!1),
     [R, N] = React.useState(null),
@@ -10735,6 +10810,10 @@ function Dashboard({ profile: n }) {
       return Math.max(Math.round((P.total - P.done) * 1.2), 1);
     },
     $ = (O) => {
+      if (O === "profile") {
+        (_(null), N(null), z(!1), h(!0));
+        return;
+      }
       (O === "home" ||
         O === "courses" ||
         O === "bookmarks" ||
@@ -10777,7 +10856,17 @@ function Dashboard({ profile: n }) {
         profile: x,
         onBack: () => h(!1),
         onSave: (O) => {
-          (y(O), h(!1), saveProfile({ ...n, ...O }).catch(() => undefined));
+          const next = { ...n, ...O };
+          y(O);
+          if (new TextEncoder().encode(JSON.stringify(next)).length > 64000) {
+            return Promise.reject(new Error("头像或资料内容过大，请更换更小的头像图片"));
+          }
+          return saveProfile(next).then((saved) => {
+            const value = saved && typeof saved === "object" ? saved : next;
+            y((current) => ({ ...current, ...value }));
+            h(!1);
+            return value;
+          });
         },
         onNavigate: (O) => {
           if (O === "home") {
@@ -10839,6 +10928,7 @@ function Dashboard({ profile: n }) {
                                 "code-path": "src\\pages\\Dashboard.tsx:204:13",
                                 className:
                                   "flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-[#5aa832] text-4xl font-extrabold text-white",
+                                style: x.avatarBackground ? { backgroundColor: x.avatarBackground } : undefined,
                                 children: x.avatar
                                   ? jsxRuntime.jsx("img", {
                                       "code-path":
@@ -11465,7 +11555,8 @@ function Home({ initialLogin = false }) {
               onClose: () => r("login"),
               onFinish: (d) => {
                 const profile = { ...d, name: d.name || displayName || "学习者" };
-                (r("hero"), i(profile), saveProfile(profile).catch(() => undefined));
+                r("hero");
+                saveProfile(profile).then((saved) => i(saved || profile)).catch(() => i(profile));
               },
             }),
         ],

@@ -43,7 +43,7 @@ func kbWriteBundleLogo(response: HttpResponse, cfg: Config, bundleId: String): U
     response.contentType = "image/svg+xml; charset=utf-8"
     response.headers.add("Cache-Control", "no-store")
     response.headers.add("X-Content-Type-Options", "nosniff")
-    response.headers.add("Content-Security-Policy", "default-src 'none'; sandbox")
+    response.headers.add("Content-Security-Policy", "default-src 'none'; img-src data:; sandbox")
     response.write(svg)
 }
 

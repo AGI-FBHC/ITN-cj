@@ -339,7 +339,50 @@ func profileBody(cfg: Config, userId: String): String {
     let profileRows = query(cfg, "SELECT profile_json FROM users WHERE id=" + sqlQuote(userId))
     if (profileRows.size == 0 || profileRows[0].isNull("profile_json")) { return "null" }
     let value = profileRows[0].text("profile_json")
-    if (value.size == 0) { "null" } else { value }
+    if (value.size == 0) { "null" } else { defaultAvatarProfile(value, userId) }
+}
+
+let DEFAULT_AVATARS = [
+    "strawberry", "pear", "donut-pink", "cherries", "apple", "chick", "milk",
+    "orange", "peas", "watermelon", "banana", "tomato", "carrot", "lemon",
+    "blueberry", "steamed-bun", "apple-slice", "elephant", "donut-chocolate",
+    "shrimp", "carrot-leaf"
+]
+let DEFAULT_AVATAR_BACKGROUNDS = [
+    "#E7D8CF", "#D7E0D3", "#D7DEE8", "#E8DDE6", "#E3DCCF",
+    "#D5E2E0", "#E6D8D0", "#D9D5E6", "#DDE1D2", "#E4DAD5"
+]
+
+func defaultAvatarUrl(userId: String): String {
+    var score: Int64 = 0
+    for (value in userId.toArray()) { score = (score * 31 + Int64(value)) % DEFAULT_AVATARS.size }
+    "/login-characters/" + DEFAULT_AVATARS[score] + ".webp"
+}
+
+func defaultAvatarBackground(userId: String): String {
+    var score: Int64 = 17
+    for (value in userId.toArray()) { score = (score * 33 + Int64(value)) % 100003 }
+    DEFAULT_AVATAR_BACKGROUNDS[score % DEFAULT_AVATAR_BACKGROUNDS.size]
+}
+
+func defaultAvatarProfile(raw: String, userId: String): String {
+    if (raw.size == 0 || !raw.startsWith("{")) { return raw }
+    let avatar = defaultAvatarUrl(userId)
+    var value = raw
+    var usesDefault = value.contains("/login-characters/")
+    if (raw.contains("\"avatar\":\"\"") || raw.contains("\"avatar\": \"\"")) {
+        value = value.replace("\"avatar\":\"\"", "\"avatar\":\"" + avatar + "\"")
+            .replace("\"avatar\": \"\"", "\"avatar\": \"" + avatar + "\"")
+        usesDefault = true
+    }
+    if (!value.contains("\"avatar\"")) {
+        value = value[0..value.size - 1] + ",\"avatar\":\"" + avatar + "\"}"
+        usesDefault = true
+    }
+    if (usesDefault && !value.contains("\"avatarBackground\"")) {
+        value = value[0..value.size - 1] + ",\"avatarBackground\":\"" + defaultAvatarBackground(userId) + "\"}"
+    }
+    value
 }
 
 func statsBody(cfg: Config, userId: String): String {
@@ -1243,6 +1286,7 @@ func cwSelect(): String {
     "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
     "COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title," +
     "COALESCE(d.order_index,0)+1 source_order,COALESCE(c.options_json,'') options_json," +
+    "COALESCE(c.is_current,1) is_current,c.generation," +
     "COALESCE((SELECT ch.order_no FROM kb_courseware_chapters ch WHERE ch.bundle_id=c.bundle_id " +
     "AND ch.doc_id=c.doc_id),0) chapter_order " +
     "FROM kb_courseware c LEFT JOIN kb_bundle_docs d ON d.id=c.doc_id " +
@@ -1265,6 +1309,8 @@ func cwRowJson(row: Row): String {
     out.putStr("errorMessage", row.text("error_message"))
     out.putInt("chapterOrder", row.int("chapter_order"))
     out.putInt("sourceOrder", row.int("source_order"))
+    out.putBool("current", row.int("is_current") == 1)
+    out.putInt("generation", row.int("generation"))
     let options = row.text("options_json").trimAscii()
     var safeOptions = "null"
     if (options.size > 0) {
@@ -1279,8 +1325,8 @@ func cwRowJson(row: Row): String {
 }
 
 func cwListBody(cfg: Config, bundleId: String): String {
-    var filter = ""
-    if (bundleId.size > 0) { filter = "WHERE c.bundle_id=" + sqlQuote(bundleId) + " " }
+    var filter = "WHERE COALESCE(c.is_current,1)=1 "
+    if (bundleId.size > 0) { filter = filter + "AND c.bundle_id=" + sqlQuote(bundleId) + " " }
     // The admin library filters client-side, so the list must include all
     // practical rows instead of silently hiding records after the first 100.
     let rows = query(cfg, cwSelect() + filter + "ORDER BY c.created_at DESC LIMIT 1000")
@@ -1787,7 +1833,7 @@ main(): Int64 {
                 match (parseObject(ctx.request)) {
                     case None => writeError(ctx.response, 400, "个人资料格式不正确")
                     case Some(profile) =>
-                        let raw = profile.toJsonString()
+                        let raw = defaultAvatarProfile(profile.toJsonString(), userId)
                         if (raw.size > 65536) {
                             writeError(ctx.response, 413, "个人资料内容过长")
                         } else {
@@ -1838,12 +1884,14 @@ main(): Int64 {
                             let types = lrLessonTypes(row)
                             out.putRaw("resourceTypes", lrTypesJson(types))
                             out.putRaw("resources", lrPublicResources(row))
+                            out.putRaw("resourceVersions", cwResourceVersionsJson(cfg, row))
                             let completion = JsonWriter()
                             completion.putBool("requiresQuiz", quiz.size() > 0)
                             completion.putInt("passScore", 60)
                             completion.putBool("canMarkComplete", quiz.size() == 0 && types.size > 0)
                             out.putRaw("completion", completion.toJson())
                             out.putRaw("progress", progressJson(cfg, userId, courseId, row.int("lesson_index")))
+                            out.putRaw("resourceProgress", cwResourceProgressJson(cfg, userId, courseId, row.int("lesson_index")))
                             writeJson(ctx.response, 200, out.toJson())
                     }
                 }
@@ -1863,13 +1911,29 @@ main(): Int64 {
                             case None => writeError(ctx.response, 400, "学习状态格式不正确")
                             case Some(body) =>
                                 let complete = jsonGetBool(body, "complete") ?? false
-                                if (complete && lessonQuestions(row.text("quiz_json")).size() > 0) {
+                                let resourceKind = (jsonGetString(body, "resourceKind") ?? "").trimAscii()
+                                if (resourceKind.size > 0 && !cwValidKind(resourceKind)) {
+                                    writeError(ctx.response, 400, "学习资源类型不正确")
+                                } else if (resourceKind.size > 0 && !cwCheckResourceVersion(cfg, row, resourceKind, body)) {
+                                    writeError(ctx.response, 409, "该资源已重新生成，请刷新后继续学习")
+                                } else {
+                                if (resourceKind == "bank" && complete) {
+                                    writeError(ctx.response, 409, "请先通过本章测验，再完成本章学习")
+                                } else if (complete && lessonQuestions(row.text("quiz_json")).size() > 0 && resourceKind.size == 0) {
                                     writeError(ctx.response, 409, "请先通过本章测验，再完成本章学习")
                                 } else if (complete && lrLessonTypes(row).size == 0) {
                                     writeError(ctx.response, 409, "本章暂无已发布的学习内容")
                                 } else {
+                                    if (resourceKind.size > 0) {
+                                        let version = cwResourceVersion(cfg, row, resourceKind)
+                                        let statements = ArrayList<String>()
+                                        statements.add(cwResourceProgressSql(userId, courseId, row.int("lesson_index"),
+                                            resourceKind, version, "NULL", if (complete) { "1" } else { "0" }))
+                                        transaction(cfg, statements.toArray())
+                                    }
                                     saveProgress(cfg, userId, courseId, row.int("lesson_index"), None, complete)
                                     writeJson(ctx.response, 200, progressJson(cfg, userId, courseId, row.int("lesson_index")))
+                                }
                                 }
                         }
                 }
@@ -1931,6 +1995,8 @@ main(): Int64 {
                                         " AND id=" + sqlQuote(attemptId))
                                     if (existing.size > 0 && (existing[0].text("course_id") != courseId || existing[0].int("lesson_index") != stableIndex)) {
                                         writeError(ctx.response, 409, "测验对应的章节已变化，请返回课程后重新开始测验")
+                                    } else if (!cwCheckResourceVersion(cfg, row, "bank", body)) {
+                                        writeError(ctx.response, 409, "题库已重新生成，请返回课程后重新开始测验")
                                     } else {
                                         var answers = jsonGetArray(body, "answers") ?? JsonArray()
                                         if (existing.size > 0) { answers = jsonArrayFromText(existing[0].text("answers_json")) }
@@ -1948,7 +2014,10 @@ main(): Int64 {
                                                     "SELECT user_id,course_id,lesson_index,1,score,IF(score>=60,1,0),NOW(6) FROM quiz_attempts " +
                                                     "WHERE id=" + sqlQuote(attemptId) + " AND user_id=" + sqlQuote(userId) + " AND course_id=" + sqlQuote(courseId) +
                                                     " AND lesson_index=" + stableIndex.toString() + " ON DUPLICATE KEY UPDATE is_read=1,score=VALUES(score)," +
-                                                    "completed=GREATEST(completed,VALUES(completed)),updated_at=NOW(6)"
+                                                    "completed=GREATEST(completed,VALUES(completed)),updated_at=NOW(6)",
+                                                cwResourceProgressSql(userId, courseId, stableIndex, "bank",
+                                                    cwResourceVersion(cfg, row, "bank"), score.toString(),
+                                                    if (score >= 60) { "1" } else { "0" })
                                             ])
                                         }
                                         let saved = if (existing.size > 0) { existing } else { query(cfg,
@@ -2930,6 +2999,26 @@ main(): Int64 {
         }
     }
 
+    app.mapPost("api/admin/kb/bundles/{bundle_id}/logo") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(ownerId) =>
+                let bundleId = routeText(ctx, "bundle_id")
+                if (query(cfg, "SELECT id FROM kb_bundles WHERE id=" + sqlQuote(bundleId)).size == 0) {
+                    writeError(ctx.response, 404, "没有找到这个资料包")
+                } else {
+                    try {
+                        let svg = kbNormalizeLogoUpload(kbReadLogoUpload(ctx.request))
+                        let id = kbSaveUploadedLogo(cfg, bundleId, ownerId, svg)
+                        let out = JsonWriter()
+                        out.putStr("generationId", id)
+                        out.putStr("status", "ready")
+                        writeJson(ctx.response, 200, out.toJson())
+                    } catch (error: Exception) { writeError(ctx.response, 400, error.message) }
+                }
+        }
+    }
+
     app.mapPost("api/admin/logos/generate") { ctx =>
         match (adminUserId(ctx, cfg)) {
             case None => ()
@@ -3044,36 +3133,23 @@ main(): Int64 {
                             if (!slotEndpoint(cfg, settings.chat).hasChat()) {
                                 writeError(ctx.response, 400, "还没有配置对话模型")
                             } else {
-                                let created = ArrayList<String>()
-                                let items = JsonArrWriter()
-                                var i: Int64 = 0
-                                while (i < kinds.size()) {
-                                    let kind = match (kinds[i].kind()) {
-                                        case JsonKind.JsString => kinds[i].asString().getValue()
-                                        case _ => ""
-                                    }
-                                    if (cwValidKind(kind)) {
-                                        let id = uuidFormat(uuidV4())
-                                        execute(cfg,
-                                            "INSERT INTO kb_courseware(id,bundle_id,doc_id,kind,title,status,model,options_json,created_at) VALUES(" +
-                                            sqlQuote(id) + "," + sqlQuote(bundleId) + "," + sqlQuote(docId) + "," +
-                                            sqlQuote(kind) + ",''," + sqlQuote("queued") + "," +
-                                            sqlQuote(settings.chat.model) + "," + sqlQuote(options.toJson()) + ",NOW(6))")
-                                        created.add(id)
-                                        let item = JsonWriter()
-                                        item.putStr("id", id)
-                                        item.putStr("kind", kind)
-                                        item.putStr("status", "queued")
-                                        items.addRaw(item.toJson())
-                                    }
-                                    i += 1
-                                }
-                                if (created.size == 0) {
-                                    writeError(ctx.response, 400, "没有可生成的资源类型")
+                                let replaceExisting = jsonGetBool(body, "replaceExisting") ?? false
+                                let expected = jsonGetObject(body, "expectedGenerations")
+                                let queued = cwEnqueueResources(cfg, bundleId, docId, kinds, options,
+                                    settings.chat.model, replaceExisting, expected)
+                                if (queued.error.size > 0) {
+                                    writeError(ctx.response, 409, queued.error)
                                 } else {
-                                    cwLaunch(cfg, created.toArray())
+                                    let ids = ArrayList<String>()
+                                    let parsed = jsonArrayFromText(queued.items)
+                                    var q = 0
+                                    while (q < parsed.size()) {
+                                        if (isJsObject(parsed[q])) { ids.add(cwField(parsed[q].asObject(), "id")) }
+                                        q += 1
+                                    }
+                                    cwLaunch(cfg, ids.toArray())
                                     let out = JsonWriter()
-                                    out.putRaw("items", items.toJson())
+                                    out.putRaw("items", queued.items)
                                     writeJson(ctx.response, 200, out.toJson())
                                 }
                             }

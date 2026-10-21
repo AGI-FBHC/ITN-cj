@@ -11,7 +11,7 @@ let revision = 0;
 const token = () => localStorage.getItem(TOKEN_KEY) || '';
 function notify() {
   window.__zxOrg = currentBrand;
-  document.title = currentBrand?.shortName || '智训云枢';
+  document.title = '智训云枢';
   window.dispatchEvent(new Event('zx-org-updated'));
 }
 

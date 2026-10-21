@@ -82,7 +82,7 @@ export function lessonSlides(lesson) {
   }));
 }
 
-export function ChapterCompletion({ course, index, lesson, onQuiz }) {
+export function ChapterCompletion({ course, index, lesson, onQuiz, resourceKind = '' }) {
   const lessonKey = `${course.id}:${index}`;
   const currentKey = React.useRef(lessonKey);
   currentKey.current = lessonKey;
@@ -98,7 +98,11 @@ export function ChapterCompletion({ course, index, lesson, onQuiz }) {
   const markComplete = async () => {
     setState({ lessonKey, saving: true, completed: false, error: '' });
     try {
-      await api(`/courses/${encodeURIComponent(course.id)}/lessons/${index}/progress`, 'PUT', { read: true, complete: true });
+      await api(`/courses/${encodeURIComponent(course.id)}/lessons/${index}/progress`, 'PUT', {
+        read: true,
+        complete: true,
+        ...(resourceKind ? { resourceKind, resourceVersion: lesson?.resourceVersions?.[resourceKind] } : {}),
+      });
       await refreshLearning();
       if (currentKey.current === lessonKey) setState({ lessonKey, saving: false, completed: true, error: '' });
     } catch (error) {

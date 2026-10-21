@@ -153,6 +153,29 @@ export const adminApi = {
   generateLogos: (title, bundleId) => request('/logos/generate', { method: 'POST', body: { title, resourceType: 'kb_bundle', resourceId: bundleId } }),
   logoGeneration: (id) => request(`/logos/${encodeURIComponent(id)}`),
   selectLogo: (id, variantId) => request(`/logos/${encodeURIComponent(id)}/select`, { method: 'POST', body: { variantId } }),
+  uploadBundleLogo: async (bundleId, file) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    try {
+      const response = await fetch(`/api/admin/kb/bundles/${encodeURIComponent(bundleId)}/logo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          ...(adminToken() ? { Authorization: `Bearer ${adminToken()}` } : {}),
+        },
+        body: file,
+        signal: controller.signal,
+      });
+      let data;
+      try { data = await response.json(); } catch { throw new AdminError('服务返回格式异常，请重试', response.status); }
+      if (response.status === 401) clearAdminSession();
+      if (!response.ok) throw new AdminError(data.message || `上传失败（${response.status}）`, response.status);
+      return data;
+    } catch (error) {
+      if (error.name === 'AbortError') throw new AdminError('图片处理超时，请重试', 0);
+      throw error;
+    } finally { clearTimeout(timeout); }
+  },
   kbBundleAsset: async (path, { signal } = {}) => {
     const url = new URL(path, window.location.origin);
     if (url.origin !== window.location.origin || !/^\/api\/admin\/kb\/bundles\/[^/]+\/assets\/[^/]+$/.test(url.pathname)) {

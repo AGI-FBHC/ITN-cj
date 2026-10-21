@@ -855,3 +855,18 @@
 - 浏览器实看 /login 忘记密码入口、完整表单和当前样式；用合成输入验证两次密码不一致会原地提示且不提交后端，返回登录正常。未通过 GUI 提交真实账号密码修改，未向真实邮箱发送测试邮件。
 - 部署前两次只读核对 queued/generating=0，先旁路编译 main-next.exe，再校验当前监听进程是该项目 main.exe 后替换启动，减少停机。当前后端 PID 149484，8312 健康返回 Cangjie 1.2.0 + Spire。期间发现原 Vite 3006 已无监听，已恢复原端口的本地 Vite（PID 40664）；前后端均已验证可访问。未使用 Docker、未推送。
 - 源码、迁移、测试与本条 TRACE 一并本地提交；登录页可通过 /login 直接进入查看。
+
+## 2026-10-21 资源生命周期、品牌分层、课程 Logo 上传、默认头像与资料页收尾
+- 用户本批需求：①学员端章节序号默认 18 个并在末尾加号顺延；②生成课件每个章节每种资源同时只保留一个，已有资源要有提示标记，重新生成前提示下架并清空该资源对应的学员记录；③机构设置不要直接把管理员端的 logo 和名称替换成机构简称，管理端保持系统 logo，学员端用机构 logo + 系统名"智训云枢" + 机构简称标签（窄屏隐藏标签）；④课程 Logo 除 Agent 生成外支持自定义上传，非正方形按中心裁最大正方形并压缩，不保存原图；⑤把 D:\Desktop\mojofamily 的图片移入项目并用于美化登录页；⑥登录页与首页加 Powered by Cangjie 标注；⑦新用户默认头像从这批角色图随机分配，并随机莫兰迪背景色；⑧编辑资料后右上角头像要更新、点击右上角头像进入编辑资料；⑨基本信息仅姓名必填、移除邮箱填写、头像下文案由"学习者"改为"学员"。用户要求尽快完成并尽量并行。
+- 仓库仍为 D:/Downloads/zhixun-yunshu-28801-20261020，分支 codex/native-learning-v1。本轮开始前该工作区已有一批未提交的进行中改动（资源生命周期、Logo 上传、登录页角色图、品牌文案），本轮先核对完成度再补齐与提交，未重做已完成部分。
+- 章节序号：管理端发布弹窗序号槽位默认由 12 提到 18（orderSlotCount 初始 18），末尾新增"＋ 添加序号"按钮，点击后增加下一个序号槽并把加号顺延到新槽之后；打开发布弹窗时会按已有章节最大序号自动抬高槽位；发布时仍保留"序号已被占用"校验。
+- 资源唯一性：migration 016 给 kb_courseware 增加 is_current/generation 并新建 lesson_resource_progress；migration 017 增加唯一索引 uk_courseware_current(doc_id,kind,is_current)，is_current=NULL 表示历史归档行（MySQL 唯一索引允许多个 NULL）。tools/backfill-courseware-current.py 已在本库执行，按"已发布优先、ready 优先、更新时间倒序"每组 章节×类型 保留一条 current，其余置 NULL，不删除数据；已核对唯一索引存在、无真实重复 current。用户重要已发布课件 133bac40-5c19-49a3-a111-1d5f20f75d1a 保持 is_current=1、published=1 未受影响。
+- 生成弹窗与重新生成：四类资源在弹窗内固定展示，已有资源显示"已发布 · 可重新生成 / 已生成 · 可重新生成 / 生成失败 · 可重试 / 生成任务进行中"；正在排队或生成的类型禁止再次勾选；勾选已有资源提交时弹出确认，明确"将立即下架该资源并清空对应的学员学习、测验和书签记录，其他资源与章节不受影响，生成完成后需重新发布"。提交带 replaceExisting 与 expectedGenerations 做乐观并发校验，序号或版本冲突返回 409 并刷新列表。
+- 记录清理与版本失效：lesson_resource_progress 以 user/course/lesson/kind 为主键并记录 generation；学习接口按当前 generation 校验，资源重新生成上架后旧版本进度自然失效，客户端带旧版本提交会收到 409 提示刷新。下架时按 kind 清理对应进度、测验（bank）与书签，并回算 lesson_progress 的已读/完成/分数，避免残留假进度。
+- 品牌分层：BrandLogo 不再拉取机构 Logo，管理端始终用系统 logo；新增 BrandText（智训云枢 + 机构简称标签，1024px 以下隐藏标签），学员端导航、页脚、登录页共用；document.title 固定为"智训云枢"；main.jsx 仅在非 /admin 路由加载机构品牌，管理端不请求机构信息。管理端"机构设置"仍可编辑机构资料。
+- 课程 Logo 上传：新增 POST /api/admin/kb/bundles/{id}/logo，接受 PNG/JPEG/WebP/GIF，最大 8MB；后端通过 renderer/course-logo/normalize_logo.py 居中裁最大正方形、压缩为 WebP 再包成 SVG data URI 入库，不保存用户原图；kb_delivery 的 CSP 放开 img-src data: 以便显示内嵌图。管理端 Logo 卡片增加"上传 Logo"、当前 Logo 预览与说明；上传/生成均写 logo_generations 记录。
+- 登录页与首页：mojofamily 图片已压缩为 21 张透明 WebP 放入 apps/web/public/login-characters/（原文件夹已清空，保留项目内资源）；登录页左侧用其中 9 张做装饰并加说明气泡，底部加 Powered by Cangjie 徽标；学员首页导航右侧同样加该徽标（窄屏隐藏）。
+- 默认头像与莫兰迪背景：后端按 user id 稳定散列从 21 张角色图选一张作为默认头像，并从 10 个莫兰迪色中稳定选一个背景色；注册、邮箱首次登录、游客创建和读取已有空头像资料时都会补全，刷新不会变色；用户自行上传头像后不再覆盖。
+- 资料页：saveProfile 成功后立即更新 learning 快照，右上角头像同步刷新；右上角头像改为按钮，点击进入编辑资料；基本信息仅姓名必填（性别、手机号去掉必填与星号），邮箱字段移除并改为"邮箱或工号是注册时的登录账号，无需在此重复填写"的说明；头像下文案改为"学员"；头像上传支持 JPG/PNG/WebP 并在前端压缩。
+- 验证：前端 npm run build 通过（仅既有 bundle-size 警告）；后端服务健康 200（Cangjie 1.2.0 + Spire，itn_learning_v2_dev）；数据库 016/017 已应用且唯一索引存在；上传 Logo 路由存在（未授权返回 401）；21 张头像资源齐全且 http://localhost:3006/login-characters/strawberry.webp 返回 200 image/webp；本轮未跑真实模型生成任务，未改动用户已发布课件数据。
+- 运行状态：后端 main.exe（8312）与前端 Vite（3006）均在运行；后端源码最后修改时间早于 17:00 的构建，运行中的二进制已包含本轮后端改动。

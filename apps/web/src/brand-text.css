@@ -1,0 +1,32 @@
+.zx-learner-brand-text {
+  display: inline-flex;
+  align-items: center;
+  gap: .6rem;
+  min-width: 0;
+  vertical-align: middle;
+}
+.zx-learner-brand-name { flex: none; white-space: nowrap; }
+.zx-learner-org-badge {
+  min-width: 0;
+  max-width: 10em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid #e5dcf9;
+  border-radius: .45rem;
+  padding: .2rem .5rem;
+  background: #f6f1ff;
+  color: #65439a;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: normal;
+}
+.zx-learner-brand-text-inverse .zx-learner-org-badge {
+  border-color: #75638d;
+  background: #2c223d;
+  color: #e0d3fa;
+}
+@media (max-width: 1023px) {
+  .zx-learner-org-badge { display: none; }
+}
