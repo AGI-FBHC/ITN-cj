@@ -497,8 +497,9 @@ button.text-base {
   .zx-dashboard-profile {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    gap: 12px;
+    justify-content: flex-start;
+    gap: clamp(12px, calc(8dvh - 44px), 36px);
+    padding-bottom: clamp(28px, 4dvh, 44px);
   }
 
   .zx-dashboard-profile > * {

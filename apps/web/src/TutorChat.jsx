@@ -619,7 +619,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
       </div>)}
       {!loading && !messages.length && !!suggestions.length && !archived && <div className="zx-tutor-suggestions">{suggestions.map((text) => <button key={text} type="button" onClick={() => send(null, text)} disabled={!canCompose || preparing}>{text}</button>)}</div>}
       {lastAnswer?.text && !lastAnswer.streaming && !lastAnswer.interrupted && !sending && !archived && <div className="zx-tutor-followups"><p>继续学习</p><div className="zx-tutor-suggestions">{followUps.map((text, index) => <button type="button" key={text} title={text} disabled={!canCompose || preparing} onClick={() => send(null, text)}>{['举个例子', '总结要点', '出一道练习题'][index]}</button>)}</div></div>}
-      {sending && <div className="flex items-center gap-2 text-xs font-bold text-[#7a7f8c]" role="status"><span className="zx-tutor-dot" />Lumin 正在查看资料并思考…</div>}
+      {sending && !lastAnswer?.text?.trim() && <div className="flex items-center gap-2 text-xs font-bold text-[#7a7f8c]" role="status"><span className="zx-tutor-dot" />Lumin 正在查看资料并思考…</div>}
       {failed && <div className="zx-tutor-inline-error" role="alert"><span>未能回答：{failed.error}</span><button type="button" onClick={() => send(failed)} disabled={sending}>重新发送</button></div>}
       {copyError && <p className="zx-tutor-image-error" role="alert">{copyError}</p>}
       <div ref={bottom} />
