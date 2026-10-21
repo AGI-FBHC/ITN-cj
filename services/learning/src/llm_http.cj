@@ -70,6 +70,36 @@ func modelHostOf(url: String): String {
     String.fromUtf8(bytes.slice(start, end - start))
 }
 
+func safeUtf8(bytes: Array<UInt8>): String {
+    try {
+        return String.fromUtf8(bytes)
+    } catch (_: Exception) {
+        let out = ArrayList<UInt8>()
+        var i: Int64 = 0
+        while (i < bytes.size) {
+            let b = Int64(bytes[i])
+            if (b < 128) {
+                out.add(bytes[i]); i += 1
+            } else if (b >= 194 && b <= 223 && i + 1 < bytes.size &&
+                       Int64(bytes[i + 1]) >= 128 && Int64(bytes[i + 1]) <= 191) {
+                out.add(bytes[i]); out.add(bytes[i + 1]); i += 2
+            } else if (b >= 224 && b <= 239 && i + 2 < bytes.size &&
+                       Int64(bytes[i + 1]) >= 128 && Int64(bytes[i + 1]) <= 191 &&
+                       Int64(bytes[i + 2]) >= 128 && Int64(bytes[i + 2]) <= 191) {
+                out.add(bytes[i]); out.add(bytes[i + 1]); out.add(bytes[i + 2]); i += 3
+            } else if (b >= 240 && b <= 244 && i + 3 < bytes.size &&
+                       Int64(bytes[i + 1]) >= 128 && Int64(bytes[i + 1]) <= 191 &&
+                       Int64(bytes[i + 2]) >= 128 && Int64(bytes[i + 2]) <= 191 &&
+                       Int64(bytes[i + 3]) >= 128 && Int64(bytes[i + 3]) <= 191) {
+                out.add(bytes[i]); out.add(bytes[i + 1]); out.add(bytes[i + 2]); out.add(bytes[i + 3]); i += 4
+            } else {
+                out.add(63u8); i += 1
+            }
+        }
+        String.fromUtf8(out.toArray())
+    }
+}
+
 func readStreamText(input: InputStream): String {
     let out = ArrayList<UInt8>()
     let buffer = Array<UInt8>(8192, repeat: 0)
@@ -83,7 +113,7 @@ func readStreamText(input: InputStream): String {
         }
     }
     if (out.size == 0) { return "" }
-    String.fromUtf8(out.toArray())
+    safeUtf8(out.toArray())
 }
 
 func briefBody(text: String): String {
@@ -357,7 +387,7 @@ func readSseStream(input: InputStream, onDelta: (String) -> Unit): String {
         var i: Int64 = 0
         while (i < n) {
             if (Int64(buffer[i]) == 10) {
-                let piece = sseDeltaOf(String.fromUtf8(pending.toArray()))
+                let piece = sseDeltaOf(safeUtf8(pending.toArray()))
                 if (piece.size > 0) {
                     text.append(piece)
                     onDelta(piece)
@@ -370,7 +400,7 @@ func readSseStream(input: InputStream, onDelta: (String) -> Unit): String {
         }
     }
     if (pending.size > 0) {
-        let piece = sseDeltaOf(String.fromUtf8(pending.toArray()))
+        let piece = sseDeltaOf(safeUtf8(pending.toArray()))
         if (piece.size > 0) {
             text.append(piece)
             onDelta(piece)

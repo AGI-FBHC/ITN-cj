@@ -38,6 +38,9 @@ func presentationRendererDir(): String {
     if (configuredRoot.size > 0) {
         let absolutePath = configuredRoot + "/services/learning/renderer/ppt-renderer"
         if (exists(Path(absolutePath + "/render_ppt.py"))) { return absolutePath }
+        if (exists(Path(configuredRoot + "/render_ppt.py"))) { return configuredRoot }
+        let nestedPath = configuredRoot + "/renderer/ppt-renderer"
+        if (exists(Path(nestedPath + "/render_ppt.py"))) { return nestedPath }
     }
     let projectPath = "services/learning/renderer/ppt-renderer"
     if (exists(Path(projectPath + "/render_ppt.py"))) { return projectPath }

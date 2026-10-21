@@ -1076,15 +1076,15 @@ func orgNormalizeInvite(value: String): String {
     let letters = "abcdefghijklmnopqrstuvwxyz"
     let upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     let out = StringBuilder()
-    var i: Int64 = 0
-    while (i < lower.size) {
-        let ch = lower[i..i + 1]
+    // 按字符而不是字节遍历：邀请码里允许出现机构简称等非 ASCII 字符，
+    // 按字节切片会切在汉字中间并抛 "Invalid utf8 byte sequence."。
+    for (rune in lower.toRuneArray()) {
+        let ch = rune.toString()
         let position = letters.indexOf(ch)
         match (position) {
             case Some(index) => out.append(upper[index..index + 1])
             case None => out.append(ch)
         }
-        i += 1
     }
     out.toString()
 }

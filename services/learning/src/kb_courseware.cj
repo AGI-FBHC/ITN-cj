@@ -765,7 +765,12 @@ func cwRunOne(cfg: Config, id: String): Unit {
     }
 }
 
-/** 取某个键后面的数组原文（按括号配对），避免用会错编字符串的 toJsonString。 */
+/**
+ * 取某个键后面的数组原文（按括号配对），避免用会错编字符串的 toJsonString。
+ * 按 UTF-8 字节扫描而不是按字符切片：结构字符都是 ASCII，汉字等多字节字符的
+ * 后续字节一定 >= 0x80，所以不会误判；而 String 按字节下标切片一旦落在汉字
+ * 中间会直接抛 "Invalid utf8 byte sequence."，题库就是这样挂掉的。
+ */
 func cwArrayTextOf(text: String, key: String): String {
     let marker = text.indexOf("\"" + key + "\"")
     match (marker) {
@@ -773,21 +778,26 @@ func cwArrayTextOf(text: String, key: String): String {
             let open = text.indexOf("[", position)
             match (open) {
                 case Some(begin) =>
+                    let bytes = text.toArray()
+                    let escapeByte = UInt8(92)
+                    let quoteByte = UInt8(34)
+                    let bracketOpen = UInt8(91)
+                    let bracketClose = UInt8(93)
                     var depth: Int64 = 0
                     var i = begin
                     var inString = false
-                    while (i < text.size) {
-                        let ch = text[i..i + 1]
-                        if (ch == "\\") {
+                    while (i < bytes.size) {
+                        let ch = bytes[i]
+                        if (ch == escapeByte) {
                             i += 2
                             continue
                         }
-                        if (ch == "\"") { inString = !inString }
+                        if (ch == quoteByte) { inString = !inString }
                         if (!inString) {
-                            if (ch == "[") { depth += 1 }
-                            if (ch == "]") {
+                            if (ch == bracketOpen) { depth += 1 }
+                            if (ch == bracketClose) {
                                 depth -= 1
-                                if (depth == 0) { return text[begin..i + 1] }
+                                if (depth == 0) { return String.fromUtf8(bytes.slice(begin, i + 1 - begin)) }
                             }
                         }
                         i += 1
