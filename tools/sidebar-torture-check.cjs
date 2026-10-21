@@ -348,6 +348,37 @@ async function main() {
       check('会话栏有两条以上会话可用于切换（夹具前提）', false, 'sessions=' + JSON.stringify(sidList));
     }
 
+    // I) 协作树打开时切页：面板与遮罩都要收起，回到对话不自动弹旧树
+    await nav('chat');
+    await page.evaluate(() => window.LuminTeamPanel.ingest([
+      {type: 'team/run_started', payload: {runId: 'sidebar-team', tool: 'research_topic_team', goal: '侧栏遮挡检查'}},
+      {type: 'team/node_created', payload: {runId: 'sidebar-team', nodeId: 'root', depth: 0, title: '协作任务', role: '调度员'}},
+    ], state.chatSessionId, {autoOpen: true}));
+    await page.waitForSelector('#team-panel.open');
+    // 模态遮罩本来就该拦住鼠标：这里用强制点击模拟"导航仍要发生"的清理路径
+    await rail('resources').click({force: true});
+    await ready();
+    // 关闭动画有 280ms 收尾；等 hidden 真正落地再断言，避免把动画当泄漏
+    await page.waitForFunction(() => !!document.getElementById('team-panel')?.hidden, null, {timeout: 1500}).catch(() => {});
+    const teamAfterNav = await page.evaluate(() => ({
+      open: window.LuminTeamPanel.isOpen(),
+      scrimOpen: !!document.querySelector('#team-panel-scrim.open'),
+      panelHidden: document.getElementById('team-panel').hidden,
+    }));
+    check('协作树打开时切页：面板与遮罩都收起', teamAfterNav.open === false && teamAfterNav.scrimOpen === false && teamAfterNav.panelHidden === true, JSON.stringify(teamAfterNav));
+    await nav('chat');
+    check('回到对话页不会自动重弹旧协作树', await page.evaluate(() => window.LuminTeamPanel.isOpen() === false));
+
+    // J) 任务中心浮层打开时切页：浮层要关掉，且不能盖住新页面
+    await page.locator('.task-btn').click();
+    await page.waitForSelector('.task-pop:not([hidden])');
+    await nav('kb');
+    const taskAfterNav = await page.evaluate(() => {
+      const pop = document.querySelector('.task-pop');
+      return {hidden: !!pop && pop.hidden, expanded: document.querySelector('.task-btn')?.getAttribute('aria-expanded')};
+    });
+    check('任务中心浮层在切页后关闭', taskAfterNav.hidden === true && taskAfterNav.expanded === 'false', JSON.stringify(taskAfterNav));
+
     check('全程没有前端或内核异常', errors.length === 0, errors.join('; '));
     const failed = checks.filter((c) => !c.ok);
     console.log('RESULT ' + (checks.length - failed.length) + '/' + checks.length + '; artifacts ' + dir);

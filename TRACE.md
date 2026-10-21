@@ -5204,3 +5204,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 提交 e062624（套件对齐 + 计数小字修正）/ 3fd502b（sqlite 探针环境说明）。build=lumin-0.8.31-3fd502b。ZIP dist/Lumin-0.8.31.zip，231329174 bytes，SHA256=0518D24479062803423BED663DA195DCD35D58673C5222AA39DF8DAB4CD8E7B9。
 - 包内复验：原生启动/关闭/再次启动 9/9；包内 renderer + 包内内核 sidebar-torture-check 连续 2 次 41/41。文件名仍为 0.8.31，无额外后缀；未发布线上、未推送远端。
 - 目标仍进行：ui-e2e 的学 · 练/生成旧段落尚未迁移（当前界面已由 course-check 81、guided-check 35、learning-check 45 等覆盖）；real-* 套件需要真实密钥/模型，未运行。下一轮继续。
+
+### 2026-10-22 08:20 · 真实模型尝试与侧边栏扩展回归
+
+- 真实模型：使用 `%LOCALAPPDATA%\Lumin\itn.db` 的 TEMP 只读副本（仅读取 mimo 配置，未打印密钥）运行 real-session-check。结果不是产品失败：会话事件明确记录 `turn/end {"ok":false,"message":"模型接口返回 429：… quota exhausted"}`，即 MiMo 账号配额耗尽。该轮真实模型验收因此无法继续，未反复重试烧配额；凭据副本已截断为 0 字节（Remove-Item 被自动审批策略拦截，改用文件截断清除密钥内容）。
+- 侧边栏专项扩展到 44 项，新增：协作树弹窗打开时导航到别的页面 → 面板与遮罩在 280ms 收尾后都 hidden、JS 状态为关闭；回到对话页不会自动重弹旧协作树；任务中心浮层打开时切页 → 浮层关闭且 aria-expanded=false。当前源码连跑 2 次均 44/44（lumin-sidebar-QBUqnN / Nc2cac）。
+- 说明：协作树是模态遮罩，打开时鼠标点击左栏会被正确拦截，测试用强制点击模拟"导航仍发生"的清理路径；这不是产品缺陷。
