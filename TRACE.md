@@ -5198,3 +5198,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 本轮巡检通过：course-check 81、guided-check 35、learning-check 45、personal-check 23、kb-general all、stop-check 13、tasks-check 22、attachments 16、markdown 14、scrollbar、panel-sticky 3、busy-caret 8、splash 9、tray 4、text-menu 6、course-speed 18、presentation 9、presentation-agent 13、deck-export all、docx all、knowledge-images 14、knowledge-tables 14、knowledge-hit 281、palette-chip 14、guided-files 21、ui-audit 全 PASS、zh-audit OK。
 - 未通过且未当作产品的：sqlite-freeblock-check 报"Cangjie writer preserves rows through 240 updates…"失败（third_party/sqlite-driver 压测探针，涉及驱动数据完整性，下一步单独深查）；check-installed-resources 需要显式参数（用法问题）。real-* 需要真实密钥/模型，未运行。
 - 复核 sqlite-freeblock-check：先前 FAIL 的退出码是 3221225781（0xC0000135 STATUS_DLL_NOT_FOUND，探针缺仓颉/OpenSSL 运行库），不是行丢失。执行 `. ./scripts/env.ps1` 后 5/5 全过：240 次更新后 48 行精确值、逐主键查找、B-tree/索引 integrity、相邻删除片段用例全部通过。该项不构成产品缺陷。
+
+### 2026-10-22 08:05 · 巡检后的本地 0.8.31 包复验
+
+- 提交 e062624（套件对齐 + 计数小字修正）/ 3fd502b（sqlite 探针环境说明）。build=lumin-0.8.31-3fd502b。ZIP dist/Lumin-0.8.31.zip，231329174 bytes，SHA256=0518D24479062803423BED663DA195DCD35D58673C5222AA39DF8DAB4CD8E7B9。
+- 包内复验：原生启动/关闭/再次启动 9/9；包内 renderer + 包内内核 sidebar-torture-check 连续 2 次 41/41。文件名仍为 0.8.31，无额外后缀；未发布线上、未推送远端。
+- 目标仍进行：ui-e2e 的学 · 练/生成旧段落尚未迁移（当前界面已由 course-check 81、guided-check 35、learning-check 45 等覆盖）；real-* 套件需要真实密钥/模型，未运行。下一轮继续。
