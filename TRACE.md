@@ -5224,3 +5224,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 侧边栏专项新增场景 K 并抓到真实缺陷：A 会话打开右侧资源栏（本段对话的产物），点击切到 B 会话后，资源栏仍显示 A 的产物（session=seed-26、hidden=false、open=true、hasOld=true）。修复：state.chatOpenSession 在切换会话时，若资源栏开着就调用 closeResourceDock() 收起。修复后同一用例 hidden=true/open=false，侧栏专项 46/46；连跑两次稳定。
 - 回归：session-switch 18、chat-ux 18、route-lifecycle 18/18 全部通过。
 - 说明：资源栏收起时不清空 DOM 内容，但 workbench.open=false 且节点 hidden，重新打开资源会走 openLearningResource 重新选中，不会把旧内容展示出来。
+
+### 2026-10-22 09:05 · 资源栏残留修复后的本地包复验
+
+- 提交 4398f6f；build=lumin-0.8.31-4398f6f。ZIP dist/Lumin-0.8.31.zip，231329276 bytes，SHA256=6EBF3EB283BD01AC3524425CE3DB8F95C5DADA5CBCEBC2B56A6379F5B37EDF67。
+- 包内复验：原生启动/关闭/再次启动 9/9；包内 renderer + 包内内核 sidebar-torture-check 连续 2 次 46/46（含新增的"资源栏跨会话清理"与"协作树/任务浮层切页清理"）。文件名仍为 0.8.31，无额外后缀；未发布线上、未推送远端。
+- 真实模型（DeepSeek）已验证：单问单答、A/B 会话切换、calc 工具回路均通过；MiMo 仍为 429 quota exhausted。下一轮可继续用 DeepSeek 覆盖附件读取/导学，MiMo 需等配额恢复。
