@@ -5230,3 +5230,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 提交 4398f6f；build=lumin-0.8.31-4398f6f。ZIP dist/Lumin-0.8.31.zip，231329276 bytes，SHA256=6EBF3EB283BD01AC3524425CE3DB8F95C5DADA5CBCEBC2B56A6379F5B37EDF67。
 - 包内复验：原生启动/关闭/再次启动 9/9；包内 renderer + 包内内核 sidebar-torture-check 连续 2 次 46/46（含新增的"资源栏跨会话清理"与"协作树/任务浮层切页清理"）。文件名仍为 0.8.31，无额外后缀；未发布线上、未推送远端。
 - 真实模型（DeepSeek）已验证：单问单答、A/B 会话切换、calc 工具回路均通过；MiMo 仍为 429 quota exhausted。下一轮可继续用 DeepSeek 覆盖附件读取/导学，MiMo 需等配额恢复。
+
+### 2026-10-22 09:25 · 真实多智能体与附件批准链路通过
+
+- 真实多智能体（DeepSeek deepseek-flash，tools/real-learning-team-check.cjs）：research_topic_team 自动选型，5 个节点全部完成、36 条 team 事件、最终回答 678 字，RESULT real model PASS。本机 roles 表默认 chat=deepseek，未改配置。
+- 真实附件读取批准（新增 tools/real-attachment-smoke.cjs）：带 `confirmFileAccess:true` 时出现 pending read 批准；用合法决定值 `once` 批准后 read 成功（读到 note.md 93B），最终回答含校验码 LUMIN-ATTACH-7K3P，TURN_OK=true。对照验证：不传 confirmFileAccess、仅用户主动附件时读取不额外要求批准（隐式同意），符合当前设计。
+- 排障记录（均为测试参数，不是产品缺陷）：批准决定值只接受 once/session/always，先前脚本发 `approve` 被判为拒绝；waitForFunction 曾被传成 4 个参数导致 Playwright 报 `.polling`。两处都已修正并写进脚本注释/实现。
+- 新增 tools/real-tool-smoke.cjs（calc 工具回路）与 tools/real-attachment-smoke.cjs；均只从 TEMP 副本读取凭据并清零，不打印密钥。
