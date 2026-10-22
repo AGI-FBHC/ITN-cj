@@ -5293,3 +5293,10 @@ read_chunk 读得到原文并带回库标识与正文。
   - 再开新会话不会恢复已忘记的偏好；
   - 多轮真实对话后 SQLite 完整性检查通过。
 - 凭据副本结束已截断为 0 字节。real-memory-check 只读取外部传入的凭据库，不自己复制，所以由调用方负责清理。
+
+### 2026-10-22 12:00 · 真实模型知识图谱生成验收
+
+- 用专用 TEMP 副本目录（lumin-course-model-copy-*/itn.db）跑 tools/real-course-check.cjs，模型 deepseek-flash。
+- 结果：知识图谱从阅读知识库 → 梳理资料 → 生成树形结构一次成功；tokens in=3530 out=2904 total=6434（2 次调用）；生成讲义候选后未自动确认（符合"先预览再确认"），确认后绑定精确版本；8 项检查全过，总耗时 101 秒，无 JS 异常。
+- 排障：--course-model-copy 要传"目录"（内含 itn.db），先前传了数据库文件路径导致内核启动卡住；目录名还必须包含 lumin-course-model-copy-（内核安全校验）。已按正确用法记录，供后续真实课程验收复用。
+- 凭据副本结束清零。MiMo 仍 429 quota exhausted，本次用 DeepSeek。
