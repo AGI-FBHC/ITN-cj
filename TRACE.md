@@ -262,3 +262,8 @@ scripts/package-app.ps1原来强制复制两份docs说明，公开检出缺docs�
 - 15 个 PowerShell 脚本完成 AST 语法检查，Pro 两个构建/部署 shell 脚本完成 bash -n 检查。已修正根文档的 Desktop 启动顺序：build 后先 package，把内核与运行库放入 Electron 查找的 dist/core；补充 Windows SDK 的 mt.exe 依赖。
 - 独立只读审查指出 Pro 的完整 TypeScript 构建有来源分支已记录的遗留错误；根文档沿用该版本前端说明中的 Vite 静态构建入口，并明确不等于类型检查通过。本轮未修改业务逻辑、数据库或服务配置，也未启动应用或外部模型。
 - 根 README / 启动与组织文档的本地链接检查通过，SVG 横幅 XML 合法。源版本的历史空白格式按原样保留；本轮新增和修改文件单独检查空白错误。
+
+### 整合审计记录
+
+- 结构与历史审计结果保存到 docs/history/2026-10-23-editions.json，记录四个来源 tip / 树哈希 / 原提交数、三个 subtree 导入提交、8/8 原 main 作者身份保留、27 个本地链接检查、Desktop 唯一路径适配及验证范围。
+- 审计基准提交为 992a5975；之后的文档记录提交仅增加审计结果。本地整合检出保留 main 作为原有远端基线，完成整合 PR 后再将其快进至合并结果。
