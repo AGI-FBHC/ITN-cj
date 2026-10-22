@@ -5276,3 +5276,10 @@ read_chunk 读得到原文并带回库标识与正文。
   - M) 生成过程中搜索会话内容：任务不中断（running=1、搜索结果可见）；清空搜索后运行中的会话立刻回到列表并带转圈（row=true、spinner=1）。
   - N) 拖动侧边栏分隔条：宽度 250→320、uiPanelW 写入偏好；重载后宽度仍为 320（误差 ≤3px），随后复原宽度不影响后续。
 - 本轮未发现新的产品缺陷，两项行为符合预期。产品代码未改动，上一版包继续有效。
+
+### 2026-10-22 11:30 · 真实模型随课导学验收
+
+- 新增 tools/real-guided-smoke.cjs（DeepSeek deepseek-flash，--seed-guided-fixture）：打开真实 PPT 学习页，右侧导学会话发两次真实提问并新建会话，再切回 A。
+- 结果：A 首答 219 字、B 答 117 字；B 不含 A 的内容（B_HAS_A=false）；切回后下拉值与正文都回到 A（BACK_TEXT_CHARS=219）；PPT 预览仍在（SLIDE_VISIBLE=true）；0 页面异常，RESULT=PASS。
+- 排障：先前用页面全局 state.entries 判断导学会话 busy 无效（导学状态在 studyplayer 闭包里），改用 .sp-chat-send.stop 的 DOM 状态；会话下拉在切回瞬间可能更新中，改为先读选项再按 id 切换。均为测试写法问题，不是产品缺陷。
+- 脚本凭据只从 TEMP 副本读取，finally 清零副本与隔离 itn.db。
