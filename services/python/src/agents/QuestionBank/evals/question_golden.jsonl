@@ -1,0 +1,8 @@
+{"category_id": 32, "good_example": "ReAct范式中，Observation环节的作用是什么？下列说法正确的是？", "bad_patterns": ["选项与ReAct循环无关", "答案可从题干直接抄出无需理解"]}
+{"category_id": 32, "good_example": "与思维链（CoT）相比，ReAct范式最主要的改进是什么？", "bad_patterns": ["干扰项混入未在课程中出现的概念且未核实", "选项表述模糊无法唯一判定正误"]}
+{"category_id": 33, "good_example": "定义智能体工具时，哪个要素直接决定LLM能否正确选用该工具？", "bad_patterns": ["选项之间不互斥", "考察点偏离工具定义主题"]}
+{"category_id": 33, "good_example": "ReActAgent的max_steps参数的作用是什么？", "bad_patterns": ["答案在题干中直接出现", "选项过长且包含多个判断点"]}
+{"category_id": 34, "good_example": "Plan-and-Solve范式与ReAct范式在决策方式上的本质区别是什么？", "bad_patterns": ["干扰项与两种范式均无关", "混淆规划阶段与执行阶段的职责但未在解析中说明"]}
+{"category_id": 35, "good_example": "Reflection机制中，什么条件下继续迭代的收益会低于成本？", "bad_patterns": ["选项表述模糊无法唯一判定正误", "干扰项与反思机制无关"]}
+{"category_id": 47, "good_example": "HelloAgentsLLM客户端初始化时配置项的优先级顺序是什么？", "bad_patterns": ["选项与代码实现不符", "答案可从题干直接抄出"]}
+{"category_id": 50, "good_example": "ReflectionAgent的实现中，初稿与反思记录如何在迭代间传递？", "bad_patterns": ["干扰项混淆Memory模块与对话历史", "选项之间不互斥"]}

@@ -1,0 +1,297 @@
+/**
+ * 交互导学对话脚本 — 苏格拉底式三阶追问（引导 → 追问 → 确认）
+ * 快答 chips 分支；答错走向「降维解释」，答对触发「进阶挑战」
+ * 含 Agent 幕后协商气泡数据
+ *
+ * 评分语义约定（engine.ts 只对 correct !== undefined 的选项计分/触发反馈）：
+ * - 对提问的一个实质性但错误的回答 → 必须标 correct: false（计入答题、触发 ✗ 反馈）
+ * - 求助/提示请求（如「还是没思路，提示我」）或纯推进（如「明白了，继续」）→ correct 留 undefined，不计分
+ */
+
+import type { AgentId } from './agents';
+import { getLearner, weakestKpOf } from './learners';
+import { getKnowledgePoint } from './knowledgePoints';
+
+export type TutorStage = '引导' | '追问' | '确认';
+export type DecisionType = 'simplify' | 'challenge';
+
+export interface TutorOption {
+  label: string;
+  next: string;
+  correct?: boolean;
+}
+
+export interface BackstageNote {
+  agent: AgentId;
+  content: string;
+}
+
+export interface TutorNode {
+  id: string;
+  stage: TutorStage;
+  tutor: string;
+  kbRefs?: string[];
+  options?: TutorOption[];
+  /** 进入该节点时触发决策横幅 */
+  decision?: DecisionType;
+  decisionReason?: string;
+  backstage?: BackstageNote[];
+  end?: boolean;
+}
+
+export interface TutoringScript {
+  learnerId: string;
+  title: string;
+  kpId: string;
+  startId: string;
+  nodes: Record<string, TutorNode>;
+}
+
+export const tutoringScripts: TutoringScript[] = [
+  // ================= 林晓舟 · 传感器标定 =================
+  {
+    learnerId: 'lin',
+    title: '苏格拉底导学 · 传感器标定',
+    kpId: 'kp-sensor',
+    startId: 'n1',
+    nodes: {
+      n1: {
+        id: 'n1', stage: '引导',
+        tutor: '晓舟你好。讲义里提到「标定是把『以为』拉回『真实』」。先别翻书 —— 你觉得机器人运行半年后，「以为」和「真实」为什么会分开？',
+        options: [
+          { label: '机械磨损与温度变化', next: 'n2', correct: true },
+          { label: '程序被误修改', next: 'n1b', correct: false },
+          { label: '供电电压不稳', next: 'n1b', correct: false },
+        ],
+        backstage: [{ agent: 'DIA-01', content: '开放问题启动，探测因果归因能力' }],
+      },
+      n1b: {
+        id: 'n1b', stage: '引导',
+        tutor: '程序与电压确实会引发故障，但它们是「突变」。标定对付的是「渐变」—— 每天一点点、不易察觉的偏差。想想减速器里的齿轮和冬天的车间，再选一次？',
+        options: [
+          { label: '机械磨损与温度漂移', next: 'n2', correct: true },
+          { label: '还是没思路，提示我', next: 'n1c' },
+        ],
+      },
+      n1c: {
+        id: 'n1c', stage: '引导',
+        tutor: '提示：GB/T 20868 要求标定试验前先「预热 30 min」[KB-010] —— 为什么要预热？因为温度会改变机械尺寸。齿轮啮合 200 万次会磨损，温度每降 10℃ 金属会收缩。这就是渐变的两个来源。',
+        kbRefs: ['KB-010'],
+        options: [{ label: '明白了，继续', next: 'n2' }],
+      },
+      n2: {
+        id: 'n2', stage: '追问',
+        tutor: '很好。追问一层：某焊装线冬季早班发现焊点偏移 1.8 mm，午后自行恢复。你会优先怀疑哪个因素？为什么？[KB-021]',
+        kbRefs: ['KB-021'],
+        options: [
+          { label: '温度漂移：早冷午暖与现象吻合', next: 'n3', correct: true },
+          { label: '减速器磨损：磨损不可逆', next: 'n2b', correct: false },
+          { label: '零点丢失：需重新标定', next: 'n2b', correct: false },
+        ],
+        backstage: [{ agent: 'VER-04', content: '校验回答与 KB-021 案例要素的一致性' }],
+      },
+      n2b: {
+        id: 'n2b', stage: '追问',
+        tutor: '注意现象的关键词：「午后自行恢复」。磨损与零点丢失都是不可逆的 —— 不会自己好。能随时间自行往复的，只有随温度变化的物理量。这指向什么？',
+        options: [{ label: '温度漂移', next: 'n3', correct: true }],
+        decision: 'simplify',
+        decisionReason: '连续两次未命中因果链，降维解释「可逆 vs 不可逆偏差」',
+        backstage: [{ agent: 'ARB-05', content: '判定：概念性困难，下发降维解释' }],
+      },
+      n3: {
+        id: 'n3', stage: '确认',
+        tutor: '正确。工厂最终的处置是「预热程序 + 温度补偿系数 k=0.021°/10℃」，合格率回到 99.6% [KB-021]。最后一个问题：这个线性补偿模型能用在 −20℃ 的冷库场景吗？',
+        kbRefs: ['KB-021'],
+        options: [
+          { label: '不能，超出 10–35℃ 适用区间需重新拟合', next: 'n4', correct: true },
+          { label: '能，线性模型处处适用', next: 'n3b', correct: false },
+        ],
+      },
+      n3b: {
+        id: 'n3b', stage: '确认',
+        tutor: '谨慎一点。KB-014 指出线性近似只在 10–35℃ 验证过；超出区间，材料非线性会让 k 值失效，必须按五点恒温实验重新拟合 [KB-014]。工程结论都有边界 —— 这正是溯源的意义。',
+        kbRefs: ['KB-014'],
+        options: [{ label: '记住了：结论有边界', next: 'n4' }],
+      },
+      n4: {
+        id: 'n4', stage: '确认',
+        tutor: '本轮导学完成 ✓ 你的因果链已经闭合：磨损/温度 → 渐变偏差 → 标定与补偿。根据你的表现，系统已更新画像，并为你准备了进阶内容。',
+        decision: 'challenge',
+        decisionReason: '追问与确认环节回答正确，触发进阶挑战',
+        backstage: [
+          { agent: 'DIA-01', content: '标定维度预估 42 → 48，回写画像' },
+          { agent: 'ARB-05', content: '决策：解锁进阶挑战《激光跟踪仪标定》[KB-017]' },
+        ],
+        end: true,
+      },
+    },
+  },
+  // ================= 陈雨桐 · 机器人运动学 =================
+  {
+    learnerId: 'chen',
+    title: '苏格拉底导学 · 坐标系与 TCP',
+    kpId: 'kp-kinematics',
+    startId: 'n1',
+    nodes: {
+      n1: {
+        id: 'n1', stage: '引导',
+        tutor: '雨桐你好。你上周换夹爪后重新对了点 —— 回忆一下，师傅为什么要你拿夹具尖端去碰那个固定尖点，而且要从四个方向碰？',
+        options: [
+          { label: '为了解算出 TCP 的位置', next: 'n2', correct: true },
+          { label: '为了检查夹具牢不牢', next: 'n1b', correct: false },
+          { label: '只是操作规程，照做就行', next: 'n1b', correct: false },
+        ],
+        backstage: [{ agent: 'DIA-01', content: '从她的实操经验切入，建立理论锚点' }],
+      },
+      n1b: {
+        id: 'n1b', stage: '引导',
+        tutor: '它确实有操作规程的一面，但每个动作都有数学含义：同一个尖点、四个不同姿态，相当于给机器人列了四个方程 —— 未知数就是 TCP 的三维坐标。想想，现在该明白碰尖点是为了什么？',
+        options: [{ label: '解算 TCP 位置', next: 'n2', correct: true }],
+      },
+      n2: {
+        id: 'n2', stage: '追问',
+        tutor: '对！那追问一步：标定完成后师傅让你「绕着尖端摇一摇」，尖端几乎不动才算合格。如果尖端画了个大圆圈，说明什么？[KB-002]',
+        kbRefs: ['KB-002'],
+        options: [
+          { label: 'TCP 标偏了，要重标', next: 'n3', correct: true },
+          { label: '正常现象，不用管', next: 'n2b', correct: false },
+          { label: '机器人坏了', next: 'n2b', correct: false },
+        ],
+      },
+      n2b: {
+        id: 'n2b', stage: '追问',
+        tutor: '别急，用你万用表的经验类比：校零没校好，读数就会整体偏移。绕 TCP 旋转时尖端不动，说明坐标系「校零」成功；画大圆就说明 TCP 位置没找准 —— 现在你的判断是？',
+        options: [{ label: 'TCP 标偏了，需要重新标定', next: 'n3', correct: true }],
+        decision: 'simplify',
+        decisionReason: '类比平时万用表校零经验做降维解释',
+      },
+      n3: {
+        id: 'n3', stage: '确认',
+        tutor: '完全正确 ✓ 你已经把「撞针法四点标定」的原理讲清楚了：四点解位置、两点定方向、绕点验证。这套流程对应 GB/T 16977 的工具坐标系定义 [KB-002]。',
+        kbRefs: ['KB-002'],
+        decision: 'challenge',
+        decisionReason: '概念迁移成功，解锁进阶：姿态标定两点法',
+        backstage: [
+          { agent: 'DIA-01', content: '运动学维度预估 45 → 51' },
+          { agent: 'ARB-05', content: '决策：推送进阶卡《姿态标定两点法》' },
+        ],
+        end: true,
+      },
+    },
+  },
+  // ================= 赵鸿 · 视觉引导 =================
+  {
+    learnerId: 'zhao',
+    title: '苏格拉底导学 · 手眼标定',
+    kpId: 'kp-vision',
+    startId: 'n1',
+    nodes: {
+      n1: {
+        id: 'n1', stage: '引导',
+        tutor: '赵工你好。你熟 PROFINET 排障 —— 视觉系统也有「通讯」：相机看到的像素，要翻译成机器人的毫米。你觉得这个「翻译官」是谁？[KB-026]',
+        kbRefs: ['KB-026'],
+        options: [
+          { label: '手眼标定矩阵', next: 'n2', correct: true },
+          { label: '镜头焦距', next: 'n1b', correct: false },
+          { label: 'PLC 程序', next: 'n1b', correct: false },
+        ],
+        backstage: [{ agent: 'DIA-01', content: '经验迁移路径：网络组态 → 坐标变换' }],
+      },
+      n1b: {
+        id: 'n1b', stage: '引导',
+        tutor: '焦距与 PLC 都参与其中，但「像素↔毫米」的翻译本质是两个坐标系之间的变换关系 —— 就像你给远程 IO 站做地址映射。这个变换矩阵靠「手眼标定」求解。',
+        options: [{ label: '明白了，继续', next: 'n2' }],
+      },
+      n2: {
+        id: 'n2', stage: '追问',
+        tutor: '对，手眼方程 AX=XB。追问：采集标定数据时，如果让机器人只做「纯平移」运动（不旋转），会发生什么问题？[KB-011]',
+        kbRefs: ['KB-011'],
+        options: [
+          { label: '旋转分量无法约束，解退化', next: 'n3', correct: true },
+          { label: '解会更精确', next: 'n2b', correct: false },
+          { label: '没有影响', next: 'n2b', correct: false },
+        ],
+      },
+      n2b: {
+        id: 'n2b', stage: '追问',
+        tutor: '类比你的网络经验：只用 ping 测延迟，测不出丢包率。纯平移只激励了平移分量，旋转分量完全没被「激励」出来，矩阵自然解不准。所以工程上要求什么？',
+        options: [{ label: '采集 12–20 组姿态且旋转 > 30°', next: 'n3', correct: true }],
+        decision: 'simplify',
+        decisionReason: '借用「信号激励不足」类比做降维解释',
+      },
+      n3: {
+        id: 'n3', stage: '确认',
+        tutor: '正确 ✓ 文献建议 12–20 组姿态、旋转大于 30°，对偶四元数法重投影误差最低 [KB-011]。你已完成从「网络组态」到「坐标变换」的迁移，下一步建议进入手眼标定实操。',
+        kbRefs: ['KB-011'],
+        decision: 'challenge',
+        decisionReason: '迁移理解到位，解锁进阶：对偶四元数求解推导',
+        backstage: [
+          { agent: 'DIA-01', content: '视觉维度预估 44 → 50' },
+          { agent: 'ARB-05', content: '决策：解锁实操《手眼标定五步》' },
+        ],
+        end: true,
+      },
+    },
+  },
+];
+
+function genericAgentScript(learnerId: string): TutoringScript {
+  const learner = getLearner(learnerId);
+  const kp = getKnowledgePoint(weakestKpOf(learner));
+  const topic = kp.coreTopics[0] ?? kp.name;
+  return {
+    learnerId,
+    title: `苏格拉底导学 · ${kp.name}`,
+    kpId: kp.id,
+    startId: 'n1',
+    nodes: {
+      n1: {
+        id: 'n1',
+        stage: '引导',
+        tutor: `我们先用你自己的话理解「${kp.name}」。不看资料，你觉得这个能力在 Agent / LLM 的工作链路里解决什么问题？`,
+        options: [
+          { label: '能围绕概念说清目标和边界', next: 'n2', correct: true },
+          { label: '还比较模糊，提示我', next: 'n1b' },
+        ],
+        backstage: [{ agent: 'DIA-01', content: '开放问题启动，探测概念建模能力' }],
+      },
+      n1b: {
+        id: 'n1b',
+        stage: '引导',
+        tutor: `提示：它更像一种判断/组织/转化能力——先想清楚它在哪个环节、解决什么不一致，再记定义会更容易。试着从「${topic}」这个切入点再说一遍。`,
+        options: [{ label: '明白了，继续', next: 'n2' }],
+      },
+      n2: {
+        id: 'n2',
+        stage: '追问',
+        tutor: `如果要落地到一个小任务里，第一步不应该写代码，而应先明确什么？`,
+        options: [
+          { label: '输入、输出和失败边界', next: 'n3', correct: true },
+          { label: '先把实现代码写完', next: 'n2b', correct: false },
+        ],
+      },
+      n2b: {
+        id: 'n2b',
+        stage: '追问',
+        tutor: '代码只是实现。先缺了边界，后面很容易在异常输入或调用失败时失控。想想一个 Agent 调用工具前，应该先确认什么？',
+        options: [{ label: '调用权限、返回结构和失败兜底', next: 'n3', correct: true }],
+        decision: 'simplify',
+        decisionReason: '用工程落地视角补上边界意识',
+      },
+      n3: {
+        id: 'n3',
+        stage: '确认',
+        tutor: `你已经把这个能力放到真实链路里理解了。记住：先定输入输出与失败边界，再实现；实现后要用最小案例验证，再逐步扩展。下一步可以进入「${kp.name}」相关实操继续巩固。`,
+        decision: 'challenge',
+        decisionReason: '概念闭环完成，进入实操迁移',
+        backstage: [
+          { agent: 'DIA-01', content: `${kp.name}维度预估上升，回写画像` },
+          { agent: 'ARB-05', content: `决策：解锁「${kp.name}」实操任务` },
+        ],
+        end: true,
+      },
+    },
+  };
+}
+
+export const getTutoringScript = (learnerId: string): TutoringScript => genericAgentScript(learnerId);

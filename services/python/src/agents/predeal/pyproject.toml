@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "predeal"
+version = "0.2.0"
+description = "ITN Knowledge Core document preprocessing pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "rich>=13.0",
+    "httpx>=0.24.0",
+    "pymysql>=1.1.0",
+    "Pillow>=10.0.0",
+    "zai-sdk>=0.2.0",
+    "flask>=3.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+predeal = "predeal.cli:cli"
+predeal2 = "predeal.cli2:cli"
+predeal-web = "predeal.web.app:main"

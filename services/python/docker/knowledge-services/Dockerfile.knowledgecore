@@ -1,0 +1,14 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=mirrors.aliyun.com
+
+COPY src/agents/KnowledgeCore /tmp/knowledgecore
+RUN pip install --no-cache-dir /tmp/knowledgecore && rm -rf /tmp/knowledgecore
+
+COPY docker/knowledge-services /opt/itn-knowledge-runtime
+WORKDIR /workspace/src/agents/KnowledgeCore
+EXPOSE 8010
+CMD ["python", "/opt/itn-knowledge-runtime/run_knowledgecore.py"]

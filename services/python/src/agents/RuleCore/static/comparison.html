@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RuleCore · A/B 对照演示</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2333; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff;
+    --green:#3fb950; --red:#f85149; --amber:#d29922; --purple:#bc8cff;
+    --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:14px; }
+  header { padding:18px 28px; border-bottom:1px solid var(--border);
+    background:linear-gradient(90deg,#161b22,#1c2333); display:flex;
+    align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+  header h1 { font-size:17px; margin:0; }
+  header h1 .tag { font-size:11px; color:var(--accent); border:1px solid var(--accent);
+    padding:2px 7px; border-radius:10px; margin-left:8px; vertical-align:middle; }
+  .health { font-size:12px; color:var(--muted); }
+  .health b.ok{color:var(--green);} .health b.bad{color:var(--red);}
+  main { padding:22px 28px; max-width:1500px; margin:0 auto; }
+  .controls { background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:16px 18px; margin-bottom:20px; }
+  .controls .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
+  input[type=text], textarea, select {
+    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    border-radius:7px; padding:8px 11px; font-size:13px; font-family:inherit; }
+  input[type=text]{ width:230px; } textarea{ width:100%; min-height:64px; resize:vertical; }
+  .grow { flex:1; min-width:260px; }
+  button { background:var(--accent); color:#04121f; border:none; border-radius:7px;
+    padding:9px 18px; font-size:13px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  .hint { font-size:12px; color:var(--muted); margin-top:9px; line-height:1.6; }
+  .status { display:flex; align-items:center; gap:9px; margin:14px 0; font-size:13px; }
+  .spinner { width:14px; height:14px; border:2px solid var(--border);
+    border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media(max-width:1000px){ .grid2{grid-template-columns:1fr;} }
+  .arm { background:var(--panel); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .arm .head { padding:12px 16px; display:flex; align-items:center;
+    justify-content:space-between; border-bottom:1px solid var(--border); }
+  .arm.a .head { background:rgba(248,81,73,.08); }
+  .arm.b .head { background:rgba(63,185,80,.08); }
+  .arm .head .name { font-weight:600; font-size:14px; }
+  .arm.a .name{color:var(--red);} .arm.b .name{color:var(--green);}
+  .score { font-size:22px; font-weight:700; font-family:var(--mono); }
+  .arm .body { padding:14px 16px; max-height:420px; overflow:auto; white-space:pre-wrap;
+    line-height:1.7; font-size:13px; }
+  .arm .meta { padding:10px 16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); }
+  .badge { font-size:11px; padding:2px 8px; border-radius:10px; font-family:var(--mono); }
+  .badge.pass{ background:rgba(63,185,80,.15); color:var(--green); }
+  .badge.fail{ background:rgba(248,81,73,.15); color:var(--red); }
+  .badge.skip{ background:rgba(139,148,158,.15); color:var(--muted); }
+
+  .section { margin-top:22px; }
+  .section h2 { font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .section h2 .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+
+  .checks { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media(max-width:1000px){ .checks{grid-template-columns:1fr;} }
+  .check { background:var(--panel2); border:1px solid var(--border); border-radius:8px;
+    padding:11px 13px; }
+  .check .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .check .code { font-family:var(--mono); font-size:12px; color:var(--purple); }
+  .check .txt { font-size:12.5px; line-height:1.55; }
+  .check .ev { font-size:11.5px; color:var(--muted); margin-top:6px; padding:6px 8px;
+    background:rgba(0,0,0,.25); border-radius:5px; border-left:2px solid var(--border); }
+  .check .ev.pass{border-left-color:var(--green);} .check .ev.fail{border-left-color:var(--red);}
+  .check.fail{ border-color:rgba(248,81,73,.5); }
+
+  .timeline { display:flex; flex-direction:column; gap:0; }
+  .tl-item { display:flex; gap:12px; position:relative; padding-bottom:16px; }
+  .tl-item::before { content:''; position:absolute; left:13px; top:26px; bottom:-2px; width:2px;
+    background:var(--border); }
+  .tl-item:last-child::before{ display:none; }
+  .tl-dot { width:28px; height:28px; border-radius:50%; background:var(--panel2);
+    border:2px solid var(--accent); display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; color:var(--accent); flex-shrink:0; z-index:1; }
+  .tl-item.derived .tl-dot{ border-color:var(--purple); color:var(--purple); }
+  .tl-item.must .tl-dot{ border-color:var(--green); color:var(--green); }
+  .tl-content { background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:9px 13px; flex:1; }
+  .tl-content .rule { font-family:var(--mono); font-size:12px; color:var(--purple); }
+  .tl-content .why { font-size:12.5px; margin-top:4px; }
+  .tl-content .res { font-size:12.5px; margin-top:4px; color:var(--text); }
+  .tl-content .res.set{color:var(--purple);} .tl-content .res.must{color:var(--green);}
+
+  .compare-summary { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  @media(max-width:800px){ .compare-summary{grid-template-columns:repeat(2,1fr);} }
+  .stat { background:var(--panel); border:1px solid var(--border); border-radius:9px;
+    padding:14px 16px; text-align:center; }
+  .stat .num { font-size:28px; font-weight:700; font-family:var(--mono); }
+  .stat .lbl { font-size:12px; color:var(--muted); margin-top:4px; }
+  .stat.a .num{color:var(--red);} .stat.b .num{color:var(--green);}
+  .stat.p .num{color:var(--accent);}
+
+  .revise { background:var(--panel2); border:1px solid var(--border); border-radius:8px;
+    padding:12px 14px; margin-top:10px; font-size:12.5px; }
+  .revise .flow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:var(--mono); }
+  .revise .arr { color:var(--muted); }
+  .empty { color:var(--muted); padding:24px; text-align:center; }
+  code { font-family:var(--mono); font-size:.92em; background:rgba(0,0,0,.3);
+    padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RuleCore · A/B 对照演示 <span class="tag">规则引擎有效性证明</span></h1>
+  <div class="health" id="health">连接中…</div>
+</header>
+<main>
+  <div class="controls">
+    <div class="row">
+      <div class="grow">
+        <label>演示任务（同一输入、同一模型、同一知识上下文，只变"有无规则引擎"）</label>
+        <textarea id="task" placeholder="例如：生成一个关于 ReAct 智能体调试技巧的培训材料，说明如何排查智能体陷入循环的问题…"></textarea>
+      </div>
+      <div>
+        <label>规则/知识来源文档</label>
+        <select id="doc" class="grow" style="width:230px"></select>
+      </div>
+      <button id="run">🚀 发起 A/B 对照</button>
+    </div>
+    <div class="hint">
+      对照纪律：A 臂（无规则引擎）与 B 臂（有规则引擎）使用<b>完全相同</b>的知识上下文与模型；
+      差异只来自 B 臂额外注入的 <b>Rule Constraints</b>（由领域规则经有限前向推理产生）。
+      两臂用<b>同一套 Rule Checker</b> 逐条校验，差异由客观校验结果体现。一次对照约 1~3 分钟。
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+  <div class="section" id="summarySection" style="display:none">
+    <h2><span class="dot"></span>规则一致性对比</h2>
+    <div class="compare-summary" id="summary"></div>
+    <div id="reviseBox"></div>
+  </div>
+
+  <div class="section" id="factsSection" style="display:none">
+    <h2><span class="dot"></span>任务事实 + 规则推理（B 臂）</h2>
+    <div class="grid2">
+      <div>
+        <h3 style="font-size:13px;margin:0 0 8px;color:var(--muted)">识别的任务事实</h3>
+        <div id="facts" class="arm"><div class="body" style="max-height:200px"></div></div>
+      </div>
+      <div>
+        <h3 style="font-size:13px;margin:0 0 8px;color:var(--muted)">推理链 Timeline</h3>
+        <div class="timeline" id="timeline"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="armSection" style="display:none">
+    <h2><span class="dot"></span>生成结果对照</h2>
+    <div class="grid2">
+      <div class="arm a">
+        <div class="head"><span class="name">A 臂 · 无规则引擎</span><span class="score" id="scoreA">–</span></div>
+        <div class="body" id="outA"></div>
+        <div class="meta" id="metaA"></div>
+      </div>
+      <div class="arm b">
+        <div class="head"><span class="name">B 臂 · 有规则引擎</span><span class="score" id="scoreB">–</span></div>
+        <div class="body" id="outB"></div>
+        <div class="meta" id="metaB"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="checkSection" style="display:none">
+    <h2><span class="dot"></span>Rule Checker 逐条校验（同一约束清单）</h2>
+    <div class="checks" id="checks"></div>
+  </div>
+
+  <div class="section" id="rulesSection" style="display:none">
+    <h2><span class="dot"></span>命中规则 + 来源（可回放）</h2>
+    <div id="rules"></div>
+  </div>
+
+  <div class="empty" id="placeholder">👆 填写任务并点击「发起 A/B 对照」，对照结果将在此展示。</div>
+</main>
+
+<script>
+const API = '/api/rules';
+let pollTimer = null;
+
+async function jget(url){ const r=await fetch(url); if(!r.ok)throw new Error(url+' -> '+r.status); return r.json(); }
+async function jpost(url,body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok){let m='';try{m=(await r.json()).detail}catch(e){} throw new Error(m||r.status);} return r.json(); }
+
+function netErr(e){
+  // fetch 网络层错误（Failed to fetch）：连接根本没建立。给出可操作提示。
+  if(e && /failed to fetch|networkerror|load failed/i.test(e.message||'')){
+    return '无法连接服务（网络层失败）。请确认：1) 服务正在运行（/health 可访问）2) 浏览器地址与 API 同域，或页面是通过服务自身域名打开的 3) 本页若是旧缓存，请强制刷新（Cmd+Shift+R）。原始错误：'+(e.message||e);
+  }
+  return e.message||String(e);
+}
+
+async function loadHealth(){
+  try{
+    const h=await jget('/health');
+    document.getElementById('health').innerHTML =
+      `引擎 <b class="${h.rule_engine_enabled?'ok':'bad'}">${h.rule_engine_enabled?'启用':'禁用'}</b>` +
+      ` · 库 <b class="${h.db==='ok'?'ok':'bad'}">${h.db}</b>` +
+      ` · LLM <b class="${h.llm_available?'ok':'bad'}">${h.llm_available?'可用':'不可用'}</b>` +
+      ` · ACTIVE 规则 <b class="ok">${h.active_rules>=0?h.active_rules:'?'}</b>`;
+  }catch(e){
+    document.getElementById('health').innerHTML =
+      `<b class="bad">服务未连接</b> <a href="#" id="healthRetry" style="color:var(--accent)">重试</a>`;
+    const r=document.getElementById('healthRetry');
+    if(r) r.onclick=(ev)=>{ ev.preventDefault(); loadHealth(); loadDocs(); };
+  }
+}
+async function loadDocs(){
+  const sel=document.getElementById('doc'); sel.innerHTML='';
+  try{
+    const docs=await jget(API+'/documents');
+    docs.forEach(d=>{ const o=document.createElement('option'); o.value=d.id;
+      o.textContent=`[${d.id}] ${d.title}`; sel.appendChild(o); });
+  }catch(e){
+    // 不再静默吞错：文档列表加载失败要可见 + 可重试
+    const o=document.createElement('option'); o.value='';
+    o.textContent='⚠ 文档列表加载失败：'+netErr(e); o.disabled=true;
+    sel.appendChild(o);
+    const r=document.createElement('option'); r.value='__retry__';
+    r.textContent='🔄 点击重新加载文档列表'; r.disabled=true;
+    sel.appendChild(r);
+    sel.disabled=false;
+    sel.onchange=()=>{ if(sel.value==='__retry__'){ sel.onchange=null; loadDocs(); } };
+  }
+}
+
+function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function runCompare(){
+  const task=document.getElementById('task').value.trim();
+  const docId=document.getElementById('doc').value;
+  if(!task){ alert('请填写任务'); return; }
+  document.getElementById('placeholder').style.display='none';
+  document.getElementById('run').disabled=true;
+  document.getElementById('status').innerHTML='<div class="status"><div class="spinner"></div> 正在发起对照（Fact 抽取 + 规则推理 + 双臂生成 + 校验）…</div>';
+  try{
+    const body={task, document_id: docId?parseInt(docId):null,
+      document_ids: docId?[parseInt(docId)]:null};
+    const {task_id}=await jpost(API+'/compare', body);
+    poll(task_id);
+  }catch(e){
+    document.getElementById('status').innerHTML=`<div class="status" style="color:var(--red)">❌ ${esc(netErr(e))}</div>`;
+    document.getElementById('run').disabled=false;
+  }
+}
+
+async function poll(taskId){
+  let t;
+  try{ t=await jget(`${API}/compare/${taskId}`); }
+  catch(e){
+    // 轮询中的网络层失败（如服务重启）：给出可操作提示，不无限静默重试
+    document.getElementById('status').innerHTML=`<div class="status" style="color:var(--red)">❌ 查询对照状态失败：${esc(netErr(e))}</div>`;
+    document.getElementById('run').disabled=false;
+    return;
+  }
+  if(t.status==='DONE'){ render(t); document.getElementById('run').disabled=false; }
+  else if(t.status==='FAILED'){
+    document.getElementById('status').innerHTML=`<div class="status" style="color:var(--red)">❌ 对照失败：${esc(t.error||'')}</div>`;
+    document.getElementById('run').disabled=false;
+  }else{
+    document.getElementById('status').innerHTML=
+      `<div class="status"><div class="spinner"></div> 执行中（${esc(t.status)}）… 双臂并行生成 + 校验</div>`;
+    pollTimer=setTimeout(()=>poll(taskId), 2500);
+  }
+}
+
+function passCount(check){ return check?check.results.filter(r=>r.status==='PASS').length:0; }
+
+function render(t){
+  document.getElementById('status').innerHTML=
+    `<div class="status" style="color:var(--green)">✅ 对照完成 · task ${esc(t.task_id)} · 存档可回放</div>`;
+
+  const checkA=t.check_a_json||t.check_a||{};
+  const checkBRevised=t.check_b_revised_json||t.check_b_revised;
+  const checkB=checkBRevised||(t.check_b_json||t.check_b)||{};
+  const total=(t.constraints_json||t.constraints||[]).length
+    || (checkB.results?checkB.results.length:0);
+  const aPass=passCount(checkA), bPass=passCount(checkB);
+
+  // summary
+  document.getElementById('summarySection').style.display='block';
+  document.getElementById('summary').innerHTML=
+    statCard('a',aPass,total,'A 臂通过（无规则引擎）')+
+    statCard('b',bPass,total,'B 臂通过（有规则引擎）')+
+    statCard('p',total,0,'约束总数（MUST/MUST_NOT/SHOULD）')+
+    statCard('p',(bPass-aPass),0,'B 臂多通过');
+  document.getElementById('summary').querySelectorAll('.stat').forEach(s=>{
+    s.querySelector('.num').style.fontSize='26px';
+  });
+
+  // revise box
+  const reviseBox=document.getElementById('reviseBox');
+  const firstB=t.check_b_json||t.check_b;
+  if(firstB && checkBRevised && firstB!==checkBRevised){
+    const fails=(firstB.results||[]).filter(r=>r.status==='FAIL').map(r=>r.rule_code);
+    reviseBox.innerHTML=`<div class="revise"><b>自动修正轨迹</b>
+      <div class="flow" style="margin-top:8px">
+        ${fails.map(c=>`<span class="badge fail">${esc(c)} FAIL</span>`).join('')}
+        <span class="arr">→ 自动修正 →</span>
+        ${(checkBRevised.results||[]).map(r=>`<span class="badge ${r.status.toLowerCase()}">${esc(r.rule_code)} ${r.status}</span>`).join('')}
+      </div></div>`;
+  }else{ reviseBox.innerHTML=''; }
+
+  // facts + timeline
+  document.getElementById('factsSection').style.display='block';
+  const facts=t.facts_json||t.facts||{};
+  document.querySelector('#facts .body').innerHTML=
+    Object.keys(facts).length
+    ? Object.entries(facts).map(([k,v])=>`<div><code>${esc(k)}</code> = ${esc(JSON.stringify(v))}</div>`).join('')
+    : '<span style="color:var(--muted)">（未抽取到事实）</span>';
+  const trace=t.reasoning_trace_json||t.reasoning_trace||[];
+  document.getElementById('timeline').innerHTML = trace.length ? trace.map(tlItem).join('')
+    : '<div class="empty">无推理步骤</div>';
+
+  // arms
+  document.getElementById('armSection').style.display='block';
+  document.getElementById('outA').textContent=t.output_a||'（无输出）';
+  const outB=t.output_b_revised||t.output_b||'（无输出）';
+  document.getElementById('outB').textContent=outB;
+  document.getElementById('scoreA').textContent=`${aPass}/${total}`;
+  document.getElementById('scoreB').textContent=`${bPass}/${total}`;
+  document.getElementById('metaA').textContent=`原始生成 · 无约束注入 · 校验 ${aPass}/${total} 通过`;
+  document.getElementById('metaB').textContent=`受控生成 · 注入 ${total} 条约束` +
+    (t.output_b_revised?` · 经 1 次自动修正`:'');
+
+  // checks（并排：A / B）
+  document.getElementById('checkSection').style.display='block';
+  const codes=(checkB.results||[]).map(r=>r.rule_code);
+  document.getElementById('checks').innerHTML = codes.map(code=>{
+    const ra=(checkA.results||[]).find(r=>r.rule_code===code);
+    const rb=(checkB.results||[]).find(r=>r.rule_code===code);
+    return `<div>
+      <div style="font-size:12px;color:var(--purple);font-family:var(--mono);margin-bottom:6px">${esc(code)}</div>
+      ${checkCard('A',ra)}${checkCard('B',rb)}
+    </div>`;
+  }).join('') || '<div class="empty">无约束</div>';
+
+  // rules + source
+  document.getElementById('rulesSection').style.display='block';
+  const rules=(t.constraints_json||t.constraints||[]);
+  document.getElementById('rules').innerHTML = rules.length
+    ? rules.map(r=>`<div class="check" style="margin-bottom:8px">
+        <div class="top"><span class="code">[${esc(r.rule_code)}] ${esc(r.type)}</span></div>
+        <div class="txt">${esc(r.content)}</div>
+        ${r.source?`<div class="ev">来源：${esc(r.source)}</div>`:''}
+      </div>`).join('')
+    : '<div class="empty">无命中规则</div>';
+}
+
+function statCard(cls,num,denom,lbl){
+  return `<div class="stat ${cls}"><div class="num">${num}${denom?`<span style="font-size:14px;color:var(--muted)">/${denom}</span>`:''}</div><div class="lbl">${lbl}</div></div>`;
+}
+function tlItem(s){
+  const isSet=(s.result||'').startsWith('SET');
+  const cls=isSet?'derived':(s.result&&s.result.startsWith('MUST')?'must':'');
+  const resCls=isSet?'set':(s.result&&s.result.startsWith('MUST')?'must':'');
+  return `<div class="tl-item ${cls}">
+    <div class="tl-dot">${s.round}</div>
+    <div class="tl-content">
+      <div class="rule">第 ${s.round} 轮 · ${esc(s.rule)}</div>
+      <div class="why">命中：${esc(s.reason)}</div>
+      <div class="res ${resCls}">${esc(s.result)}</div>
+    </div></div>`;
+}
+function checkCard(arm,r){
+  if(!r) return `<div class="check"><div class="top"><span class="code">${arm}</span><span class="badge skip">N/A</span></div></div>`;
+  const st=r.status.toLowerCase();
+  return `<div class="check ${st}">
+    <div class="top"><span class="code">${arm} 臂</span><span class="badge ${st}">${r.status}</span></div>
+    ${r.evidence?`<div class="ev ${st}">${esc(r.evidence)}</div>`:''}
+    ${r.reason?`<div class="ev fail">原因：${esc(r.reason)}</div>`:''}
+  </div>`;
+}
+
+document.getElementById('run').addEventListener('click',runCompare);
+loadHealth(); loadDocs();
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+[project]
+name = "itn-rule-core"
+version = "0.1.0"
+description = "智训云枢 Rule Engine MVP - 领域规则抽取 + 有限前向推理 + 生成约束 + 规则一致性回放"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "pymysql>=1.1",
+    "httpx>=0.27",
+    "openai>=1.30",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
