@@ -1754,17 +1754,20 @@ async function renderHarvest(v, embedded) {
         const checked = el("input"); checked.type = "checkbox";
         const label = el("label", "row");
         label.appendChild(checked); label.appendChild(el("span", null, "我已检查清单与来源"));
-        const ingest = btn("确认并入并建索引", "primary sm", async () => {
-          ingest.disabled = true; feedback.textContent = "正在并入…";
+        const ingestKey = "kb:ingest:" + s.id;
+        const ingest = btn("确认并入并建索引", "primary sm", () => runGuarded(ingestKey, ingest, "正在并入…", async () => {
+          const targetId = target.value;
+          target.disabled = checked.disabled = true; feedback.textContent = "正在并入…";
           try {
-            await api("/api/kb/ingest", { id: s.id, kbId: target.value, confirmed: checked.checked });
+            await api("/api/kb/ingest", { id: s.id, kbId: targetId, confirmed: checked.checked });
             feedback.textContent = "资料已并入，正在重建索引…";
-            if (!await buildIndex(target.value)) indexFailures.add(s.id);
+            if (!await buildIndex(targetId)) indexFailures.add(s.id);
             await listSources();
-          } catch (e) { feedback.textContent = "并入失败：" + e.message; ingest.disabled = false; }
-        });
+          } catch (e) { feedback.textContent = "并入失败：" + e.message; }
+          finally { target.disabled = checked.disabled = false; }
+        }).finally(() => { if (ingest.isConnected) ready(); }));
         ingest.disabled = true;
-        const ready = () => { ingest.disabled = !checked.checked || !target.value; };
+        const ready = () => { ingest.disabled = busyActions.has(ingestKey) || !checked.checked || !target.value; };
         checked.onchange = ready; target.onchange = ready;
         actions.appendChild(target); actions.appendChild(label); actions.appendChild(ingest);
         actions.appendChild(btn("不并入", "sm ghost", async () => {
@@ -3963,11 +3966,11 @@ function sessionMoreBtn() {
   trigger.setAttribute("aria-label", "会话操作");
   trigger.innerHTML = icon("dotsH");
   trigger.disabled = !state.chatSessionId;
-  const item = (label, ic, fn) => {
+  const item = (label, ic, fn, keepOpen = false) => {
     const b = el("button", "rail-menu-item", "");
     b.type = "button";
     b.innerHTML = icon(ic) + "<span class='rail-menu-main'>" + esc(label) + "</span>";
-    b.onclick = (ev) => { ev.stopPropagation(); closePopover(); fn(); };
+    b.onclick = (ev) => { ev.stopPropagation(); if (!keepOpen) closePopover(); fn(ev); };
     return b;
   };
   trigger.onclick = (ev) => {
@@ -3978,13 +3981,12 @@ function sessionMoreBtn() {
     popoverAt(trigger, (menu) => {
       menu.appendChild(el("div", "rail-menu-title", "这段会话"));
       menu.appendChild(item("修改会话名称…", "pencil", () => renameSessionDialog(meta)));
-      menu.appendChild(item("新建分支", "branch", () => {
-        /* 从**最新一轮**分出去：那一轮之前的历史原样带进新会话（用户要的语义）。
-           传空 turnId 等于"什么都不复制"，内核会直接拒 —— 这里必须真拿一个轮次 id。 */
-        const turns = (state.chatTurns || []).filter((x) => x.id && x.id !== "local");
-        if (!turns.length) { toast("这一段还没有可以分支的轮次"); return; }
-        branchFromTurn(turns[turns.length - 1]);
-      }));
+      const turns = (state.chatTurns || []).filter((x) => x.id && x.id !== "local");
+      const latest = turns[turns.length - 1];
+      // Keep this entry visible while pending so the click has immediate feedback.
+      const branch = item("新建分支", "branch", event => branchFromTurn(latest, event.currentTarget, sid), true);
+      if (latest) bindBranchButton(branch, sid, latest.id);
+      menu.appendChild(branch);
       menu.appendChild(item("复制会话链接", "copy", () => copyText("lumin://thread/" + sid)));
     }, { side: "right", cls: "session-menu-right" });
   };
@@ -5814,11 +5816,16 @@ function deleteSessionDialog(s) {
  * kbId 必须由用户给（""=通用：本机所有知识库都能检索）——"这段对话用哪份资料"是开工前就该定的事，
  * 让它猜或者事后切库，都会把两边的资料混进同一段对话里。
  */
-async function newChat(projectId, mode) {
+async function newChat(projectId, mode, trigger) {
+  if (state.chatStarting) { toast("正在新建会话…"); return; }
+  return runGuarded("session:new", trigger, "新建中…", async () => {
+  const generation = state.navigationGeneration;
+  toast("正在新建会话…");
   try {
     // 新对话只选模式与项目；检索范围不再按知识库切分 —— 永远是本机全部知识库。
     // mode: "chat" = 常规聊天（只写默认工作目录）/ "work" = 指定工作区（权限由 chip 定）
     const d = await api("/api/sessions/new", { projectId: projectId || "" });
+    if (generation !== state.navigationGeneration) { await reloadSessions(); return; }
     state.chatProject = d.projectId || "";
     state.chatMode = (mode === "work" || (d.projectId || "")) ? "work" : "chat";
     state.chatKb = "";
@@ -5831,10 +5838,11 @@ async function newChat(projectId, mode) {
       await state.chatOpenSession(state.chatSessionId);
       return;
     }
-    go("chat");
+    await go("chat");
   } catch (e) {
     toast("新建会话失败：" + e.message);
   }
+  });
 }
 
 /** 把只追加的事件还原成可渲染的轮次。界面永远以事件为准，不自己编对话。 */
@@ -5860,6 +5868,12 @@ function turnsFromEvents(events) {
     else if (String(e.type || "").startsWith("team/") && p.runId) {
       t.teamRunIds ||= [];
       if (!t.teamRunIds.includes(p.runId)) t.teamRunIds.push(p.runId);
+      t.teamEntries ||= [];
+      if (!t.teamEntries.some(x => x.runId === p.runId)) {
+        const pending = t.teamEntries.find(x => !x.runId && x.tool === p.tool);
+        if (pending) pending.runId = p.runId;
+        else t.teamEntries.push({runId: p.runId});
+      }
     }
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
     else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
@@ -5884,6 +5898,10 @@ function turnsFromEvents(events) {
       }
     } else if (e.type === "tool/call") {
       t.items.push({ t: "tool", callId: p.callId || "", name: p.tool || "", args: p.args || {}, summary: "", ok: null, running: true });
+      if (["research_topic_team", "plan_study_team"].includes(p.tool)) {
+        t.teamEntries ||= [];
+        t.teamEntries.push({key: "pending:" + key + ":" + (p.callId || p.tool), tool: p.tool});
+      }
     } else if (e.type === "tool/result") {
       // 写/改文件的工具会带回 {path, add, del}：攒成"这一轮改了哪些文件"（pi-studio 也有这张卡）
       const det = p.details;
@@ -6079,7 +6097,7 @@ function msgMeta(opts) {
   const stamp = el("span", "msg-time", fmtStamp(opts.at || "").slice(6) || "");
   const icons = [];
   if (opts.onCopy) icons.push(iconBtn("复制", "copy", opts.onCopy));
-  if (opts.onBranch) icons.push(iconBtn("从这里开分支", "branch", opts.onBranch));
+  if (opts.branchTurn) icons.push(branchTurnButton(opts.branchTurn));
   if (opts.onRaw) icons.push(opts.onRaw);
   if (opts.onEdit) icons.push(iconBtn("改这条重发", "pencil", opts.onEdit));
   if (opts.side === "user") {
@@ -6164,7 +6182,9 @@ function renderTurnBlock(t, live) {
   };
   for(const item of processBlocks){if(item.t==='think'||item.t==='tool')pending.push(item);else{flushProcess();appendContent(item);}}
   flushProcess();answerBlocks.forEach(appendContent);
-  for (const runId of t.teamRunIds || (t.teamRunId ? [t.teamRunId] : [])) {
+  const teamEntries = t.teamEntries || (t.teamRunIds || (t.teamRunId ? [t.teamRunId] : [])).map(runId => ({runId}));
+  for (const entry of teamEntries) {
+    const runId = entry.runId || entry.key;
     const open = btn('打开协作流程','ghost sm team-open-btn',()=>window.LuminTeamPanel?.open(runId));
     open.dataset.runId = runId;
     box.appendChild(open);
@@ -6249,7 +6269,7 @@ function renderTurnBlock(t, live) {
         side: "ai",
         at: t.answerAt || t.startedAt,
         onCopy: hasAnswer ? () => copyText(lastText) : null,
-        onBranch: (t.id && t.id !== "local") ? (ev) => branchFromTurn(t, ev && ev.currentTarget) : null,
+        branchTurn: (t.id && t.id !== "local") ? t : null,
         onRaw: (t.id && t.id !== "local") ? rawTurnToggle(t, box) : null,
       }));
     }
@@ -6507,38 +6527,85 @@ async function resendEdited(t, text, asBranch) {
   }
 }
 
-/**
- * 从这一轮开分支：原会话一字不动，新会话把这一轮（含）连同之前的历史一起带过去。
- *
- * 分支是一次真实的建会话请求，可能跑好几秒；同一个会话同一时刻只允许开一个，
- * 否则连点几下就会在建好之后一次性多出好几段分支会话。
- */
-async function branchFromTurn(t, trigger) {
+// Request identity belongs to the rendered source, even while another session opens.
+function branchRequestKey(sid, turnId) { return "branch:" + JSON.stringify([sid, turnId]); }
+const branchButtonStates = new WeakMap();
+function paintBranchButton(button) {
+  const busy = busyActions.has(button.dataset.branchRequest);
+  const previous = branchButtonStates.get(button);
+  if (busy && !previous) {
+    const label = button.querySelector(".rail-menu-main");
+    branchButtonStates.set(button, { disabled: button.disabled, title: button.title, label, text: label?.textContent });
+    button.disabled = true;
+    button.classList.add("is-busy");
+    button.setAttribute("aria-busy", "true");
+    button.title = "正在开分支…";
+    if (label) label.textContent = "正在开分支…";
+  } else if (!busy && previous) {
+    button.disabled = previous.disabled;
+    button.title = previous.title;
+    button.classList.remove("is-busy");
+    button.removeAttribute("aria-busy");
+    if (previous.label) previous.label.textContent = previous.text;
+    branchButtonStates.delete(button);
+  }
+}
+function bindBranchButton(button, sid, turnId) {
+  button.dataset.branchRequest = branchRequestKey(sid, turnId);
+  paintBranchButton(button);
+  return button;
+}
+function refreshBranchButtons(key) {
+  for (const button of document.querySelectorAll("button[data-branch-request]")) {
+    if (button.dataset.branchRequest === key) paintBranchButton(button);
+  }
+}
+function branchTurnButton(t) {
   const sid = state.chatSessionId;
+  const turn = { id: t.id };
+  const button = iconBtn("从这里开分支", "branch", event => branchFromTurn(turn, event.currentTarget, sid));
+  return bindBranchButton(button, sid, turn.id);
+}
+
+/** One in-flight request per source session + turn, across all UI entry points. */
+async function branchFromTurn(t, trigger, sid = state.chatSessionId) {
   if (!sid) { toast("先开一段对话"); return; }
   if (!t || !t.id || t.id === "local") { toast("这一段还没有可以分支的轮次"); return; }
-  await runGuarded("branch:" + sid, trigger, "正在开分支…", async () => {
-    try {
-      const d = await api("/api/sessions/branch", { sessionId: sid, turnId: t.id });
-      // 新分支可能还没有事件（从第一轮分出去时"之前的历史"是空的）：先把名字记在界面里，
-      // 列表加载完之后 summary 会给出同一个名字（内核在分叉时就写进了 title:<sid>）
-      state.chatTitleHint = state.chatTitleHint || {};
-      if (d.title) state.chatTitleHint[d.sessionId] = d.title;
-      await loadProjects();
-      await reloadSessions();
-      openChatSession(d.sessionId);
-      toast(d.title ? ("已开新分支：" + d.title + "（原会话还在）") : "已从这一轮开出新分支（原会话还在）");
-    } catch (e) {
-      toast("分支失败：" + e.message);
-    }
-  });
+  const turnId = t.id;
+  const key = branchRequestKey(sid, turnId);
+  if (busyActions.has(key)) { toast("正在开分支，请稍候…"); return; }
+  if (trigger) bindBranchButton(trigger, sid, turnId);
+  const navigationGeneration = state.navigationGeneration;
+  try {
+    await runGuarded(key, null, null, async () => {
+      refreshBranchButtons(key);
+      try {
+        const d = await api("/api/sessions/branch", { sessionId: sid, turnId });
+        state.chatTitleHint = state.chatTitleHint || {};
+        if (d.title) state.chatTitleHint[d.sessionId] = d.title;
+        await loadProjects();
+        await reloadSessions();
+        // A background result must not pull the user away from their current work.
+        if (state.chatSessionId === sid && current === "chat" && currentSection !== "overview" &&
+            state.navigationGeneration === navigationGeneration) {
+          if (trigger && activePopover?.menu.contains(trigger)) closePopover();
+          // Keep the source locked until the old buttons have actually been replaced.
+          await openChatSession(d.sessionId);
+        }
+        toast(d.title ? ("已开新分支：" + d.title + "（原会话还在）") : "已从这一轮开出新分支（原会话还在）");
+      } catch (e) {
+        toast("分支失败：" + e.message);
+      }
+    });
+  } finally {
+    refreshBranchButtons(key);
+  }
 }
 
 /**
  * 从**最新的一条**开分支：整段对话（含最后一轮）复制到新会话，原会话一字不动。
  *
- * 与 branchFromTurn 的差别：那个是"从某一轮之前分"（连那一轮一起不要了，换个问法重来）；
- * 这个是"把这段对话整个带走，换条路继续走" —— 顶栏 ⋯ 里的「新建分支」和 /branch 用的是它。
+ * 顶栏 ⋯ 里的「新建分支」和 /branch 与轮次按钮共用同一个请求锁。
  */
 async function branchFromLatest() {
   const turns = (state.chatTurns || []).filter((x) => x.id && x.id !== "local");
@@ -7141,7 +7208,7 @@ PAGES.chat = {
       const parts = [t.kind || "", t.user || "", t.ok === null ? "" : String(t.ok), t.message || "",
                      t.activity || "", t.activityTool || '', t.toolInputBytes || 0, t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
                      t.resourceProgress ? (t.resourceProgress.name || "1") : ""];
-      parts.push("team:" + JSON.stringify(t.teamRunIds || (t.teamRunId ? [t.teamRunId] : [])));
+      parts.push("team:" + JSON.stringify(t.teamEntries || t.teamRunIds || (t.teamRunId ? [t.teamRunId] : [])));
       // 会话树的分支行（‹ n/m ›）也要进指纹：这一轮跑完时先用旧树画过一版并进了缓存，
       // 随后才拉到带 families 的新树 —— 指纹不含它的话，切换行要等整页重画才出现（实测踩过）
       const famSig = (t.id && t.id !== "local") ? branchFamilyFor(t.id) : null;
@@ -7270,7 +7337,7 @@ PAGES.chat = {
       if (!text) return;
       // 跑着的时候 Enter = 插话，不是"等这一轮跑完再说"
       if (state.busyTurn) { steer(); return; }
-      if (state.chatStarting) return;
+      if (state.chatStarting || busyActions.has("session:new")) return;
       if (!state.chatSessionId) {
         state.chatStarting = true;
         paintActionBtn();
@@ -7331,7 +7398,7 @@ PAGES.chat = {
           if (fresh.length) {
             state.chatEvents = (state.chatEvents || []).concat(fresh);
             state.chatTurns = turnsFromEvents(state.chatEvents);
-            window.LuminTeamPanel?.ingest(fresh, sid, {autoOpen: true});
+            window.LuminTeamPanel?.ingest(fresh, sid, {autoOpen: current === "chat" && currentSection !== "overview"});
             paint();
           }
           if (request.turnId && state.chatEvents.some((e) => e.type === "turn/end" && e.turnId === request.turnId)) {
@@ -8532,27 +8599,33 @@ async function importKbMaterial(withIndex) {
   if (!path) { toast("先选一个文件夹或一份文件"); return; }
   const nameEl = $("kb-import-name");
   const payload = { path: path, kind: (el0 && el0.dataset.kind) || "auto", name: (nameEl && nameEl.value.trim()) || "" };
+  return runGuarded("kb:import", null, null, async () => {
+  const generation = state.navigationGeneration;
   const buttons = [...document.querySelectorAll(".kb-import-actions button")];
-  if (buttons.some(b => b.disabled)) return;
-  buttons.forEach(b => { b.disabled = true; });
+  buttons.forEach(b => { b.disabled = true; b.setAttribute("aria-busy", "true"); b.textContent = "正在添加…"; });
   try {
     const r = await api("/api/kb/import", payload);
     const info = (r && r.imported) || {};
     const id = info.id || "";
     state.kb = id || state.kb;
     await loadCfg();
-    if (!id) { toast("导入完成"); go("settings", "kb"); return; }
+    if (!id) { toast("导入完成"); if (generation === state.navigationGeneration) await go("settings", "kb"); return; }
     if (withIndex) {
       await buildIndex(id);
     } else {
       toast("已导入 " + (info.docs || 0) + " 篇资料，还没建立索引");
-      go("settings", "kb");
+      if (generation === state.navigationGeneration) await go("settings", "kb");
     }
   } catch (e) {
     toast("导入失败：" + e.message);
   } finally {
-    buttons.forEach(b => { b.disabled = false; });
+    buttons.forEach(b => { b.disabled = false; b.removeAttribute("aria-busy"); b.textContent = b.dataset.idleLabel; });
   }
+  }).finally(() => {
+    if (!busyActions.has("kb:import")) for (const b of document.querySelectorAll(".kb-import-actions button")) {
+      b.disabled = false; b.removeAttribute("aria-busy"); b.textContent = b.dataset.idleLabel;
+    }
+  });
 }
 
 function renameKnowledgeBase(kb) {
@@ -8607,6 +8680,10 @@ function settingsKb() {
   const addOnly = btn("仅添加", "ghost", () => importKbMaterial(false));
   addOnly.title = "先保存资料，稍后建立索引";
   impFacts.appendChild(addOnly);
+  for (const b of impFacts.children) {
+    b.dataset.idleLabel = b.textContent;
+    if (busyActions.has("kb:import")) { b.disabled = true; b.setAttribute("aria-busy", "true"); b.textContent = "正在添加…"; }
+  }
   impForm.appendChild(impFacts);
   impCard.appendChild(impForm);
   g.appendChild(impCard);
@@ -8639,10 +8716,10 @@ function settingsKb() {
       if (state.kb === k.id) row.appendChild(tag("当前"));
       it.appendChild(row);
       const acts = el("div", "row item-actions");
-      acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", () => buildIndex(k.id)));
+      acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", event => buildIndex(k.id, event.currentTarget)));
       acts.appendChild(btn("重命名", "sm ghost", () => renameKnowledgeBase(k)));
       // 资料散乱时让模型读一遍、给出一份教学目录；建索引时按它组织（结果可清除）
-      acts.appendChild(btn("整理", "sm", () => organizeKb(k.id)));
+      acts.appendChild(btn("整理", "sm", event => organizeKb(k.id, event.currentTarget)));
       if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
       acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
       acts.appendChild(btn("删除", "sm ghost", () => {
@@ -9023,8 +9100,9 @@ function openNoteEditor(note, kbId, chapter, chunk) {
  * 这是一次模型调用（不是让模型去读写文件）：内核把资料清单喂给模型，模型只回一份 JSON，
  * 校验后落成 <数据目录>/kb/<id>/outline.json，建索引时自动按它组织章节。
  */
-async function organizeKb(kbId) {
+async function organizeKb(kbId, trigger) {
   if (!kbId) { toast("先选择一个知识库"); return; }
+  return runGuarded("kb:organize:" + kbId, trigger, "正在整理…", async () => {
   const v = $("view");
   const card = progressCard("正在整理：「" + kbName(kbId) + "」", ["读资料清单", "让模型给出目录", "校验并落盘"]);
   v.insertBefore(card, v.firstChild);
@@ -9066,10 +9144,12 @@ async function organizeKb(kbId) {
     v.insertBefore(box, v.firstChild);
     toast("整理失败：" + e.message);
   }
+  });
 }
 
-async function buildIndex(kbId) {
+async function buildIndex(kbId, trigger) {
   if (!kbId) { toast("先选择一个知识库"); return; }
+  return runGuarded("kb:build:" + kbId, trigger, "正在准备…", async () => {
   const v = $("view");
   const card = progressCard("正在准备资料：「" + kbName(kbId) + "」", ["扫描目录", "按章节整理内容片段", "识别图片（需要视觉模型）", "建立语义搜索（可选）", "写入本机数据库"]);
   v.insertBefore(card, v.firstChild);
@@ -9130,6 +9210,7 @@ async function buildIndex(kbId) {
     toast("资料准备失败：" + e.message);
     return false;
   }
+  });
 }
 
 /* ---------- 启动 ---------- */

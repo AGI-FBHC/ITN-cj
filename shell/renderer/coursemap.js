@@ -30,19 +30,24 @@ async function courseRefresh(){
 function courseCurrent(nodeId,kind){return(courseUi.data?.resources||[]).find(a=>a.nodeId===nodeId&&a.kind===kind);}
 function courseNodePath(node,map=courseUi.data?.map){const names=[];const seen=new Set();while(node&&!seen.has(node.id)){seen.add(node.id);names.unshift(node.title);node=map.nodes.find(n=>n.id===node.parentId);}return names.join(' / ');}
 
-async function courseStartResource(node,kind,regenerate=false){
-  const target=await courseApi('start',{kbId:courseUi.kb,nodeId:node.id,kind,projectId:state.chatProject||'',regenerate});courseUi.targets.set(target.sessionId,target);
+async function courseStartResource(node,kind,regenerate=false,button){
+  const kb=courseUi.kb;
+  return runGuarded('course:start:'+kb+':'+node.id+':'+kind,button,'正在准备…',async()=>{
+  try{
+  const target=await courseApi('start',{kbId:kb,nodeId:node.id,kind,projectId:state.chatProject||'',regenerate});courseUi.targets.set(target.sessionId,target);
   document.querySelector('.course-modal-overlay')?.remove();
   if(target.existing){state.chatSessionId=target.sessionId;state.chatProject=target.projectId||'';state.chatMode=state.chatProject?'work':'chat';await go('chat');return;}
   state.chatSessionId=target.sessionId;state.chatProject=target.projectId||'';state.chatMode=state.chatProject?'work':'chat';await go('chat');
   const label=RESOURCE_LABEL[kind];const question=kind==='ppt'?('我想围绕思维导图节点「'+node.title+'」制作一份 PPT 演示（真实可编辑的 .pptx）。请先结合所选知识库和节点范围，问清必要的学习程度、用途、页数、风格等要求，再开始制作；已有要求不重复问。生成后先在应用内逐页预览，我明确确认满意后再加入学习资源。'):('我想围绕思维导图节点「'+node.title+'」制作一份'+label+'。请先结合所选知识库和节点范围，问清必要的学习程度、用途、篇幅或题量等要求，再开始制作；已有要求不重复问。生成后先给我预览，满意并确认后再加入我的学习资源。');
   const input=$('chat-input');input.value=question;input.dispatchEvent(new Event('input'));document.querySelector('.composer-send[aria-label="发送"]')?.click();
+  }catch(e){toast('准备资源失败：'+e.message);}
+  });
 }
 async function openCourseAsset(asset){
   const generation=state.navigationGeneration;
   const full=await courseApi('resource',{id:asset.id,includeTrash:asset.status==='trash'});
   if(generation!==state.navigationGeneration)return;
-  if(full.missing){const d=courseDialog('文件暂时找不到',full.title);d.body.appendChild(el('p',null,'关联与学习记录仍保留。选择原文件后会验证内容，并恢复副本；不会把不同内容冒充这一版。'));const locate=btn('找回文件…','primary',async()=>{const chosen=await window.itnWindow?.pickFile?.();if(!chosen)return;try{await courseApi('resource/relocate',{id:full.id,path:chosen,confirmed:true});d.close();await courseRefresh();toast('已恢复原确认副本，节点与学习记录保持不变。');}catch(e){toast(e.message);}});locate.disabled=!window.itnWindow?.pickFile;d.body.appendChild(locate);const text=full.learning?.markdown||full.text;if(text){const details=el('details','course-archive-preview');details.appendChild(el('summary',null,'仍可查看保存的文本内容'));const article=el('article','md');article.innerHTML=md(text);details.appendChild(article);d.body.appendChild(details);}return;}
+  if(full.missing){const d=courseDialog('文件暂时找不到',full.title);d.body.appendChild(el('p',null,'关联与学习记录仍保留。选择原文件后会验证内容，并恢复副本；不会把不同内容冒充这一版。'));const locate=workbenchRequestButton('找回文件…','primary','course:relocate:'+full.id,'正在恢复…',async()=>{const chosen=await window.itnWindow?.pickFile?.();if(!chosen)return;try{await courseApi('resource/relocate',{id:full.id,path:chosen,confirmed:true});d.close();await courseRefresh();toast('已恢复原确认副本，节点与学习记录保持不变。');}catch(e){toast(e.message);}});locate.disabled=!window.itnWindow?.pickFile;d.body.appendChild(locate);const text=full.learning?.markdown||full.text;if(text){const details=el('details','course-archive-preview');details.appendChild(el('summary',null,'仍可查看保存的文本内容'));const article=el('article','md');article.innerHTML=md(text);details.appendChild(article);d.body.appendChild(details);}return;}
   if(asset.status==='current'){
     document.querySelector('.course-modal-overlay')?.remove();
     if(full.learningId){courseUi.focusNode=asset.nodeId||'';await go('study',full.learningId+'@'+full.learningVersion);}
@@ -63,7 +68,7 @@ async function courseRestore(asset,attach=false){
   select.value=nodes.some(n=>n.id===asset.nodeId)?asset.nodeId:nodes[0].id;
   d.body.appendChild(fieldOf('目标节点',select));const note=el('p','course-replace-note');d.body.appendChild(note);let expected='';
   const update=()=>{const old=(fresh.resources||[]).find(a=>a.nodeId===select.value&&a.kind===asset.kind);expected=old?.id||'';note.textContent=old?'当前位置是「'+old.title+'」，确认后它会转入归档。':'这个位置是空的，确认后将关联这份资源。';};select.onchange=update;update();
-  const row=el('div','course-dialog-actions');row.append(btn('取消','ghost',d.close),btn('确认关联','primary',async()=>{try{await courseApi('resource/action',{id:asset.id,action:attach?'attach':'restore',kbId:courseUi.kb,nodeId:select.value,expectedResourceId:expected,confirmed:true});d.close();await courseRefresh();toast('已关联确认资源，原当前版本如有已归档。');}catch(e){toast(e.message);}}));d.body.appendChild(row);
+  const row=el('div','course-dialog-actions');row.append(btn('取消','ghost',d.close),workbenchRequestButton('确认关联','primary','course:restore:'+asset.id,'正在关联…',async()=>{try{await courseApi('resource/action',{id:asset.id,action:attach?'attach':'restore',kbId:courseUi.kb,nodeId:select.value,expectedResourceId:expected,confirmed:true});d.close();await courseRefresh();toast('已关联确认资源，原当前版本如有已归档。');}catch(e){toast(e.message);}}));d.body.appendChild(row);
 }
 async function openCourseCollection(status){
   const d=courseDialog(status==='archive'?'归档资源':'回收站',state.cfg.knowledgeBases.find(k=>k.id===courseUi.kb)?.name||'全部知识库');
@@ -83,7 +88,7 @@ async function courseLinkExisting(node){
   if(!data.resources.length){d.body.appendChild(el('p','muted','还没有未关联的已保存资源。可以先从对话预览确认存入。'));return;}
   const files=el('select');files.setAttribute('aria-label','选择已有资源');for(const a of data.resources)files.appendChild(option(a.id,a.title));const kind=el('select');kind.setAttribute('aria-label','资源类型');for(const[k,label]of COURSE_KINDS)kind.appendChild(option(k,label));const note=el('p','course-replace-note');let expected='';
   const update=()=>{const a=data.resources.find(a=>a.id===files.value);if(a.learningKind&&COURSE_KINDS.some(([k])=>k===a.learningKind)){kind.value=a.learningKind;kind.disabled=true;}else kind.disabled=false;const old=(fresh.resources||[]).find(r=>r.nodeId===node.id&&r.kind===kind.value);expected=old?.id||'';note.textContent=(old?'将替换「'+old.title+'」，旧版归档。':'关联后成为该类的当前资源。')+(!a.learningId?' 普通文件支持预览与本人标记，不生成自动评分。':'');};files.onchange=update;kind.onchange=update;update();
-  d.body.append(fieldOf('已有资源',files),fieldOf('资源类型',kind),note);const actions=el('div','course-dialog-actions');actions.append(btn('取消','ghost',d.close),btn('确认关联','primary',async()=>{try{await courseApi('attach-existing',{personalId:files.value,kbId:courseUi.kb,nodeId:node.id,kind:kind.value,expectedResourceId:expected,confirmed:true});d.close();await courseRefresh();await openCourseNode(node.id);}catch(e){toast(e.message);}}));d.body.appendChild(actions);
+  d.body.append(fieldOf('已有资源',files),fieldOf('资源类型',kind),note);const actions=el('div','course-dialog-actions');actions.append(btn('取消','ghost',d.close),workbenchRequestButton('确认关联','primary','course:attach:'+courseUi.kb+':'+node.id,'正在关联…',async()=>{try{await courseApi('attach-existing',{personalId:files.value,kbId:courseUi.kb,nodeId:node.id,kind:kind.value,expectedResourceId:expected,confirmed:true});d.close();await courseRefresh();await openCourseNode(node.id);}catch(e){toast(e.message);}}));d.body.appendChild(actions);
 }
 async function openCourseNode(id){
   courseUi.selected=id;const node=courseUi.data?.map?.nodes.find(n=>n.id===id);if(!node)return;
@@ -93,8 +98,8 @@ async function openCourseNode(id){
     const title=el('div','course-resource-title');const glyph=el('span','course-resource-icon');glyph.innerHTML=icon(ic);title.append(glyph,el('strong',null,label));
     const text=asset?(asset.missing?'文件暂时找不到':asset.learningVersion?'已收录 · v'+asset.learningVersion:'已收录 · '+asset.title):'还没有'+label;
     card.append(title,el('p','course-resource-status',text));const row=el('div','course-resource-actions');const primary=asset?({lecture:'打开学习',practice:'打开学习',quiz:'开始作答',ppt:'开始导学'}[kind]||'打开学习'):'去对话生成';
-    row.append(btn(primary,'primary sm',()=>asset?openCourseAsset(asset):courseStartResource(node,kind)));
-    if(asset)row.append(btn('更多','ghost sm',()=>{const more=courseDialog(label+'的更多操作',asset.title),actions=el('div','course-manage-actions');actions.append(btn('继续修改','',()=>courseStartResource(node,kind,false)),btn('重新生成','',()=>courseStartResource(node,kind,true)),btn('查看历史归档','ghost',()=>openCourseCollection('archive')),btn('移入回收站','ghost course-danger',()=>courseConfirm('移入回收站？','只清空这个节点的'+label+'位置，导图、其他资源和学习记录都保留。',async()=>{await courseApi('resource/action',{id:asset.id,action:'trash',confirmed:true});more.close();await courseRefresh();await openCourseNode(id);})));more.body.appendChild(actions);}));
+    row.append(btn(primary,'primary sm',event=>asset?openCourseAsset(asset):courseStartResource(node,kind,false,event.currentTarget)));
+    if(asset)row.append(btn('更多','ghost sm',()=>{const more=courseDialog(label+'的更多操作',asset.title),actions=el('div','course-manage-actions');actions.append(btn('继续修改','',event=>courseStartResource(node,kind,false,event.currentTarget)),btn('重新生成','',event=>courseStartResource(node,kind,true,event.currentTarget)),btn('查看历史归档','ghost',()=>openCourseCollection('archive')),btn('移入回收站','ghost course-danger',()=>courseConfirm('移入回收站？','只清空这个节点的'+label+'位置，导图、其他资源和学习记录都保留。',async()=>{await courseApi('resource/action',{id:asset.id,action:'trash',confirmed:true});more.close();await courseRefresh();await openCourseNode(id);})));more.body.appendChild(actions);}));
     card.appendChild(row);grid.appendChild(card);
   }
   d.body.appendChild(grid);const bottom=el('div','course-node-bottom');bottom.append(btn('资料出处','ghost sm',()=>{const source=courseDialog('这个节点依据哪些资料',node.title);source.body.appendChild(el('p',null,node.description||'知识库中的对应主题'));for(const ref of node.sources||[])source.body.appendChild(el('p','course-source',ref.title+' · '+ref.docPath));}),btn('编辑节点','ghost sm',()=>editCourseNode(node)),btn('标记学完','ghost sm',()=>courseConfirm('标记学完？','这是本人完成标记，不换算成掌握度。',async()=>{await courseApi('node',{kbId:courseUi.kb,nodeId:id,done:true});toast('已记下本人完成标记。');})));
@@ -106,8 +111,8 @@ function editCourseNode(node){
   const d=courseDialog('编辑节点',node.title),title=inputOf('course-node-title','节点名称',node.title),desc=el('textarea');desc.rows=3;desc.value=node.description||'';
   const parent=el('select');for(const n of courseUi.data.map.nodes)if(n.id!==node.id)parent.appendChild(option(n.id,courseNodePath(n)));parent.value=node.parentId;parent.disabled=!node.parentId;
   d.body.append(fieldOf('名称',title),fieldOf('学习范围',desc));if(node.parentId)d.body.appendChild(fieldOf('上级节点',parent));
-  const actions=el('div','course-dialog-actions');if(node.parentId)actions.append(btn('删除节点','ghost course-danger',()=>{const remove=courseDialog('删除这个节点？',node.title);const mode=el('select');mode.append(option('single','只删这个节点，子节点上移'),option('subtree','删除整条分支'));remove.body.append(fieldOf('删除范围',mode),el('p',null,'被移除节点的资源会进入归档，导图剩余部分和学习历史保留。'));remove.body.appendChild(btn('确认删除','primary',async()=>{try{await courseApi('node',{kbId:courseUi.kb,nodeId:node.id,remove:true,subtree:mode.value==='subtree',confirmed:true});remove.close();await courseRefresh();}catch(e){toast(e.message);}}));}));
-  actions.append(btn('取消','ghost',d.close),btn('保存','primary',async()=>{try{const b={kbId:courseUi.kb,nodeId:node.id,title:title.value,description:desc.value};if(node.parentId)b.parentId=parent.value;await courseApi('node',b);d.close();await courseRefresh();}catch(e){toast(e.message);}}));d.body.appendChild(actions);
+  const actions=el('div','course-dialog-actions');if(node.parentId)actions.append(btn('删除节点','ghost course-danger',()=>{const remove=courseDialog('删除这个节点？',node.title);const mode=el('select');mode.append(option('single','只删这个节点，子节点上移'),option('subtree','删除整条分支'));remove.body.append(fieldOf('删除范围',mode),el('p',null,'被移除节点的资源会进入归档，导图剩余部分和学习历史保留。'));remove.body.appendChild(workbenchRequestButton('确认删除','primary','course:node:'+courseUi.kb+':'+node.id,'正在删除…',async()=>{try{await courseApi('node',{kbId:courseUi.kb,nodeId:node.id,remove:true,subtree:mode.value==='subtree',confirmed:true});remove.close();await courseRefresh();}catch(e){toast(e.message);}}));}));
+  actions.append(btn('取消','ghost',d.close),workbenchRequestButton('保存','primary','course:node:'+courseUi.kb+':'+node.id,'正在保存…',async()=>{try{const b={kbId:courseUi.kb,nodeId:node.id,title:title.value,description:desc.value};if(node.parentId)b.parentId=parent.value;await courseApi('node',b);d.close();await courseRefresh();}catch(e){toast(e.message);}}));d.body.appendChild(actions);
 }
 
 async function offerCourseSave(file){
@@ -117,8 +122,9 @@ async function offerCourseSave(file){
   const selector=el('select');selector.setAttribute('aria-label','收录到哪个节点');if(!target.valid)selector.appendChild(option('','请选择新导图中的节点'));for(const n of nodes)selector.appendChild(option(n.id,courseNodePath(n,snapshot.map)));selector.value=target.valid?target.nodeId:'';
   d.body.appendChild(fieldOf('所属节点',selector));if(!target.valid)d.body.appendChild(el('p','course-replace-note','原导图或节点已变化，请明确选择新节点后收录。'));
   const note=el('p','course-replace-note');d.body.appendChild(note);const row=el('div','course-dialog-actions');let expected='';
-  const yes=btn('确认加入','primary',async()=>{yes.disabled=true;try{await courseApi('commit',{sessionId:sid,path:file.path,title:title.value,learningId:file.learningId||'',learningVersion:file.learningVersion||0,expectedResourceId:expected,targetNodeId:selector.value,confirmed:true});d.close();toast('已加入该节点的学习资源，旧正式版本如有已归档。');}catch(e){toast(e.message);yes.disabled=false;}});
-  const update=()=>{const old=(snapshot.resources||[]).find(a=>a.nodeId===selector.value&&a.kind===target.kind);expected=old?.id||'';note.textContent=old?'当前是「'+old.title+'」，确认后旧版将进入归档。':'确认后保存这一版副本，并关联到选定节点。';yes.textContent=old?'确认替换，旧版归档':'确认加入';yes.disabled=!selector.value;};selector.onchange=update;update();row.append(btn('这版先不存','ghost',d.close),yes);d.body.appendChild(row);return true;
+  let saving=false;
+  const yes=workbenchRequestButton('确认加入','primary','course:commit:'+sid+':'+file.path,'正在加入…',async()=>{saving=true;selector.disabled=true;try{await courseApi('commit',{sessionId:sid,path:file.path,title:title.value,learningId:file.learningId||'',learningVersion:file.learningVersion||0,expectedResourceId:expected,targetNodeId:selector.value,confirmed:true});d.close();toast('已加入该节点的学习资源，旧正式版本如有已归档。');}catch(e){toast(e.message);}finally{saving=false;selector.disabled=false;}});
+  const update=()=>{if(saving)return;const old=(snapshot.resources||[]).find(a=>a.nodeId===selector.value&&a.kind===target.kind);expected=old?.id||'';note.textContent=old?'当前是「'+old.title+'」，确认后旧版将进入归档。':'确认后保存这一版副本，并关联到选定节点。';yes.textContent=old?'确认替换，旧版归档':'确认加入';yes.disabled=!selector.value;};selector.onchange=update;update();row.append(btn('这版先不存','ghost',d.close),yes);d.body.appendChild(row);return true;
 }
 
 async function watchCourseJob(job,host){
@@ -127,7 +133,7 @@ async function watchCourseJob(job,host){
   const old=host.querySelector('.course-job');old?.remove();
   const box=el('div','course-job'),head=el('div','course-job-head'),stage=el('span','course-job-stage'),tokens=el('span','course-job-tokens'),pct=el('span','course-job-pct','0%');
   const bar=el('div','course-job-bar'),fill=el('span','course-job-fill');bar.appendChild(fill);
-  const foot=el('div','course-job-foot');foot.appendChild(btn('取消生成','ghost sm',()=>courseApi('cancel',{id:job.id})));
+  const foot=el('div','course-job-foot');foot.appendChild(workbenchRequestButton('取消生成','ghost sm','course:cancel:'+job.id,'正在取消…',()=>courseApi('cancel',{id:job.id})));
   head.append(stage,tokens,pct);box.append(head,bar,foot);host.appendChild(box);
   const fmtTok=n=>{n=Number(n)||0;if(n>=1000000)return (n/1000000).toFixed(1)+'M';if(n>=1000)return (n/1000).toFixed(1)+'k';return String(n);};
   const paint=result=>{
@@ -154,7 +160,7 @@ async function previewCourseCandidate(map){
   const d=courseDialog('新版思维导图已准备好',map.title+' · '+map.nodes.length+' 个节点');
   const tree=el('div','course-candidate-tree');for(const n of map.nodes){const row=el('p',null,n.title);row.style.paddingLeft=(n.depth-1)*20+'px';tree.appendChild(row);}d.body.appendChild(tree);
   const count=(courseUi.data?.resources||[]).length;d.body.appendChild(el('p','course-replace-note','确认切换后，旧图上的 '+count+' 份当前资源将进入归档；你可以再把它们接到新节点。'));
-  const actions=el('div','course-dialog-actions');actions.append(btn('旧图先继续用','ghost',d.close),btn('确认切换新版','primary',async()=>{try{await courseApi('publish',{mapId:map.id,expectedMapId:map.baseMapId,confirmed:true});courseUi.views.delete(courseUi.kb);d.close();await courseRefresh();}catch(e){toast(e.message);}}));d.body.appendChild(actions);
+  const actions=el('div','course-dialog-actions');actions.append(btn('旧图先继续用','ghost',d.close),workbenchRequestButton('确认切换新版','primary','course:publish:'+map.kbId,'正在切换…',async()=>{try{await courseApi('publish',{mapId:map.id,expectedMapId:map.baseMapId,confirmed:true});courseUi.views.delete(courseUi.kb);d.close();await courseRefresh();}catch(e){toast(e.message);}}));d.body.appendChild(actions);
 }
 
 function mountCourseTree(stage,map){
@@ -184,7 +190,7 @@ async function renderCourseWorkspace(){
   const workspace=el('div','course-workspace'),toolbar=el('div','course-toolbar'),stage=el('section','course-stage');stage.setAttribute('aria-label','知识库学习思维导图');workspace.append(toolbar,stage);view.appendChild(workspace);
   const label=el('label','course-library-label','知识库'),selector=kbSelector(async()=>{courseUi.kb=state.kb;await courseRefresh();});selector.id='course-kb';selector.setAttribute('aria-label','选择学习知识库');label.appendChild(selector);toolbar.appendChild(label);
   const search=inputOf('course-search','搜索节点…','');toolbar.appendChild(search);const actions=el('div','course-toolbar-actions');toolbar.appendChild(actions);
-  const build=btn(courseUi.data?.map?'重建导图':'生成思维导图','sm',async()=>{build.disabled=true;try{const job=await courseApi('generate',{kbId:courseUi.kb});await watchCourseJob(job,stage);}catch(e){toast(e.message);}finally{build.disabled=false;}});build.id='course-generate';build.disabled=!state.kb;
+  const build=workbenchRequestButton(courseUi.data?.map?'重建导图':'生成思维导图','sm','course:generate:'+courseUi.kb,'正在生成…',async()=>{try{const job=await courseApi('generate',{kbId:courseUi.kb});await watchCourseJob(job,stage);}catch(e){toast(e.message);}});build.id='course-generate';build.disabled=!state.kb||courseUi.data?.job?.status==='running';
   actions.append(build,btn('归档 '+(courseUi.data?.archiveCount||0),'ghost sm',()=>openCourseCollection('archive')),btn('回收站 '+(courseUi.data?.trashCount||0),'ghost sm',()=>openCourseCollection('trash')),btn('历史导图','ghost sm',async()=>{const data=await courseApi('history',{kbId:courseUi.kb});if(generation!==state.navigationGeneration||!workspace.isConnected)return;const d=courseDialog('历史思维导图');for(const m of data.maps){const row=el('article','course-collection-item');row.append(el('strong',null,m.title+' · '+m.status),el('p','muted sm',m.createdAt),btn(m.status==='draft'?'预览并切换':'查看旧结构','ghost sm',()=>m.status==='draft'?previewCourseCandidate(m):showCourseHistory(m)));d.body.appendChild(row);}}));
   if(!state.kb){stage.appendChild(emptyState({art:'db',title:'先选择一个知识库',text:'导入资料后，可以整理成思维导图并制作学习资源。',actions:[btn('去知识库','primary',()=>go('kb'))]}));return;}
   if(courseUi.data?.map){const map=courseUi.data.map,tree=mountCourseTree(stage,map);search.oninput=()=>{tree.filter(search.value.trim());const match=map.nodes.find(n=>n.title.includes(search.value.trim()));if(search.value.trim()&&match)tree.focusNode(match.id);};stage.appendChild(el('p','course-map-caption',courseUi.data.sourceChanged?'资料有更新，可重建导图；旧资源继续保留。':'点选节点打开学习资源 · 拖动查看 · 滚轮缩放'));

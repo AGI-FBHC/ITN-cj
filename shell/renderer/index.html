@@ -74,38 +74,46 @@
       </header>
       <div id="view" class="view"></div>
     </main>
-  </div>
-  <div id="palette" class="palette" hidden></div>
-  <div id="player" class="player" hidden></div>
-  <div id="team-panel-scrim" class="team-modal" hidden>
-    <section id="team-panel" class="team-panel task-modal-card" hidden role="dialog" aria-modal="true" aria-labelledby="team-panel-title">
+  <aside id="team-panel-scrim" class="team-dock" hidden aria-label="协作流程">
+    <div id="team-resize" class="team-resize" role="separator" tabindex="0" aria-label="调整协作面板宽度" aria-orientation="vertical"></div>
+    <section id="team-panel" class="team-panel" hidden aria-labelledby="team-panel-title">
       <header class="team-panel-head">
         <div class="team-panel-title">
-          <span class="team-panel-kicker">AGENT TREE</span>
           <strong id="team-panel-title">多智能体协作</strong>
           <span id="team-panel-meta"></span>
         </div>
-        <button id="team-panel-close" class="team-panel-close" type="button" aria-label="关闭协作树" title="关闭协作树">
+        <button id="team-panel-close" class="team-panel-close" type="button" aria-label="收起协作流程" title="收起协作流程">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </button>
       </header>
       <div class="team-panel-body">
         <section class="team-tree-wrap">
           <div class="team-tree-head">
-            <div><strong>协作树</strong><span>从协调者到子智能体</span></div>
-            <span id="team-panel-legend">点击节点查看过程</span>
+            <strong>协作树</strong>
+            <div class="team-tree-tools">
+              <span id="team-panel-legend">点击节点查看过程</span>
+              <button id="team-zoom-out" type="button" aria-label="缩小协作树" title="缩小"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8"/></svg></button>
+              <span id="team-zoom-value">100%</span>
+              <button id="team-zoom-in" type="button" aria-label="放大协作树" title="放大"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8M8 4v8"/></svg></button>
+              <button id="team-zoom-fit" type="button" title="适配全部节点">适配</button>
+            </div>
           </div>
           <div class="team-tree-canvas">
-            <svg id="team-tree-lines" class="team-tree-lines" aria-hidden="true"></svg>
-            <div id="team-tree" class="team-tree"></div>
+            <div id="team-tree-stage" class="team-tree-stage">
+              <svg id="team-tree-lines" class="team-tree-lines" aria-hidden="true"></svg>
+              <div id="team-tree" class="team-tree"></div>
+            </div>
           </div>
         </section>
         <section id="team-detail" class="team-detail">
-          <div class="team-detail-empty">点击左侧节点查看执行过程</div>
+          <div class="team-detail-empty">点击上方节点查看执行过程</div>
         </section>
       </div>
     </section>
+  </aside>
   </div>
+  <div id="palette" class="palette" hidden></div>
+  <div id="player" class="player" hidden></div>
   <div id="toast" class="toast"></div>
   <script src="/app.js"></script>
   <script src="/workbench.js"></script>

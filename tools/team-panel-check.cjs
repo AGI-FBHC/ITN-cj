@@ -55,6 +55,16 @@ async function checkReplyEntrypoints(browser, events, check) {
     current = 'chat'; currentSection = ''; state.chatSessionId = 'live';
     await PAGES.chat.render();
   });
+  await page.evaluate(() => {
+    window.LuminTeamPanel.ingest(state.chatEvents, 'live', {autoOpen: true});
+    state.chatPaint();
+  });
+  check('tool call exposes an entry before any team planning events arrive', await page.locator('.team-open-btn').count() === 1);
+  await page.locator('.team-open-btn').click();
+  await page.locator('#team-panel-close').click();
+  await page.locator('#team-panel').waitFor({state: 'hidden'});
+  await page.locator('.team-open-btn').click();
+  check('planning can be reopened before run_started and nodes arrive', await page.locator('#team-panel').isVisible() && (await page.locator('#team-detail').innerText()).includes('规划'));
   await page.evaluate(events => {
     state.chatEvents = state.chatEvents.concat(events);
     state.chatTurns = turnsFromEvents(state.chatEvents);
@@ -110,9 +120,10 @@ async function main() {
   try {
     const page = await browser.newPage({viewport: {width: 1280, height: 820}});
     const html = fs.readFileSync(path.join(ui, 'index.html'), 'utf8');
-    const modal = html.slice(html.indexOf('<div id="team-panel-scrim"'), html.indexOf('<div id="toast"'));
+    const start = html.indexOf('<aside id="team-panel-scrim"');
+    const modal = html.slice(start, html.indexOf('</aside>', start) + 8);
     console.log('TEAM_UI ' + ui);
-    await page.setContent('<!doctype html><html><body>' + modal + '</body></html>');
+    await page.setContent('<!doctype html><html><body><header class="titlebar">LUMIN</header><div class="app"><main class="main"><textarea id="peer-chat"></textarea></main>' + modal + '</div></body></html>');
     await page.addStyleTag({path: path.join(ui, 'style.css')});
     await page.addStyleTag({path: path.join(ui, 'team-panel.css')});
     await page.addScriptTag({path: path.join(ui, 'team-panel.js')});
@@ -133,10 +144,16 @@ async function main() {
     await page.evaluate(({events, runId}) => window.LuminTeamPanel.ingest(events, 's1', {autoOpen: true}), {events, runId});
     await page.waitForSelector('#team-panel.open');
     check('team panel opens from live events', await page.locator('#team-panel').isVisible());
+    const stacked = await page.evaluate(() => {
+      const graph = document.querySelector('.team-tree-wrap').getBoundingClientRect();
+      const info = document.querySelector('#team-detail').getBoundingClientRect();
+      return graph.width > 500 && info.top >= graph.bottom - 1 && Math.abs(info.left - graph.left) < 2;
+    });
+    check('graph uses the full upper pane with node details underneath', stacked);
     check('tree renders all hierarchy nodes', await page.locator('.team-node').count() === 3);
     const thirdLevel = await page.locator('.team-node[data-node-id="n3"]').evaluate(node => {
       const n2 = document.querySelector('.team-node[data-node-id="n2"]');
-      return Number(node.style.left.replace('px', '')) > Number(n2.style.left.replace('px', ''));
+      return Number(node.style.top.replace('px', '')) > Number(n2.style.top.replace('px', ''));
     });
     check('tree exposes a third level', thirdLevel && await page.locator('#team-tree-lines path').count() === 2);
     check('header shows the learning team name', (await page.locator('#team-panel-title').innerText()) === '主题研究小组');
@@ -170,7 +187,28 @@ async function main() {
     check('a new run does not replace the tree being inspected', await page.locator('#team-panel-title').innerText() === '主题研究小组' && await nodeHandle.evaluate(n => n.isConnected && n.classList.contains('selected')));
 
     const popup = await page.locator('#team-panel').boundingBox();
-    check('Agent Tree uses the original centered popup', popup.width > 900 && popup.x > 20 && Math.abs(popup.x + popup.width / 2 - 640) < 2);
+    const peer = await page.locator('.app > .main').boundingBox();
+    const topbar = await page.locator('.titlebar').boundingBox();
+    check('team and chat share layout space without covering each other or the titlebar', peer.x + peer.width <= popup.x + 1 && popup.y >= topbar.y + topbar.height);
+    await page.locator('#peer-chat').fill('面板打开时对话仍然可操作');
+    check('chat remains interactive with the team pane open', await page.locator('#peer-chat').inputValue() === '面板打开时对话仍然可操作');
+    const fit = await page.evaluate(() => {
+      const box = document.querySelector('.team-tree-canvas').getBoundingClientRect();
+      return [...document.querySelectorAll('.team-node')].every(node => {
+        const r = node.getBoundingClientRect();
+        return r.left >= box.left && r.right <= box.right && r.top >= box.top && r.bottom <= box.bottom;
+      });
+    });
+    check('initial fit shows every node without cropping', fit);
+    await page.locator('#team-zoom-in').click();
+    await page.locator('#team-zoom-fit').click();
+    const beforeResize = popup.width;
+    const handle = await page.locator('#team-resize').boundingBox();
+    await page.mouse.move(handle.x + 4, handle.y + 50);
+    await page.mouse.down();
+    await page.mouse.move(handle.x - 70, handle.y + 50);
+    await page.mouse.up();
+    check('dragging the left edge resizes instead of dismissing the pane', await page.evaluate(() => window.LuminTeamPanel.isOpen()) && (await page.locator('#team-panel').boundingBox()).width > beforeResize + 50);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     check('popup does not create page horizontal overflow', overflow <= 1);
@@ -193,7 +231,18 @@ async function main() {
     await page.waitForSelector('#team-panel.open');
     await page.locator('#team-panel-scrim').click({position: {x: 4, y: 4}});
     await page.waitForTimeout(340);
-    check('only an actual backdrop click dismisses the popup', await page.locator('#team-panel').isHidden());
+    check('left edge clicks never dismiss the dock', await page.locator('#team-panel').isVisible());
+    const wide = [{type:'team/run_started',payload:{runId:'wide',tool:'research_topic_team',goal:'同层节点保持一排'}},
+      {type:'team/node_created',payload:{runId:'wide',nodeId:'root',depth:0,title:'调度员'}}];
+    for(let i=0;i<6;i++)wide.push({type:'team/node_created',payload:{runId:'wide',nodeId:'leaf'+i,parentId:'root',depth:1,title:'研究员 '+i}});
+    await page.evaluate(events=>{window.LuminTeamPanel.ingest(events,'s1');window.LuminTeamPanel.open('wide');},wide);
+    const row = await page.locator('.team-node:not(.root)').evaluateAll(nodes=>nodes.map(n=>n.style.top));
+    check('six siblings occupy one depth row without wrapping',row.length===6&&new Set(row).size===1);
+    await page.locator('#team-zoom-fit').click();
+    check('fit control reveals a wide tree without hiding nodes',await page.evaluate(()=>{
+      const box=document.querySelector('.team-tree-canvas').getBoundingClientRect();
+      return [...document.querySelectorAll('.team-node')].every(n=>{const r=n.getBoundingClientRect();return r.left>=box.left&&r.right<=box.right&&r.top>=box.top&&r.bottom<=box.bottom;});
+    }));
     // Closing in the same frame as opening must cancel the queued show callback.
     await page.evaluate(runId => { window.LuminTeamPanel.open(runId); window.LuminTeamPanel.close(); }, runId);
     await page.waitForTimeout(340);

@@ -3,6 +3,13 @@ const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz:
 const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', completed: '已完成', failed: '未完成', cancelled: '已取消', interrupted: '上次任务已中断'};
 const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
 
+// Keep the lock outside any particular dialog so reopening it cannot repeat a write.
+function workbenchRequestButton(label,cls,key,busyLabel,task) {
+  const button=btn(label,cls,null);
+  button.onclick=()=>runGuarded(typeof key==='function'?key():key,button,busyLabel,task).catch(e=>toast(e.message));
+  return button;
+}
+
 function refreshLiveTimers() {
   for(const node of document.querySelectorAll('.live-elapsed[data-started-at]')) {
     const start=Date.parse(node.dataset.startedAt);
@@ -88,6 +95,7 @@ function resourceCard(resource, compact) {
 }
 
 function ensureResourceDock() {
+  window.LuminTeamPanel?.close({immediate:true});
   let dock = $('resource-dock');
   if (!dock) {
     dock = el('aside', 'resource-dock');
@@ -179,12 +187,11 @@ async function offerPersonalSave(file) {
   dialog.append(el('h2',null,'满意这版，再存入个性资源'),el('p','muted','确认后会创建这一版的独立副本；后续修改候选稿不会覆盖它。'));
   const title=inputOf('personal-save-title','资源名称',file.title || file.name || '个性资源');dialog.appendChild(fieldOf('资源名称',title));
   dialog.append(el('p','path-line muted sm','来源：'+file.path),el('p','path-line muted sm','副本存放：'+settings.directory));
-  const actions=el('div','row'),confirm=btn('确认存入','primary',async()=>{
-    confirm.disabled=true;
+  const actions=el('div','row'),confirm=workbenchRequestButton('确认存入','primary','personal:save:'+file.path,'正在存入…',async()=>{
     try{
       const saved=await api('/api/personal/save',{path:file.path,title:title.value.trim() || file.name,text:file.indexText || file.text || '',learningId:file.learningId || '',learningVersion:file.learningVersion || 0,sessionId:file.sessionId || state.chatSessionId || '',turnId:file.turnId || '',confirmed:true});
       overlay.remove();toast('已存入个性资源 · 确认版本 '+saved.version);if(current==='resources')await go('resources');
-    }catch(e){toast('保存失败：'+e.message);confirm.disabled=false;}
+    }catch(e){toast('保存失败：'+e.message);}
   });
   actions.append(confirm,btn('这版先不存','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);title.focus();
   overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
@@ -343,7 +350,7 @@ function renderResourceDock() {
   }
   body.appendChild(content);
   if (res.kind !== 'quiz') {
-    const done = btn(res.progress?.done ? '已标记完成 · 撤销' : '标记本次学习完成', 'sm ghost', async () => {
+    const done = workbenchRequestButton(res.progress?.done ? '已标记完成 · 撤销' : '标记本次学习完成', 'sm ghost', 'resource:progress:'+res.id+':'+res.version, '正在记录…', async () => {
       try {
         res.progress = await api('/api/learning/progress', {id: res.id, version: res.version, done: !res.progress?.done});
         renderResourceDock();
@@ -675,7 +682,7 @@ PAGES.memory = {
     overview.appendChild(btn('编辑学习档案', 'sm', () => go('settings', 'general'))); view.appendChild(overview);
     const auto = el('input'); auto.type='checkbox'; auto.checked=context.autoRemember!==false; auto.id='memory-auto';
     const autoLabel=el('label','quiz-choice');autoLabel.appendChild(auto);autoLabel.appendChild(el('span',null,'自动积累明确的学习偏好与目标'));
-    auto.onchange=async()=>{try{await api('/api/learning/memory/policy',{autoRemember:auto.checked});toast(auto.checked?'已开启自动积累':'已关闭自动积累，仍可手动添加或明确要求记住');}catch(e){auto.checked=!auto.checked;toast('设置失败：'+e.message);}};
+    auto.onchange=()=>runGuarded('memory:policy',auto,null,async()=>{const checked=auto.checked;try{await api('/api/learning/memory/policy',{autoRemember:checked});toast(checked?'已开启自动积累':'已关闭自动积累，仍可手动添加或明确要求记住');}catch(e){auto.checked=!checked;toast('设置失败：'+e.message);}});
     overview.appendChild(autoLabel);
     const form = cardOf({title: '记住一件事', sub: '仅存本机，可随时更改或删除'});
     const kind = el('select'); kind.id = 'memory-kind';
@@ -687,7 +694,7 @@ PAGES.memory = {
     for (const kb of state.cfg.knowledgeBases || []) {const option=el('option',null,kb.name);option.value=kb.id;scope.appendChild(option);}
     form.appendChild(fieldOf('适用范围', scope));
     let editId = '';
-    form.appendChild(btn('保存记忆', 'primary sm', async () => {
+    form.appendChild(workbenchRequestButton('保存记忆', 'primary sm', 'memory:save', '正在保存…', async () => {
       try {await api('/api/learning/memory/save', {id: editId, kbId: scope.value, kind: kind.value, text: text.value.trim()}); toast('记忆已保存'); await go('memory');}
       catch(e) {toast('保存失败：' + e.message);}
     })); view.appendChild(form);
@@ -702,7 +709,7 @@ PAGES.memory = {
       if(m.quote)row.appendChild(el('blockquote','muted sm','原话：'+m.quote));
       const actions=el('div','row');
       actions.appendChild(btn('编辑','sm ghost',()=>{editId=m.id;kind.value=m.kind;text.value=m.text;scope.value=m.kbId||'';text.focus();form.scrollIntoView({block:'center'});}));
-      actions.appendChild(btn('忘记','sm ghost',async()=>{try{await api('/api/learning/memory/forget',{id:m.id});await go('memory');toast('已忘记');}catch(e){toast('删除失败：'+e.message);}}));
+      actions.appendChild(workbenchRequestButton('忘记','sm ghost','memory:forget:'+m.id,'正在删除…',async()=>{try{await api('/api/learning/memory/forget',{id:m.id});await go('memory');toast('已忘记');}catch(e){toast('删除失败：'+e.message);}}));
       if(m.sessionId)actions.appendChild(btn('查看来源会话','sm ghost',()=>openChatSession(m.sessionId)));
       row.appendChild(actions);saved.appendChild(row);
     }
@@ -1056,10 +1063,11 @@ function knowledgeDialog(title,build,wide){
   const close=()=>overlay.remove();overlay.onkeydown=e=>{if(e.key==='Escape')close();};overlay.onclick=e=>{if(e.target===overlay)close();};build(panel,close);return overlay;
 }
 async function openKnowledgeLinkSuggestions(button){
-  if(button?.dataset.loading==='1')return;
-  if(button){button.dataset.loading='1';button.disabled=true;button.textContent='分析中…';}
+  return runGuarded('knowledge:suggest-links',button,'分析中…',async()=>{
+  const generation=state.navigationGeneration;
   try{
     const data=await api('/api/knowledge/suggest-links',{});
+    if(generation!==state.navigationGeneration)return;
     const nodes=new Map((data.nodes||[]).map(n=>[n.id,n.title]));
     knowledgeDialog('连线建议',(panel,close)=>{
       panel.appendChild(el('p','muted','模型只提出可解释的关系建议。勾选后才会写入知识网络，已有连线会被标出。'));
@@ -1088,7 +1096,7 @@ async function openKnowledgeLinkSuggestions(button){
       panel.appendChild(actions);
     },true);
   }catch(e){toast('生成连线建议失败：'+e.message);}
-  finally{if(button){button.dataset.loading='0';button.disabled=false;button.textContent='连线建议';}}
+  });
 }
 async function refreshKnowledgeNetwork(){
   knowledgeNet.data=await api('/api/knowledge/graph',{});knowledgeNet.visible=null;
@@ -1104,11 +1112,11 @@ function knowledgeQuickColor(node,anchor){
   const menu=popoverAt(anchor,(box)=>{
     box.appendChild(el('div','knowledge-pop-title','节点颜色'));
     const native=el('input');native.type='color';native.className='knowledge-pop-picker';native.value=normalizeKnowledgeColor(node.color)||'#8B7DA8';
-    const save=async(color)=>{try{await api('/api/knowledge/save',{id:node.id,title:node.title,definition:node.definition,aliases:node.aliases||[],color});closePopover();await refreshKnowledgeNetwork();await openKnowledgePoint(node.id);toast(color?'已换色 '+color:'已恢复默认色');}catch(e){toast(e.message);}};
+    const save=(color)=>runGuarded('knowledge:save:'+node.id,null,null,async()=>{const controls=[...box.querySelectorAll('button,input')];controls.forEach(b=>b.disabled=true);box.setAttribute('aria-busy','true');try{await api('/api/knowledge/save',{id:node.id,title:node.title,definition:node.definition,aliases:node.aliases||[],color});closePopover();await refreshKnowledgeNetwork();await openKnowledgePoint(node.id);toast(color?'已换色 '+color:'已恢复默认色');}catch(e){toast(e.message);}finally{controls.forEach(b=>b.disabled=false);box.removeAttribute('aria-busy');}});
     const row=knowledgeSwatchRow(()=>normalizeKnowledgeColor(node.color),(color)=>{save(color);});
     box.appendChild(row);
     box.appendChild(fieldOf('调色盘',native));
-    native.oninput=()=>save(native.value.toUpperCase());
+    native.onchange=()=>save(native.value.toUpperCase());
   },{side:'panel',cls:'knowledge-pop'});
   return menu;
 }
@@ -1126,14 +1134,14 @@ function editKnowledgePoint(node){
     native.oninput=()=>{picked=native.value.toUpperCase();row.querySelectorAll('.knowledge-swatch').forEach(b=>b.classList.toggle('active',b.dataset.color===picked));paintOrb();};
     title.oninput=paintOrb;paintOrb();
     cols.append(left,right);panel.appendChild(cols);
-    const foot=el('div','knowledge-edit-foot');foot.appendChild(btn('取消','ghost',close));foot.appendChild(btn('保存知识点','primary',async()=>{try{const saved=await api('/api/knowledge/save',{id:node?.id || '',title:title.value,definition:definition.value,color:picked,aliases:aliases.value.split(/[、,，]/).map(t=>t.trim()).filter(Boolean)});close();await refreshKnowledgeNetwork();await openKnowledgePoint(saved.id);}catch(e){toast(e.message);}}));
+    const foot=el('div','knowledge-edit-foot');foot.appendChild(btn('取消','ghost',close));foot.appendChild(workbenchRequestButton('保存知识点','primary','knowledge:save:'+(node?.id||'new'),'正在保存…',async()=>{try{const saved=await api('/api/knowledge/save',{id:node?.id || '',title:title.value,definition:definition.value,color:picked,aliases:aliases.value.split(/[、,，]/).map(t=>t.trim()).filter(Boolean)});close();await refreshKnowledgeNetwork();await openKnowledgePoint(saved.id);}catch(e){toast(e.message);}}));
     panel.appendChild(foot);title.focus();
   },true);
 }
 function writeKnowledgeNote(node){
   knowledgeDialog('给「'+node.title+'」写笔记',(panel,close)=>{
     const text=el('textarea');text.id='knowledge-note';text.rows=8;text.placeholder='你的理解、例子、疑问或下一次要追问的内容';panel.appendChild(fieldOf('我的笔记',text));
-    panel.append(btn('保存笔记','primary',async()=>{try{await api('/api/knowledge/note',{id:node.id,text:text.value});close();await refreshKnowledgeNetwork();await openKnowledgePoint(node.id);}catch(e){toast(e.message);}}),btn('取消','ghost',close));text.focus();
+    panel.append(workbenchRequestButton('保存笔记','primary','knowledge:note:'+node.id,'正在保存…',async()=>{try{await api('/api/knowledge/note',{id:node.id,text:text.value});close();await refreshKnowledgeNetwork();await openKnowledgePoint(node.id);}catch(e){toast(e.message);}}),btn('取消','ghost',close));text.focus();
   });
 }
 function linkKnowledgePoint(node){
@@ -1141,7 +1149,7 @@ function linkKnowledgePoint(node){
     const other=el('select');other.id='knowledge-link-target';other.appendChild(option('','选择另一个知识点'));
     knowledgeNet.data.nodes.filter(n=>n.id!==node.id).forEach(n=>other.appendChild(option(n.id,n.title)));
     const label=inputOf('knowledge-link-label','例如：对比、应用、先学','关联');panel.append(fieldOf('从「'+node.title+'」连接到',other),fieldOf('关系说明',label));
-    panel.append(btn('添加连线','primary',async()=>{try{await api('/api/knowledge/link',{from:node.id,to:other.value,label:label.value});close();await refreshKnowledgeNetwork();await openKnowledgePoint(node.id);}catch(e){toast(e.message);}}),btn('取消','ghost',close));other.focus();
+    panel.append(workbenchRequestButton('添加连线','primary',()=> 'knowledge:link:'+node.id+':'+other.value,'正在连接…',async()=>{try{await api('/api/knowledge/link',{from:node.id,to:other.value,label:label.value});close();await refreshKnowledgeNetwork();await openKnowledgePoint(node.id);}catch(e){toast(e.message);}}),btn('取消','ghost',close));other.focus();
   });
 }
 async function askKnowledgePoint(node){

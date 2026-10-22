@@ -44,6 +44,13 @@ const root='D:/Desktop/ITN/ITN-Desktop',pause=ms=>new Promise(r=>setTimeout(r,ms
   await page.waitForSelector('#team-panel.open',{timeout:30000});
   await page.waitForSelector('.team-node',{timeout:30000});
   const mid=await page.evaluate(()=>({nodes:document.querySelectorAll('.team-node').length,title:document.getElementById('team-panel-title')?.textContent||''}));
+  const runningReopen = await page.evaluate(() => !state.chatEvents.some(e => e.type === 'team/run_completed'));
+  await page.locator('#team-panel-close').click();
+  await page.locator('#team-panel').waitFor({state:'hidden'});
+  await page.locator('.team-open-btn').first().click();
+  await page.waitForSelector('#team-panel.open');
+  await page.locator('.team-node').last().click();
+  if (!await page.evaluate(() => window.LuminTeamPanel.isOpen())) throw Error('node click closed live team');
   const runEnd=Date.now()+150000;
   while(Date.now()<runEnd){
     const done=await page.evaluate(()=>(state?.chatEvents||[]).some(e=>e.type==='team/run_completed'));
@@ -55,10 +62,26 @@ const root='D:/Desktop/ITN/ITN-Desktop',pause=ms=>new Promise(r=>setTimeout(r,ms
   await page.locator('.team-node:not(.selected)').first().click().catch(()=>{});
   await pause(400);
   const detail=(await page.locator('#team-detail').innerText()).trim();
+  const geometry=await page.evaluate(()=>{
+    const main=document.querySelector('.app > .main').getBoundingClientRect();
+    const dock=document.getElementById('team-panel').getBoundingClientRect();
+    const bar=document.getElementById('titlebar').getBoundingClientRect();
+    const graph=document.querySelector('.team-tree-wrap').getBoundingClientRect();
+    const info=document.getElementById('team-detail').getBoundingClientRect();
+    return {parallel:main.right<=dock.left+1,belowTitle:dock.top>=bar.bottom,stacked:info.top>=graph.bottom-1};
+  });
+  const evidence=path.join(root,'tmp','team-dock-review');fs.mkdirSync(evidence,{recursive:true});
+  fs.writeFileSync(path.join(evidence,'team-events.json'),JSON.stringify(await page.evaluate(()=>state.chatEvents.filter(e=>String(e.type).startsWith('team/'))),null,2));
+  for(const theme of ['light','dark']) {
+    await page.evaluate(theme=>applyTheme(theme),theme);
+    await pause(350);
+    await page.screenshot({path:path.join(evidence,'real-'+theme+'.png')});
+  }
   console.log('MODEL='+model.model+' TITLE='+mid.title);
   console.log('LIVE='+JSON.stringify(live)+' DETAIL_CHARS='+detail.length);
   console.log('PAGE_ERRORS='+errors.length);
-  const ok=live.nodes>=3&&live.completed>=2&&live.paths>=1&&detail.length>20&&errors.length===0;
+  console.log('RUNNING_REOPEN='+runningReopen+' GEOMETRY='+JSON.stringify(geometry)+' EVIDENCE='+evidence);
+  const ok=live.nodes>=3&&live.completed>=2&&live.paths>=1&&detail.length>20&&errors.length===0&&runningReopen&&Object.values(geometry).every(Boolean);
   console.log('RESULT='+(ok?'PASS':'FAIL'));
   process.exitCode=ok?0:1;
  }finally{
