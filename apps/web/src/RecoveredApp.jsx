@@ -797,14 +797,14 @@ function Hero({ onGetStarted: n }) {
               "anim-rise-in text-4xl font-black leading-[1.3] tracking-tight text-[#101014] md:text-6xl",
             style: { animationDelay: "0.15s" },
             children: [
-              "计算机核心课程，",
+              "你的 AI 学习搭档：",
               jsxRuntime.jsx("br", {
                 "code-path": "src\\sections\\Hero.tsx:91:11",
               }),
               jsxRuntime.jsx("span", {
                 "code-path": "src\\sections\\Hero.tsx:92:11",
                 className: "text-[#6c0ef2]",
-                children: "从难懂到真正掌握。",
+                children: "懂课程，也懂你。",
               }),
             ],
           }),

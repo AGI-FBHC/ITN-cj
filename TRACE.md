@@ -1158,3 +1158,8 @@
 - 远端 `lite` 为本轮刚创建、尚未开过 PR 的版本分支；按用户要求把 lite 版本分支统一命名为 `itn-lite`：本地 `codex/native-learning-v1` → `itn-lite`，远端 `lite` → `itn-lite`，提交哈希与历史不变。
 - `docs/PROJECT_STRUCTURE.md` 开发分支说明同步为 `itn-lite`；TRACE 历史记录中的旧分支名保留（描述当时状态，不回改）。
 - 操作方式：先提交文档与 TRACE 更新，再 `git branch -m` + 推送新分支 + 删除远端旧 `lite`；删除前确认该分支没有任何 PR（GitHub 界面对 open PR 的自动重定向不适用于“删旧建新”，因此仅在无 PR 时执行）。
+
+## 2026-10-22 海报页主标题更换
+
+- 用户要求把落地页（海报/hero）主标题从“计算机核心课程，从难懂到真正掌握。”改为“你的 AI 学习搭档：懂课程，也懂你。”，保持原两行结构：黑字“你的 AI 学习搭档：” + 紫色“懂课程，也懂你。”；副标题按用户要求未改。
+- 修改 apps/web/src/RecoveredApp.jsx Hero 段落；`npm run build --prefix apps/web` 通过；本地 3006 生效后推送 GitHub `itn-lite`，并同步服务器 6024 静态目录（`/opt/zhixun-yunshu/web/dist`）。
