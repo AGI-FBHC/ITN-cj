@@ -4891,6 +4891,11 @@ function syncChatBusy() {
     mascotActivity("idle", 0);
   }
   if (typeof state.chatRepaintBusy === "function") state.chatRepaintBusy();
+  /* 会话栏的"运行中"转圈要跟着请求开始/结束即时变化：
+     以前只在面板整页重渲染时才更新，刚发出去的会话要等下一次刷新才转圈。 */
+  if (current === "chat" && typeof PANELS !== "undefined" && PANELS.chat?.refresh) {
+    PANELS.chat.refresh(document.getElementById("panel-body"));
+  }
 }
 
 function panelGroup(text) { return el("div", "panel-group-title", text); }
@@ -5430,6 +5435,13 @@ PANELS.chat = {
         .sort(railSessionCompare);
       const expanded = !!state.railExpanded[key];
       const shown = expanded ? sorted : sorted.slice(0, RAIL_OPEN_DEFAULT);
+      /* 正在跑的会话必须始终露出来：只显示前 N 条时它很容易被挤到折叠区，
+         用户发了任务却看不到转圈，会以为没发出去。 */
+      for (const runningSid of state.chatRequests.keys()) {
+        if (shown.some((x) => x.sessionId === runningSid)) continue;
+        const runningRow = sorted.find((x) => x.sessionId === runningSid);
+        if (runningRow) shown.unshift(runningRow);
+      }
       for (const x of shown) {
         const rowEl = el("div", "panel-item-row rail-session");
         rowEl.appendChild(panelItem({

@@ -5256,3 +5256,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 新增 tools/real-team-ui-check.cjs（DeepSeek deepseek-flash）：在真实聊天页发"请研究并对比 MCP 与 A2A…"，模型自选 research_topic_team，右侧协作树自动弹出。
 - 结果：面板标题「主题研究小组」；树上 7 个节点、7 个已完成、6 条连线；点击节点后详情 2622 字（执行流程 + 最终回答）；0 页面异常，RESULT=PASS。这是对侧边栏/协作树界面的真实模型复核（此前 mock 的 34/34 之外）。
 - 脚本凭据只从 TEMP 副本读取，finally 清零副本与隔离 itn.db。
+
+### 2026-10-22 10:45 · 修复"运行中会话被挤出列表、看不到转圈"
+
+- 侧边栏专项新增 L 场景（mock 慢回复 8 秒 + ITN_MOCK_SLOW_MS）：生成过程中折叠再展开第二层面板。
+- 抓到真实问题：会话栏默认每组只显示前 6 条，运行中的会话（seed-26）可能被挤到折叠区，DOM 里根本没有这一行 → spinner=0，用户发了任务却看不到转圈。证据：inList=true、isRunning=true、row=false、ids 里没有 seed-26。
+- 修复：PANELS.chat.render 在前 6 条之外，额外把所有 state.chatRequests 里正在跑的会话补进 shown（去重后 unshift），保证运行中的行始终可见；syncChatBusy 同时就地刷新面板（开始/结束即时生效）。
+- 修复后同一用例 row=true、spinner=1，列表首行就是运行中的 seed-26；侧栏专项 49/49。回归 session-switch 18、chat-ux 18、route-lifecycle 18/18 全部通过。

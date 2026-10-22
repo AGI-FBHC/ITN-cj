@@ -133,7 +133,7 @@ async function main() {
     // 没有对话模型时对话页只渲染空状态、不会拉会话事件 —— 那样测不到会话栏的真实行为。
     const mockPort = await freePort();
     mock = spawn('python', [path.join(root, 'tools/mock-openai/server.py'), String(mockPort)],
-      {windowsHide: true, stdio: 'ignore', env: {...process.env, ITN_MOCK_CHUNK_DELAY_MS: '0'}});
+      {windowsHide: true, stdio: 'ignore', env: {...process.env, ITN_MOCK_CHUNK_DELAY_MS: '0', ITN_MOCK_SLOW_MS: '8000'}});
     await post('models/save', {id: 'sidebar-mock', name: '侧栏夹具', baseUrl: 'http://127.0.0.1:' + mockPort + '/v1', apiKey: 'test', model: 'mock'});
     await post('models/roles', {chatModelId: 'sidebar-mock'});
     browser = await chromium.launch({channel: 'msedge', headless: true, args: ['--no-proxy-server']});
@@ -426,6 +426,46 @@ async function main() {
       JSON.stringify({session: dockAfterSwitch.session, hidden: dockAfterSwitch.hidden, open: dockAfterSwitch.open,
         hasOld: dockAfterSwitch.text.includes('A 会话专属产物'), openLog: dockAfterSwitch.openLog, clicked: dockAfterSwitch.clicked,
         hasOpenSession: dockAfterSwitch.hasOpenSession}));
+
+    // L) 生成过程中折叠/展开面板：运行中的转圈不能丢，页面也不能被搞坏
+    await nav('chat');
+    await page.evaluate(() => togglePanel(true));
+    // 会话行可能被分组折叠/只显示前 6 条：先全部展开，确保这一行真的在 DOM 里
+    await page.evaluate(() => {
+      state.railGroups = Object.fromEntries(Object.keys(state.railGroups || {}).map((k) => [k, false]));
+      state.railExpanded = Object.fromEntries(Object.keys(state.railExpanded || {}).map((k) => [k, true]));
+      renderPanel();
+    });
+    await page.fill('#chat-input', '慢速任务测试：生成过程中折叠面板');
+    await page.locator('.composer-send').click();
+    await page.waitForFunction(() => state.busyTurn === true, null, {timeout: 15000}).catch(() => {});
+    await page.evaluate(() => togglePanel(false));
+    await sleep(300);
+    const collapsedDuring = await page.evaluate(() => ({
+      hidden: document.body.classList.contains('panel-hidden'),
+      title: document.getElementById('panel-title')?.textContent || '',
+      running: state.chatRequests.size,
+    }));
+    await page.evaluate(() => togglePanel(true));
+    await sleep(400);
+    const expandedDuring = await page.evaluate(() => ({
+      hidden: document.body.classList.contains('panel-hidden'),
+      title: document.getElementById('panel-title')?.textContent || '',
+      spinner: document.querySelectorAll('#panel-body .panel-item-spin').length,
+      running: state.chatRequests.size,
+      sid: state.chatSessionId,
+      inList: (state.sessions || []).some((s) => s.sessionId === state.chatSessionId),
+      row: !!document.querySelector('#panel-body .panel-item[data-id="' + state.chatSessionId + '"]'),
+      isRunning: typeof isSessionRunning === 'function' ? isSessionRunning(state.chatSessionId) : null,
+      ids: [...document.querySelectorAll('#panel-body .panel-item')].map((n) => n.dataset.id).slice(0, 12),
+      groups: Object.keys(state.railGroups || {}),
+      sessions: (state.sessions || []).length,
+    }));
+    check('生成中折叠面板：折叠生效且会话仍在跑', collapsedDuring.hidden === true && collapsedDuring.running >= 1, JSON.stringify(collapsedDuring));
+    check('生成中展开面板：列表恢复且仍显示运行中会话', expandedDuring.hidden === false && expandedDuring.title === '对话' && expandedDuring.spinner >= 1, JSON.stringify(expandedDuring));
+    await page.waitForFunction(() => state.busyTurn === false, null, {timeout: 60000}).catch(() => {});
+    const afterTurn = await page.evaluate(() => ({hidden: document.body.classList.contains('panel-hidden'), busy: state.busyTurn}));
+    check('生成结束后面板保持展开且任务已收尾', afterTurn.hidden === false && afterTurn.busy === false, JSON.stringify(afterTurn));
 
     check('全程没有前端或内核异常', errors.length === 0, errors.join('; '));
     const failed = checks.filter((c) => !c.ok);
