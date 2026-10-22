@@ -1,0 +1,14 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=mirrors.aliyun.com
+
+COPY src/agents/RuleCore /tmp/rulecore
+RUN pip install --no-cache-dir /tmp/rulecore && rm -rf /tmp/rulecore
+
+COPY docker/knowledge-services /opt/itn-knowledge-runtime
+WORKDIR /workspace/src/agents/RuleCore
+EXPOSE 8201
+CMD ["python", "/opt/itn-knowledge-runtime/run_rulecore.py"]

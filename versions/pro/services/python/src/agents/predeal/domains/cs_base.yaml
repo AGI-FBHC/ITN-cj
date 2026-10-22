@@ -1,0 +1,33 @@
+domain_id: cs_base
+domain_code: cs-base  # knowledge_domain.code，决定 RAGFlow 数据集名 cs-base_v1
+domain_version_id: v1
+pipeline_profile: markdown_reference
+language: zh-CN
+
+discovery:
+  root: ../../../../itn_source/cs_base/CS-Base
+  include:
+    - "network/**/*.md"
+    - "redis/**/*.md"
+    - "mysql/**/*.md"
+    - "os/**/*.md"
+  exclude:
+    - "README.md"
+    - "reader_nb/**"
+    - "cs_learn/**"
+
+chunk_policy:
+  target_min_chars: 200
+  target_max_chars: 1000
+  hard_max_chars: 1500
+  preserve_code_block: true
+  preserve_table: true
+  preserve_figure: true
+
+figure_policy:
+  download_remote_images: false
+  enable_ocr: false
+  enable_vlm_summary: false
+
+metadata_defaults:
+  authority_level: community

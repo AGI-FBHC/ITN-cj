@@ -1,0 +1,38 @@
+domain_id: custom_ingest
+domain_code: custom_ingest  # 不在 knowledge_domain 中注册：切片分类由平台按标题绑定
+domain_version_id: v1
+pipeline_profile: markdown_tutorial
+language: zh-CN
+
+# 管理员「新建资源」上传的文档统一落这里，再按目录结构挂到 knowledge_category
+discovery:
+  root: /opt/itn-python/venv/itn_source/custom_uploads
+  include:
+    - "*.md"
+    - "uploads/*.md"
+
+chunk_policy:
+  target_min_chars: 300
+  target_max_chars: 1200
+  hard_max_chars: 1800
+  preserve_code_block: true
+  preserve_table: true
+  preserve_figure: true
+  # 管理员上传的文档按标题规则切分，条数稳定可预期（语义切分结果不稳定）
+  semantic_split: false
+
+figure_policy:
+  download_remote_images: false
+  enable_ocr: false
+  enable_vlm_summary: false
+  keep_decorative_images: false
+  enable_image_pipeline: false
+
+metadata_defaults:
+  authority_level: official
+  document_type: 教材
+  source_type: upload
+  source_name: "平台上传"
+  publisher: "机构上传"
+  language: zh-CN
+  reliability_score: 0.90

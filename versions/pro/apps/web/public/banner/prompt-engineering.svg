@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" role="img" aria-label="提示词工程插画">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FAF7EF"/>
+      <stop offset="1" stop-color="#E7F0E8"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#F1F6F0" stop-opacity="0.95"/>
+    </linearGradient>
+    <radialGradient id="glow2" cx="0.85" cy="0.1" r="0.6">
+      <stop offset="0" stop-color="#E7B45A" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#E7B45A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft2" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#bg2)"/>
+  <rect width="1200" height="675" fill="url(#glow2)"/>
+
+  <!-- 主输入面板 -->
+  <rect x="230" y="160" width="740" height="180" rx="28" fill="#4E7860" opacity="0.12" filter="url(#soft2)"/>
+  <rect x="230" y="160" width="740" height="180" rx="28" fill="url(#panel)" stroke="#DCE6DE" stroke-width="3"/>
+  <rect x="272" y="205" width="34" height="34" rx="10" fill="#4E7860"/>
+  <path d="M282 216 L292 222 L282 228" stroke="#F6E7C6" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="272" y="270" width="320" height="14" rx="7" fill="#C9DCCF"/>
+  <rect x="272" y="298" width="220" height="14" rx="7" fill="#DCE6DE"/>
+  <rect x="836" y="264" width="6" height="42" rx="3" fill="#E7B45A"/>
+
+  <!-- 回复气泡 -->
+  <rect x="360" y="380" width="610" height="112" rx="26" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+  <circle cx="410" cy="436" r="20" fill="#A8D4BA"/>
+  <rect x="452" y="416" width="336" height="12" rx="6" fill="#C9DCCF"/>
+  <rect x="452" y="442" width="244" height="12" rx="6" fill="#DCE6DE"/>
+
+  <!-- 指令标签 -->
+  <g>
+    <rect x="360" y="520" width="190" height="60" rx="18" fill="#F6E7C6" stroke="#E7B45A" stroke-width="2"/>
+    <rect x="382" y="545" width="104" height="12" rx="6" fill="#D9A247"/>
+    <rect x="576" y="520" width="150" height="60" rx="18" fill="#E9F2EC" stroke="#A8D4BA" stroke-width="2"/>
+    <rect x="598" y="545" width="76" height="12" rx="6" fill="#4E7860"/>
+    <rect x="752" y="520" width="170" height="60" rx="18" fill="#F3E1D5" stroke="#D79B7C" stroke-width="2"/>
+    <rect x="774" y="545" width="94" height="12" rx="6" fill="#B77552"/>
+  </g>
+
+  <!-- 背景装饰 -->
+  <g opacity="0.35" stroke="#7FB295" stroke-width="2" stroke-dasharray="6 8">
+    <path d="M150 120 C230 90 300 130 330 210" fill="none"/>
+    <path d="M1050 560 C980 600 900 570 870 500" fill="none"/>
+  </g>
+</svg>

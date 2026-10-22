@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" role="img" aria-label="RAG 知识库插画">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FAF8F2"/>
+      <stop offset="0.55" stop-color="#F0F4EC"/>
+      <stop offset="1" stop-color="#E6EFE7"/>
+    </linearGradient>
+    <radialGradient id="glow4" cx="0.2" cy="0.15" r="0.6">
+      <stop offset="0" stop-color="#7FB295" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#7FB295" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft4" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#bg4)"/>
+  <rect width="1200" height="675" fill="url(#glow4)"/>
+
+  <!-- 文档堆 -->
+  <g>
+    <rect x="250" y="150" width="380" height="450" rx="26" fill="#4E7860" opacity="0.10" filter="url(#soft4)"/>
+    <rect x="300" y="190" width="360" height="430" rx="24" fill="#E9F2EC" stroke="#DCE6DE" stroke-width="3" transform="rotate(-6 480 405)"/>
+    <rect x="250" y="170" width="360" height="430" rx="24" fill="#F1F6F0" stroke="#DCE6DE" stroke-width="3" transform="rotate(-3 430 385)"/>
+    <rect x="210" y="150" width="360" height="430" rx="24" fill="#FFFFFF" stroke="#DCE6DE" stroke-width="3"/>
+    <rect x="250" y="196" width="150" height="16" rx="8" fill="#4E7860" opacity="0.75"/>
+    <rect x="250" y="238" width="280" height="11" rx="5.5" fill="#DCE6DE"/>
+    <rect x="250" y="266" width="250" height="11" rx="5.5" fill="#DCE6DE"/>
+    <rect x="250" y="294" width="268" height="11" rx="5.5" fill="#DCE6DE"/>
+    <rect x="250" y="334" width="120" height="11" rx="5.5" fill="#C9DCCF"/>
+    <rect x="250" y="362" width="240" height="11" rx="5.5" fill="#DCE6DE"/>
+    <rect x="250" y="390" width="200" height="11" rx="5.5" fill="#DCE6DE"/>
+    <rect x="250" y="430" width="90" height="26" rx="13" fill="#F6E7C6"/>
+    <rect x="356" y="430" width="90" height="26" rx="13" fill="#F3E1D5"/>
+  </g>
+
+  <!-- 放大镜 -->
+  <g>
+    <circle cx="780" cy="330" r="132" fill="#FBFAF5" opacity="0.9"/>
+    <circle cx="780" cy="330" r="132" fill="none" stroke="#4E7860" stroke-width="14"/>
+    <circle cx="780" cy="330" r="104" fill="#EFF6F0" opacity="0.85"/>
+    <path d="M742 328 L772 358 L830 296" stroke="#B77552" stroke-width="14" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="866" y="418" width="26" height="116" rx="13" fill="#4E7860" transform="rotate(-45 879 476)"/>
+  </g>
+
+  <!-- 数据节点 -->
+  <g>
+    <circle cx="1020" cy="180" r="30" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+    <circle cx="1020" cy="180" r="11" fill="#E7B45A"/>
+    <circle cx="1080" cy="290" r="22" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+    <circle cx="1080" cy="290" r="8" fill="#7FB295"/>
+    <circle cx="980" cy="520" r="26" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+    <circle cx="980" cy="520" r="10" fill="#B77552"/>
+    <g stroke="#7FB295" stroke-width="2.5" stroke-dasharray="6 8" opacity="0.6" fill="none">
+      <path d="M912 300 L1050 196"/>
+      <path d="M912 352 L1052 300"/>
+      <path d="M900 400 L950 500"/>
+    </g>
+  </g>
+
+  <!-- 装饰叶片 -->
+  <path d="M120 520 C180 486 250 500 262 566 C202 596 134 578 120 520 Z" fill="#A8D4BA" opacity="0.55"/>
+</svg>

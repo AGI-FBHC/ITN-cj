@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ITN 题库 · 刷题与出题</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="topbar">
+    <div class="brand">📚 ITN 题库</div>
+    <nav class="tabs">
+      <button :class="['tab', tab==='practice' && 'active']" @click="tab='practice'">刷题</button>
+      <button :class="['tab', tab==='create' && 'active']" @click="tab='create'">新增题</button>
+      <button :class="['tab', tab==='stats' && 'active']" @click="tab='stats'">题库</button>
+      <button :class="['tab', tab==='review' && 'active']" @click="tab='review'">审核<span v-if="reviewQueue.length" class="badge">{{ reviewQueue.length }}</span></button>
+    </nav>
+    <div class="userbox">
+      <input v-model.trim="userId" placeholder="用户 ID" class="user-input" />
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- ══════════════ 刷题 ══════════════ -->
+    <section v-if="tab==='practice'">
+      <div class="panel setup">
+        <label>知识点
+          <select v-model.number="practice.categoryId">
+            <option :value="null">全部知识点</option>
+            <optgroup v-for="l2 in categoryGroups" :key="l2.id" :label="l2.name">
+              <option v-for="kp in l2.children" :key="kp.category_id" :value="kp.category_id"
+                      :disabled="kp.chunk_count===0">
+                {{ kp.name }}<template v-if="kp.chunk_count===0">（无切片）</template>
+              </option>
+            </optgroup>
+          </select>
+        </label>
+        <label>题型
+          <select v-model="practice.questionType">
+            <option value="">混合</option>
+            <option value="single_choice">单选</option>
+            <option value="multiple_choice">多选</option>
+            <option value="true_false">判断</option>
+            <option value="short_answer">简答</option>
+          </select>
+        </label>
+        <label>数量
+          <input type="number" v-model.number="practice.count" min="1" max="20" />
+        </label>
+        <label>难度
+          <select v-model="practice.difficulty">
+            <option value="">不限</option>
+            <option v-for="d in 5" :key="d" :value="d">{{ d }}</option>
+          </select>
+        </label>
+        <button class="primary" @click="startPractice" :disabled="practicing || !userId">开始刷题</button>
+      </div>
+
+      <div v-if="practice.error" class="alert error">{{ practice.error }}</div>
+
+      <div v-if="practice.questions.length" class="panel">
+        <div class="progress">进度：{{ answeredCount }} / {{ practice.questions.length }}
+          <span class="muted">（{{ practice.strategy?.wrong_first || 0 }} 道错题优先）</span>
+        </div>
+
+        <div v-for="(q, qi) in practice.questions" :key="q.id" class="qcard"
+             :class="{ done: q.answered, wrong: q.answered && !q.correct, right: q.answered && q.correct }">
+          <div class="qhead">
+            <span class="qno">Q{{ qi + 1 }}</span>
+            <span class="tag">{{ typeLabel(q.question_type) }}</span>
+            <span class="tag diff">难度 {{ q.difficulty }}</span>
+          </div>
+          <div class="qstem">{{ q.stem }}</div>
+
+          <!-- 单选 -->
+          <div v-if="q.question_type==='single_choice'" class="options">
+            <label v-for="o in q.options" :key="o.key" class="option"
+                   :class="{ picked: q.selected==o.key }">
+              <input type="radio" :name="'q'+q.id" :value="o.key" v-model="q.selected"
+                     :disabled="q.answered" />
+              <span class="okey">{{ o.key }}.</span> {{ o.text }}
+            </label>
+          </div>
+
+          <!-- 多选 -->
+          <div v-else-if="q.question_type==='multiple_choice'" class="options">
+            <label v-for="o in q.options" :key="o.key" class="option"
+                   :class="{ picked: (q.selected||[]).includes(o.key) }">
+              <input type="checkbox" :value="o.key" v-model="q.selected" :disabled="q.answered" />
+              <span class="okey">{{ o.key }}.</span> {{ o.text }}
+            </label>
+          </div>
+
+          <!-- 判断 -->
+          <div v-else-if="q.question_type==='true_false'" class="options">
+            <label class="option" :class="{ picked: q.selected===true }">
+              <input type="radio" :name="'q'+q.id" :value="true" v-model="q.selected" :disabled="q.answered" />
+              正确
+            </label>
+            <label class="option" :class="{ picked: q.selected===false }">
+              <input type="radio" :name="'q'+q.id" :value="false" v-model="q.selected" :disabled="q.answered" />
+              错误
+            </label>
+          </div>
+
+          <!-- 简答 -->
+          <textarea v-else v-model="q.selected" rows="3" placeholder="输入你的答案…" :disabled="q.answered"></textarea>
+
+          <div v-if="!q.answered" class="qa-actions">
+            <button class="primary" @click="submitOne(q)" :disabled="!q.selected">提交</button>
+          </div>
+
+          <div v-else class="feedback" :class="q.correct ? 'ok' : 'bad'">
+            <div class="fb-title">
+              {{ q.correct === null ? '已记录（待人工批改）' : (q.correct ? '✅ 回答正确' : '❌ 回答错误') }}
+              <span v-if="q.score !== null && q.score !== undefined">得分 {{ q.score }}</span>
+            </div>
+            <div v-if="q.feedback && q.feedback.trim()" class="fb-ai">AI 评语：{{ q.feedback }}</div>
+            <div v-if="q.matched && q.matched.length" class="fb-points">✓ 得分点：{{ q.matched.join('；') }}</div>
+            <div v-if="q.missing && q.missing.length" class="fb-points miss">✗ 遗漏：{{ q.missing.join('；') }}</div>
+            <div class="fb-answer">参考答案：{{ displayAnswer(q.reference_answer) }}</div>
+            <div v-if="q.explanation" class="fb-exp">解析：{{ q.explanation }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" v-if="history.length">
+        <div class="panel-title">最近作答</div>
+        <table class="hist">
+          <thead><tr><th>题目</th><th>状态</th><th>得分</th><th>时间</th></tr></thead>
+          <tbody>
+            <tr v-for="h in history" :key="h.id">
+              <td class="muted">{{ h.question_id }}</td>
+              <td><span :class="h.is_correct===null ? '' : (h.is_correct ? 'ok' : 'bad')">
+                {{ h.is_correct===null ? '待批改' : (h.is_correct ? '正确' : '错误') }}</span></td>
+              <td>{{ h.score ?? '—' }}</td>
+              <td class="muted">{{ (h.submitted_at||'').slice(0,19).replace('T',' ') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ══════════════ 新增题 ══════════════ -->
+    <section v-if="tab==='create'">
+      <div class="panel">
+        <div class="panel-title">新增题目</div>
+        <div class="form-grid">
+          <label>题型
+            <select v-model="createForm.question_type">
+              <option value="single_choice">单选</option>
+              <option value="multiple_choice">多选</option>
+              <option value="true_false">判断</option>
+              <option value="short_answer">简答</option>
+            </select>
+          </label>
+          <label>难度
+            <select v-model.number="createForm.difficulty">
+              <option v-for="d in 5" :key="d" :value="d">{{ d }}（{{ diffHint(d) }}）</option>
+            </select>
+          </label>
+          <label>认知层级
+            <select v-model="createForm.cognitive_level">
+              <option v-for="c in ['remember','understand','apply','analyze','evaluate','create']" :key="c" :value="c">{{ c }}</option>
+            </select>
+          </label>
+          <label>知识点
+            <select v-model.number="createForm.categoryId">
+              <option :value="null">未关联</option>
+              <optgroup v-for="l2 in categoryGroups" :key="l2.id" :label="l2.name">
+                <option v-for="kp in l2.children" :key="kp.category_id" :value="kp.category_id">{{ kp.name }}</option>
+              </optgroup>
+            </select>
+          </label>
+        </div>
+
+        <label class="full">题干 *
+          <textarea v-model.trim="createForm.stem" rows="3" placeholder="输入题干（支持 Markdown）"></textarea>
+        </label>
+
+        <!-- 选择题选项 -->
+        <div v-if="['single_choice','multiple_choice'].includes(createForm.question_type)" class="full">
+          <div class="opt-row" v-for="(o, i) in createForm.options" :key="i">
+            <span class="okey">{{ String.fromCharCode(65+i) }}.</span>
+            <input v-model.trim="o.text" placeholder="选项内容" class="opt-input" />
+            <button class="ghost" @click="removeOption(i)" :disabled="createForm.options.length<=2">✕</button>
+          </div>
+          <button class="ghost" @click="addOption">+ 添加选项</button>
+        </div>
+
+        <!-- 答案 -->
+        <label v-if="createForm.question_type==='single_choice'" class="full">正确答案
+          <select v-model="createForm.answer">
+            <option v-for="(o,i) in createForm.options" :key="i" :value="String.fromCharCode(65+i)">{{ String.fromCharCode(65+i) }}</option>
+          </select>
+        </label>
+        <label v-if="createForm.question_type==='multiple_choice'" class="full">正确答案（多选）
+          <div class="mc-answers">
+            <label v-for="(o,i) in createForm.options" :key="i" class="mc-item">
+              <input type="checkbox" :value="String.fromCharCode(65+i)" v-model="createForm.answer" />
+              {{ String.fromCharCode(65+i) }}
+            </label>
+          </div>
+        </label>
+        <label v-if="createForm.question_type==='true_false'" class="full">正确答案
+          <select v-model="createForm.answer">
+            <option :value="true">正确</option>
+            <option :value="false">错误</option>
+          </select>
+        </label>
+        <label v-if="createForm.question_type==='short_answer'" class="full">参考答案 *
+          <textarea v-model.trim="createForm.answer" rows="3" placeholder="参考答案要点"></textarea>
+        </label>
+
+        <label class="full">答案解析
+          <textarea v-model.trim="createForm.explanation" rows="2" placeholder="解析（可选）"></textarea>
+        </label>
+
+        <div class="qa-actions">
+          <button class="primary" @click="submitCreate" :disabled="creating">提交题目</button>
+          <span v-if="createResult" class="muted">{{ createResult }}</span>
+        </div>
+        <div v-if="createError" class="alert error">{{ createError }}</div>
+      </div>
+
+      <!-- ══ AI 出题 ══ -->
+      <div class="panel" id="ai-panel">
+        <div class="panel-title">🤖 AI 出题（基于知识切片，生成后进入审核队列）</div>
+        <div class="setup">
+          <label>知识点
+            <select v-model.number="aiForm.categoryId">
+              <option :value="null">请选择知识点</option>
+              <optgroup v-for="l2 in categoryGroups" :key="l2.id" :label="l2.name">
+                <option v-for="kp in l2.children" :key="kp.category_id" :value="kp.category_id"
+                        :disabled="kp.chunk_count===0" :title="kp.chunk_count===0 ? '该知识点无知识切片' : ''">
+                  {{ kp.name }}<template v-if="kp.chunk_count===0">（无切片）</template>
+                </option>
+              </optgroup>
+            </select>
+          </label>
+          <label>题型
+            <select v-model="aiForm.questionType">
+              <option value="">混合</option>
+              <option value="single_choice">单选</option>
+              <option value="multiple_choice">多选</option>
+              <option value="true_false">判断</option>
+              <option value="short_answer">简答</option>
+            </select>
+          </label>
+          <label>难度
+            <select v-model.number="aiForm.difficulty">
+              <option value="">不限</option>
+              <option v-for="d in 5" :key="d" :value="d">{{ d }}</option>
+            </select>
+          </label>
+          <label>数量
+            <input type="number" v-model.number="aiForm.count" min="1" max="10" />
+          </label>
+          <button class="primary" @click="runAiGenerate" :disabled="aiLoading || !aiForm.categoryId">
+            {{ aiLoading ? '生成中…（约 30-90 秒）' : 'AI 生成题目' }}
+          </button>
+        </div>
+        <div v-if="aiError" class="alert error">{{ aiError }}</div>
+        <div v-if="aiResult" class="ai-result">
+          <div class="fb-title">
+            生成完成：✅ {{ aiResult.created.length }} 道入库
+            <template v-if="aiResult.skipped.length"> · ⏭ {{ aiResult.skipped.length }} 道重复跳过</template>
+            <template v-if="aiResult.failed.length"> · ❌ {{ aiResult.failed.length }} 道未通过校验</template>
+          </div>
+          <div v-if="aiResult.coverage" class="muted">
+            知识覆盖：{{ aiResult.coverage.coverage_level }}（直接切片 {{ aiResult.coverage.direct_chunk_count }} 条
+            <template v-if="aiResult.coverage.rag_supplement_count">+ RAG {{ aiResult.coverage.rag_supplement_count }} 条</template>）
+          </div>
+          <div v-if="aiResult.created.length" class="muted">
+            已入库题目：<span v-for="c in aiResult.created" :key="c.question_id">#{{ c.question_id }} </span>
+            · 去「审核」tab 审题后即可被刷到
+          </div>
+          <ul v-if="aiResult.failed.length" class="fail-list">
+            <li v-for="(f, i) in aiResult.failed" :key="i">{{ f.error }}</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ 题库看板 ══════════════ -->
+    <section v-if="tab==='stats'">
+      <div class="panel">
+        <div class="panel-title">题库总览</div>
+        <div class="stat-cards">
+          <div class="stat-card"><div class="num">{{ stats.overview.total }}</div><div>总题数</div></div>
+          <div class="stat-card ok"><div class="num">{{ stats.overview.by_status.active || 0 }}</div><div>可用（active）</div></div>
+          <div class="stat-card warn"><div class="num">{{ stats.overview.by_status.proposed || 0 }}</div><div>待审（proposed）</div></div>
+          <div class="stat-card"><div class="num">{{ (stats.overview.by_status.rejected || 0) + (stats.overview.by_status.deprecated || 0) }}</div><div>拒绝/下架</div></div>
+        </div>
+        <div class="two-col">
+          <div>
+            <div class="sub-title">按题型</div>
+            <table class="hist">
+              <tbody>
+                <tr v-for="(n, t) in stats.overview.by_type" :key="t"><td>{{ typeLabel(t) }}</td><td>{{ n }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <div class="sub-title">按难度</div>
+            <table class="hist">
+              <tbody>
+                <tr v-for="d in 5" :key="d"><td>难度 {{ d }}（{{ diffHint(d) }}）</td><td>{{ stats.overview.by_difficulty[d] || 0 }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">知识点 × 难度分布
+          <span class="muted">（含知识切片覆盖情况，点击「AI 出题」补题）</span>
+        </div>
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th>知识点</th>
+              <th class="c">切片</th>
+              <th class="c">覆盖</th>
+              <th class="c">总题</th>
+              <th class="c">可用</th>
+              <th v-for="d in 5" :key="d" class="c">难度{{ d }}</th>
+              <th class="c">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in matrix" :key="row.category_id">
+              <td class="kp-name">{{ row.name }}</td>
+              <td class="c">{{ row.chunk_count }}</td>
+              <td class="c"><span :class="['cov', row.gap]">{{ gapLabel(row.gap) }}</span></td>
+              <td class="c">{{ row.total }}</td>
+              <td class="c"><span :class="row.active ? 'ok' : ''">{{ row.active }}</span></td>
+              <td v-for="d in 5" :key="d" class="c">{{ row.by_difficulty[d] || 0 }}</td>
+              <td class="c">
+                <button class="ghost ai-mini" @click="quickAiGenerate(row)" :disabled="row.chunk_count===0">AI 出题</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="!matrix.length" class="muted">暂无题目，去「新增题」或「AI 出题」</div>
+      </div>
+    </section>
+
+    <!-- ══════════════ 审核 ══════════════ -->
+    <section v-if="tab==='review'">
+      <div class="panel">
+        <div class="panel-title">待审队列（proposed）</div>
+        <div v-if="!reviewQueue.length" class="muted">暂无待审题目</div>
+        <div v-for="q in reviewQueue" :key="q.id" class="qcard">
+          <div class="qhead">
+            <span class="qno">#{{ q.id }}</span>
+            <span class="tag">{{ typeLabel(q.question_type) }}</span>
+            <span class="tag diff">难度 {{ q.difficulty }}</span>
+            <span v-if="q.source_type==='llm'" class="tag ai">AI 生成</span>
+          </div>
+          <div class="qstem">{{ q.stem }}</div>
+          <div v-if="q.options" class="options static">
+            <div v-for="o in q.options" :key="o.key" class="option static">
+              <span class="okey">{{ o.key }}.</span> {{ o.text }}
+            </div>
+          </div>
+          <div class="fb-answer">参考答案：{{ displayAnswer(q.reference_answer) }}</div>
+          <div v-if="q.explanation" class="fb-exp">解析：{{ q.explanation }}</div>
+          <div v-if="q.metadata?.ai_review" class="fb-ai">
+            AI 初审：{{ q.metadata.ai_review.summary }}
+          </div>
+          <div class="qa-actions">
+            <button class="primary" @click="reviewQuestion(q.id, 'active')">✅ 通过</button>
+            <button class="danger" @click="reviewQuestion(q.id, 'rejected')">❌ 拒绝</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer muted">ITN QuestionBank · Knowledge Core 驱动出题</footer>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

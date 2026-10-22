@@ -1,0 +1,38 @@
+# 开发用镜像：基于 python:3.12-slim，提前装好系统与 Python 依赖，
+# 这样 bind mount src/agents 时 uvicorn --reload 启动是秒级。
+# 用法见 compose.yml agents-dev profile。
+#
+# Debian 源在 Docker Desktop 容器里走的是 host 网络，
+# 偶发 502 Bad Gateway，因此优先走清华 TUNA 镜像避免阻塞。
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=mirrors.aliyun.com
+
+# 用阿里云镜像源（如果默认源 OK 则保留）
+RUN sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' \
+    /etc/apt/sources.list.d/debian.sources 2>/dev/null \
+    || sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' \
+       /etc/apt/sources.list 2>/dev/null \
+    || true
+
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+        libreoffice-impress poppler-utils fonts-noto-cjk curl wget \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 把依赖装到系统 Python，避免每次容器启动重新 pip install
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
+
+# 注：app/ 目录通过 compose 的 bind mount 挂进来，
+# 这里不 COPY，便于本地代码修改实时生效（uvicorn --reload）。
+EXPOSE 8000
+
+CMD ["bash"]

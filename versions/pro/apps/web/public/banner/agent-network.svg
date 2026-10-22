@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" role="img" aria-label="智能体网络插画">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8F6EF"/>
+      <stop offset="0.55" stop-color="#EFF4EC"/>
+      <stop offset="1" stop-color="#E3EDE4"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.8" cy="0.15" r="0.55">
+      <stop offset="0" stop-color="#E7B45A" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#E7B45A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.12" cy="0.85" r="0.6">
+      <stop offset="0" stop-color="#7FB295" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#7FB295" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5C8B70"/>
+      <stop offset="1" stop-color="#3F6450"/>
+    </linearGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#glowA)"/>
+  <rect width="1200" height="675" fill="url(#glowB)"/>
+
+  <!-- 背景网格点 -->
+  <g fill="#4E7860" opacity="0.10">
+    <g id="dots">
+      <circle cx="120" cy="120" r="3"/><circle cx="200" cy="120" r="3"/><circle cx="280" cy="120" r="3"/>
+      <circle cx="120" cy="200" r="3"/><circle cx="200" cy="200" r="3"/><circle cx="280" cy="200" r="3"/>
+      <circle cx="120" cy="280" r="3"/><circle cx="200" cy="280" r="3"/><circle cx="280" cy="280" r="3"/>
+      <circle cx="920" cy="470" r="3"/><circle cx="1000" cy="470" r="3"/><circle cx="1080" cy="470" r="3"/>
+      <circle cx="920" cy="550" r="3"/><circle cx="1000" cy="550" r="3"/><circle cx="1080" cy="550" r="3"/>
+    </g>
+  </g>
+
+  <!-- 连接线 -->
+  <g stroke="#7FB295" stroke-width="3" stroke-linecap="round" opacity="0.55" fill="none">
+    <path d="M600 337 L360 205"/>
+    <path d="M600 337 L845 215"/>
+    <path d="M600 337 L880 430"/>
+    <path d="M600 337 L365 470"/>
+    <path d="M600 337 L620 520"/>
+  </g>
+  <g stroke="#B77552" stroke-width="2.5" stroke-linecap="round" opacity="0.45" fill="none" stroke-dasharray="8 10">
+    <path d="M360 205 Q470 150 600 337"/>
+    <path d="M880 430 Q1010 380 845 215"/>
+  </g>
+
+  <!-- 中心节点 -->
+  <circle cx="600" cy="337" r="96" fill="#4E7860" opacity="0.10" filter="url(#soft)"/>
+  <rect x="540" y="277" width="120" height="120" rx="34" fill="url(#core)"/>
+  <path d="M600 305 L610 327 L632 337 L610 347 L600 369 L590 347 L568 337 L590 327 Z" fill="#F6E7C6"/>
+  <circle cx="600" cy="337" r="86" fill="none" stroke="#7FB295" stroke-width="2" opacity="0.5"/>
+
+  <!-- 卫星节点 -->
+  <g>
+    <circle cx="360" cy="205" r="46" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+    <circle cx="360" cy="205" r="18" fill="#7FB295"/>
+    <circle cx="845" cy="215" r="38" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+    <circle cx="845" cy="215" r="15" fill="#4E7860"/>
+    <circle cx="880" cy="430" r="52" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+    <circle cx="880" cy="430" r="20" fill="#E7B45A"/>
+    <circle cx="365" cy="470" r="34" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+    <circle cx="365" cy="470" r="13" fill="#B77552"/>
+    <circle cx="620" cy="520" r="26" fill="#FBFAF5" stroke="#DCE6DE" stroke-width="3"/>
+    <circle cx="620" cy="520" r="10" fill="#7FB295"/>
+  </g>
+
+  <!-- 装饰叶片 -->
+  <g opacity="0.9">
+    <path d="M980 120 C1040 90 1120 110 1130 175 C1070 200 995 180 980 120 Z" fill="#A8D4BA" opacity="0.65"/>
+    <path d="M150 545 C205 512 280 528 292 592 C232 620 165 602 150 545 Z" fill="#A8D4BA" opacity="0.5"/>
+  </g>
+</svg>

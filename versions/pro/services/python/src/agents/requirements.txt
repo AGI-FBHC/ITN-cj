@@ -1,0 +1,17 @@
+fastapi==0.115.14
+uvicorn[standard]==0.34.3
+pydantic==2.11.7
+pydantic-settings==2.10.1
+httpx==0.28.1
+websockets==16.1
+openai==1.93.0
+pytest==8.4.1
+pytest-asyncio==1.0.0
+pyjwt==2.10.1
+PyMySQL==1.1.1
+# 远端 MySQL 走 caching_sha2_password 全量认证时需要，缺了会直接抛 RuntimeError（2026-10-14 事故）
+cryptography>=42.0
+tavily-python==0.7.12
+beautifulsoup4==4.12.3
+python-multipart==0.0.20
+python-pptx==1.0.2

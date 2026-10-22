@@ -1,0 +1,104 @@
+/* ITN 知识图谱控制台（审核 + 建边情况 + DAG 图） */
+.top-link { margin-left: 12px; color: var(--primary); font-size: 13px; text-decoration: none; white-space: nowrap; }
+.top-link:hover { text-decoration: underline; }
+
+.badge-count {
+  display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 4px;
+  background: var(--primary); color: #fff; border-radius: 10px; font-size: 11px; line-height: 16px;
+}
+.badge-count.zero { background: var(--muted); }
+
+/* 概览统计卡 */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat-card {
+  background: var(--card, #fff); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px; cursor: pointer; transition: transform .1s;
+}
+.stat-card:hover { transform: translateY(-1px); }
+.stat-card .stat-num { font-size: 28px; font-weight: 700; }
+.stat-card .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.stat-card.warn { border-color: #f59e0b; }
+.stat-card.warn .stat-num { color: #f59e0b; }
+.stat-card.muted .stat-num { color: var(--muted); }
+
+/* 工具栏 */
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; font-size: 13px; }
+.toolbar .muted { font-size: 12px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: 12px;
+  background: transparent; font-size: 12px; cursor: pointer; color: var(--text);
+}
+.chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+#edge-search { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; width: 220px; }
+
+/* 表格通用 */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+th { background: #f8fafc; font-weight: 600; white-space: nowrap; }
+tr:hover td { background: #f8fafc; }
+td .muted { color: var(--muted); font-size: 12px; }
+
+/* 状态/类型徽章 */
+.st-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; white-space: nowrap; }
+.st-active { background: #dcfce7; color: #15803d; }
+.st-proposed { background: #fef3c7; color: #b45309; }
+.st-rejected { background: #fee2e2; color: #b91c1c; }
+.st-deprecated { background: #e2e8f0; color: #64748b; }
+.et-cross { background: #ede9fe; color: #6d28d9; }
+.et-related { background: #e0f2fe; color: #0369a1; }
+
+/* 操作按钮 */
+.btn-mini { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; cursor: pointer; }
+.btn-ok { background: #dcfce7; color: #15803d; }
+.btn-ok:hover { background: #bbf7d0; }
+.btn-no { background: #fee2e2; color: #b91c1c; }
+.btn-no:hover { background: #fecaca; }
+button.danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+button.danger:hover { background: #b91c1c; }
+
+.rationale-cell { max-width: 260px; color: var(--muted); font-size: 12px; }
+
+/* DAG 图 */
+.dag-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: #fcfcfd; max-height: 70vh; }
+#dag-svg { display: block; }
+#dag-svg .dag-node rect { fill: #fff; stroke: var(--border); stroke-width: 1; rx: 6; }
+#dag-svg .dag-node text { font-size: 11px; fill: var(--text); }
+#dag-svg .dag-node.chapter rect { fill: #eff6ff; stroke: #93c5fd; }
+#dag-svg .dag-node.kp rect { fill: #fff; }
+#dag-svg .dag-node.related rect { fill: #faf5ff; stroke: #d8b4fe; stroke-dasharray: 4 3; }
+#dag-svg .dag-edge { stroke: #94a3b8; stroke-width: 1.2; fill: none; opacity: .75; }
+#dag-svg .dag-edge:hover { stroke-width: 3; opacity: 1; }
+#dag-svg .dag-edge.active { stroke: #22c55e; }
+#dag-svg .dag-edge.proposed { stroke: #f59e0b; stroke-dasharray: 5 3; }
+#dag-svg .dag-edge.related { stroke: #c084fc; stroke-dasharray: 2 3; }
+#dag-svg .dag-edge.cross { stroke: #8b5cf6; stroke-width: 1.6; }
+/* 章带背景：浅色色块强化「章」的分组，带内先修链聚焦可见 */
+#dag-svg .dag-band-bg { fill: #f1f5f9; stroke: #e2e8f0; stroke-width: 1; rx: 10; }
+#dag-svg .dag-band-bg:hover { fill: #e2e8f0; }
+#dag-svg .dag-node.chapter rect { fill: #dbeafe; stroke: #60a5fa; stroke-width: 1.2; }
+#dag-svg .dag-node.kp rect { fill: #fff; }
+#dag-svg .dag-edge.intra { stroke-width: 3; opacity: 1; }
+#dag-svg .dag-edge.intra.active { stroke: #16a34a; }
+#dag-svg .dag-edge.intra.proposed { stroke: #d97706; stroke-dasharray: 7 4; }
+#dag-svg .dag-edge.hl { stroke-width: 4.5; opacity: 1; stroke: #0ea5e9 !important; }
+#dag-svg .dag-edge-dot { stroke: #fff; stroke-width: 1.5; }
+#dag-svg .dag-edge-dot.active { fill: #16a34a; }
+#dag-svg .dag-edge-dot.proposed { fill: #d97706; }
+#dag-svg .dag-node:hover rect { stroke: var(--primary); stroke-width: 2; }
+
+#dag-legend { margin-top: 8px; font-size: 12px; line-height: 1.8; }
+#dag-legend span { display: inline-block; margin-right: 14px; }
+#dag-legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 4px; }
+
+/* 拓扑分层布局 */
+#dag-svg XXX-NOTFOUND fill: #f8fafc; stroke: none; }
+#dag-svg XXX-NOTFOUND font-size: 12px; fill: #94a3b8; font-weight: 600; }
+#dag-svg .dag-node.chapter rect.ch { fill: #dbeafe; stroke: #60a5fa; stroke-width: 1.2; }
+XXX-NOTFOUND display: flex; gap: 16px; align-items: center; }
+.layout-switch label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
+/* 拓扑模式：列内章节分组 */
+#dag-svg XXX-NOTFOUND fill: #eef6ff; stroke: #dbeafe; stroke-width: 1; rx: 6; }
+#dag-svg XXX-NOTFOUND font-size: 10px; fill: #60a5fa; font-weight: 700; }
