@@ -247,3 +247,9 @@ scripts/package-app.ps1原来强制复制两份docs说明，公开检出缺docs�
 - 固定导入来源：Pro 2aa5c345d243acd3b3094bb1e68df3aba231cffc（4 个可达提交）、Lite d529278be8043f0981cef6a8164f8116cc9de787（105）、Desktop 6fa3624d629e58b1597412087c80567bc69c919a（356）；原 main 保留 1261 个可达提交。使用完整提交图的非浅检出，blob 按需下载不影响祖先关系。
 - 本地创建 snapshot/20261023/{main,pro,lite,desktop} 四个附注标签。原 main 全量文件归档到 archive/legacy-main/，根 AGENTS.md、TRACE.md 与 Git 属性/忽略规则继续保留；归档中的 README、TRACE 保持源字节。
 - 接下来以不 squash 的 git subtree add 导入 versions/{pro,lite,desktop}，逐项比对来源树和祖先可达性；完成验证后通过整合 PR 的 merge commit 接入 main。已有版本分支保持不变。
+
+### 总仓库文档入口
+
+- 新建根 README：提供 Pro / Lite / Desktop 对比、源码入口、分版本启动命令和架构；新增品牌 SVG 横幅，沿用用户确认的“你的 AI 学习搭档 / 懂课程，也懂你。”标题。
+- 新建 docs/GETTING_STARTED.md、docs/REPOSITORY.md，明确版本工作目录、SDK 差异、来源快照和保留历史的合并方式；根 AGENTS.md 同步三版本路径，版本原文与历史 TRACE 均不回改。
+- 导入期间 GitHub Git 下载连接多次中断；使用现有本地对象及 GitHub Git Blob API 按原 SHA 补齐文件对象。逐个验证内容哈希，只填充 Git 对象库，不改动来源提交。
