@@ -57,7 +57,8 @@ func envOr(name: String, fallback: String): String {
 
 func loadConfig(): Config {
     let database = envOr("ZHIXUN_DB_NAME", "")
-    if (database != "itn_learning_v2_dev") {
+    let allowDatabase = envOr("ZHIXUN_ALLOW_DATABASE", "")
+    if (database != "itn_learning_v2_dev" && (allowDatabase.size == 0 || database != allowDatabase)) {
         throw Exception("Refusing to start outside the isolated itn_learning_v2_dev database")
     }
     Config(
