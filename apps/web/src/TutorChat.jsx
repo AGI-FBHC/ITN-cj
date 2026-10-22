@@ -279,7 +279,7 @@ function AgentWorkspace(props) {
     <aside className="zx-agent-conversation-rail" aria-label="对话列表">
       <header className="zx-agent-conversation-head">
         <div>
-          <span>AGENT WORKSPACE</span>
+          <span>对话记录</span>
           <strong>学习对话</strong>
         </div>
         <button type="button" onClick={() => mutate('create')} disabled={!!action} title="新建对话" aria-label="新建对话" aria-busy={action?.kind === 'create'}>
@@ -345,7 +345,7 @@ function AgentWorkspace(props) {
         lessonTitle={selected.lessonTitle || ''}
         archived={!!selected.archived || archived}
         onConversationUsed={loadConversations}
-      /> : <div className="zx-agent-chat-loading"><div><SparkIcon className="h-8 w-8" /><p>{listLoading ? '正在准备 Agent…' : archived ? '选择一个归档会话查看记录' : '与 Lumin 开始新的学习对话'}</p>{!listLoading && <button type="button" disabled={!!action} onClick={() => mutate('create')}>{action?.kind === 'create' ? '正在新建…' : '新建对话'}</button>}</div></div>}
+      /> : <div className="zx-agent-chat-loading"><div><SparkIcon className="h-8 w-8" /><p>{listLoading ? '正在准备对话…' : archived ? '选择一个归档会话查看记录' : '开始新的学习对话'}</p>{!listLoading && <button type="button" disabled={!!action} onClick={() => mutate('create')}>{action?.kind === 'create' ? '正在新建…' : '新建对话'}</button>}</div></div>}
     </section>
   </div>;
 }
@@ -587,9 +587,9 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
   return <aside className={`flex h-full flex-col bg-[#fcfcfd]${fullPage ? ' zx-tutor-full' : ''}`} aria-label="Lumin 学习助手对话">
     <div className="zx-agent-chat-head">
       <div className="zx-agent-chat-identity">
-        <span className="zx-agent-chat-mark"><SparkIcon className="h-5 w-5" /></span>
+        <span className="zx-agent-chat-mark"><ConversationIcon className="h-5 w-5" /></span>
         <div>
-          <span>LUMIN · PERSONAL AGENT</span>
+          <span>{lessonTitle ? '课程对话' : '通用对话'}</span>
           <strong>{conversationTitle || lessonTitle || '学习对话'}</strong>
         </div>
       </div>
@@ -601,14 +601,14 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
       {shownMessages.map((item) => <div key={item.id} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}>
         <div className={`max-w-[88%] ${item.role === 'user' ? 'text-right' : ''}`}>
           <p className={`mb-1.5 flex items-center gap-2 text-xs font-extrabold ${item.role === 'user' ? 'justify-end text-[#6038ef]' : 'text-[#4d83d1]'}`}>
-            {item.role === 'assistant' && <SparkIcon className="h-4 w-4" />}
-            {item.role === 'user' ? '你' : 'Lumin 老师'}
+            {item.role === 'assistant' && <span className="zx-tutor-speaker-dot" aria-hidden="true" />}
+            {item.role === 'user' ? '你' : '学习助手'}
           </p>
           {item.quote && <div className="mb-2 rounded-xl border-l-[3px] border-[#6038ef] bg-[#f2effc] px-3 py-2 text-left text-xs font-semibold leading-5 text-[#686c77]"><strong className="block text-[#454852]">引用：</strong>{quoteText(item.quote).slice(0, 80)}…</div>}
           {!!item.attachments?.length && <div className="zx-tutor-sent-images">{item.attachments.map((image, index) => image.dataUrl
             ? <button type="button" key={image.id || index} onClick={() => setPreviewImage(image)} aria-label={`查看图片：${image.name}`}><img src={image.dataUrl} alt={image.name || '提问图片'} /></button>
             : <span key={index}>{image.name || '图片附件'}</span>)}</div>}
-          <div className={`rounded-2xl px-4 py-3 text-left text-sm font-semibold leading-6 ${item.role === 'user' ? 'zx-tutor-user-text rounded-tr-sm bg-[#6038ef] text-white' : 'rounded-tl-sm bg-[#eef2ff] text-[#555a75]'}`}>
+          <div className={`zx-tutor-message ${item.role === 'user' ? 'is-user' : 'is-assistant'} rounded-2xl px-4 py-3 text-left text-sm font-semibold leading-6 ${item.role === 'user' ? 'zx-tutor-user-text rounded-tr-sm bg-[#6038ef] text-white' : 'rounded-tl-sm bg-[#eef2ff] text-[#555a75]'}`}>
             {item.role === 'assistant' ? <div className="zx-tutor-rich">{item.text ? <Markdown text={item.text} audience="learner" /> : <span className="zx-tutor-pending">{item.interrupted ? '回答中断，尚未收到正文。' : '正在回答…'}</span>}{item.streaming && item.text ? <span className="zx-tutor-caret" aria-hidden="true" /> : null}</div> : item.text}
           </div>
           {item.role === 'assistant' && <>
@@ -644,11 +644,11 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
       <div className={`zx-tutor-composer flex items-center gap-3 bg-white px-4 py-3 shadow-[0_8px_28px_rgba(17,19,24,0.13)] ${quote ? 'rounded-b-2xl border border-[#dcd6f2]' : 'rounded-2xl border border-black/[0.07]'}`}>
         <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(event) => { addImages(event.target.files); event.target.value = ''; }} />
         <button type="button" className="zx-tutor-attach" aria-label="添加图片" title="添加图片，最多 3 张" disabled={!canCompose || preparing || images.length >= TUTOR_MAX_IMAGES} onClick={() => fileInput.current?.click()}><ImageIcon className="h-6 w-6" /></button>
-        <textarea ref={(node) => { composer.current = node; if (inputRef) inputRef.current = node; }} rows={1} value={draft} maxLength={12000} aria-label="向 Lumin 老师提问" aria-describedby={`zx-tutor-input-help-${conversationId}`} disabled={!canCompose} placeholder={archived ? '恢复会话后继续提问' : preparing ? '正在压缩图片…' : sending ? 'Lumin 正在回答…' : quote && contextEnabled ? '针对引用内容提问...' : '发送消息或引用讲义提问...'} className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-[#a1a4ad]" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); send(); } }} onPaste={(event) => { const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); addImages(files); } }} />
+        <textarea ref={(node) => { composer.current = node; if (inputRef) inputRef.current = node; }} rows={1} value={draft} maxLength={12000} aria-label="向学习助手提问" aria-describedby={`zx-tutor-input-help-${conversationId}`} disabled={!canCompose} placeholder={archived ? '恢复会话后继续提问' : preparing ? '正在压缩图片…' : sending ? '正在回答…' : quote && contextEnabled ? '针对引用内容提问…' : '输入问题，或引用讲义内容…'} className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-[#a1a4ad]" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); send(); } }} onPaste={(event) => { const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); addImages(files); } }} />
         <button type="button" onClick={speech.toggle} disabled={!speech.supported || !canCompose || preparing} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${speech.listening ? 'animate-pulse bg-[#6038ef] text-white' : 'text-[#666b76] hover:bg-[#f0ebff] hover:text-[#6038ef]'} disabled:cursor-not-allowed disabled:opacity-30`} aria-label={speech.listening ? '停止语音输入' : '开始语音输入'} title={speech.supported ? '语音提问' : '当前浏览器不支持语音识别'}><MicIcon className="h-5 w-5" /></button>
         {sending ? <button type="button" className="zx-tutor-stop" onClick={() => request.current?.stop()} aria-label="停止输出" title="停止接收输出，保留已收到的回答"><ActionIcon kind="stop" /></button> : <button type="button" onClick={() => send()} disabled={!canSend} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#6038ef] text-white shadow-[0_6px_16px_rgba(96,56,239,0.28)] transition hover:bg-[#512bdc] disabled:cursor-not-allowed disabled:opacity-35" aria-label="发送消息" title="发送消息"><SendIcon className="h-5 w-5" /></button>}
       </div>
-      <p id={`zx-tutor-input-help-${conversationId}`} className="mt-2 text-center text-[10px] font-semibold text-[#a1a4ad]">{images.length ? `${images.length}/3 张图片 · ` : ''}支持图片 · Enter 发送 · Shift+Enter 换行</p>
+      <p id={`zx-tutor-input-help-${conversationId}`} className="mt-2 text-center text-[10px] font-semibold text-[#a1a4ad]">{images.length ? `${images.length}/3 张图片 · ` : ''}Enter 发送 · Shift+Enter 换行</p>
     </div>
     {previewImage && <ImagePreview image={previewImage} onClose={() => setPreviewImage(null)} />}
   </aside>;
