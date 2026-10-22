@@ -5321,3 +5321,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 给 tools/real-chat-ui-smoke.cjs 增加 REAL_SMOKE_CORE / REAL_SMOKE_UI 覆盖，指向 dist/portable/Lumin-0.8.31/resources 内的包内核与包渲染器（不是源码目录）。
 - 结果（DeepSeek deepseek-flash）：A 59 字（含"变量"）、B 37 字（含"循环"）；切回 A 后打开会话与面板高亮正确、A 正文恢复且不含 B 内容；0 页面异常，RESULT=PASS。
 - 说明：这是对实际交付包的端到端验证，而不只是源码工作树。凭据仍只从 TEMP 副本读取并清零。
+
+### 2026-10-22 12:55 · 0.8.31 安装器构建与全流程验收
+
+- 构建 dist/Lumin-Setup-0.8.31-x64.exe：155,694,318 bytes，SHA256=FE72CAAAD61C0102191D3F45AE06D3131F226F9197E2EB9B96D99EF95E7A7D7F，payloadCommit=a656b180…（即运行中会话可见性修复后的构建），payloadFiles=2738。
+- tools/check-installer.ps1 24/24 PASS（中文与空格安装路径）：2738 文件逐项哈希一致；卸载注册/深链/开始菜单快捷方式正确；运行中文件锁定拒绝升级；重复安装、升级保留用户数据与安装目录额外文件；安装版 PRELOAD/TITLEBAR OK、5 个导航项、空模型提示正常；PPT/DOCX 导出读取、PDF 读取 10069 字符、随包 PPT 运行时与隔离 SQLite 全部 OK；卸载删除自有文件、保留无关文件与学习数据、移除注册；重装后数据保留。
+- 升级/卸载/重装三次后实际学习数据库字节完全一致（byte-identical），证明安装器不会破坏用户数据。证据目录：C:/Users/GeJie/AppData/Local/Temp/lumin-install-check-936ef75dc6564cf8aa0ad13d7f76ff6c-学员。
