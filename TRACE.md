@@ -1174,3 +1174,10 @@
 - 修复：重新打包 `services/learning`（src/cjpm.toml/cjpm.lock/renderer/migrations/schema.sql）上传到 `/opt/zhixun-yunshu/app/services/learning`；服务器 MySQL 执行 migration 025（`user_learning_memory` 增加 learning_plan_json / plan_generated_at / plan_model，复核 3 列存在）；用 `/opt/cangjie-1.2.0` 重新 `cjpm build -i -j4`（成功，仅 2 条既有告警）；重启 `zhixun-api`。
 - 验证：health 正常（Cangjie 1.2.0 + Spire / zhixun_learning）；未鉴权 `POST /api/learner/plan` 返回 401（路由存在，修复前为 404）；外网真实链路（匿名 session → 写入问卷画像 → POST /api/learner/plan）30.2s 返回 200，3 阶段/6 周、planModel=deepseek-v4.1-flash、learningPlan 已落库；6024 首页 200。测试游客（792384f1…）及其关联记录已精确清理，未触碰用户自己的两个测试游客会话。
 - 同步状态：本地代码/构建、GitHub `itn-lite`（HEAD 0444366）与服务器一致；本次仅服务器运行态与迁移更新，无源码改动，TRACE 随提交同步。
+
+## 2026-10-22 问答真正流式输出（SSE 分帧）
+
+- 用户反馈问答不再流式。定位：后端 SSE 端点虽然返回 text/event-stream，但先跑完整 Agent（非流式 chatWithTools）拿到全文，再一次性下发一个 delta，实测首个（也是唯一）delta 在 22.5s 才到达。
+- 改造 `services/learning/src/tutor_agent.cj`：新增检索阶段 `tutorAgentGather`（只决定是否调用工具，资料足够时只回 READY，不写答案）+ 回答阶段 `tutorAgentAnswerStreaming`（把检索消息与工具结果交给 `chatStreamText` 真流式生成）。`tutor_chat.cj` 的 `tutorChatStream` 改为：先完成检索并立即下发 meta（模型/引用/工具轨迹），随后逐帧写 delta，最后写 done 并落库；流中异常改为下发 error 帧。
+- 前端：答题页 Lumin 面板（QuizFlow 的 `xe`）由 `askTutor`（非流式）改为 `askTutorStream`，先插入占位消息，delta 到达时实时更新、done 时收尾、error 时移除占位并提示；Agent 页原本就走 SSE，现在能收到多帧增量。
+- 验证（本地 8312）：普通问题 meta 4.4s、42 个 delta 帧（首帧 10.0s、末帧 11.3s、总 11.3s，旧实现单个 delta 22.5s）；课程上下文问题 meta 11.1s、mode=Agent、12 条引用、2 次工具调用，179 个 delta 帧、总 18.7s。前端 `npm run build` 通过。

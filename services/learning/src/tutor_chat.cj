@@ -482,13 +482,11 @@ func tutorChatStream(ctx: HttpContext, cfg: Config, userId: String, body: JsonOb
     // Validation and retrieval finish before the response starts, so failures
     // still return a normal JSON status instead of a half-open stream.
     let plan = tutorChatPlan(cfg, userId, body)
-    let agent = try { tutorAgentRun(cfg, plan) }
+    let gathered = try { tutorAgentGather(cfg, plan) }
         catch (error: Exception) {
             throw Exception(tutorModelFailure(error.message, plan.images.size > 0))
         }
-    let answer = agent.answer
-    let citations = tutorCitationsJson(agent.citations)
-    if (answer.trimAscii().size == 0) { throw Exception("模型返回了空回答，请重试") }
+    let citations = tutorCitationsJson(gathered.citations)
     let response = ctx.response
     response.statusCode = 200
     response.contentType = "text/event-stream; charset=utf-8"
@@ -496,12 +494,27 @@ func tutorChatStream(ctx: HttpContext, cfg: Config, userId: String, body: JsonOb
     response.headers.add("X-Accel-Buffering", "no")
     let meta = JsonWriter()
     meta.putStr("type", "meta"); meta.putStr("model", plan.endpoint.chatModel)
-    meta.putStr("mode", agent.mode); meta.putRaw("citations", citations)
-    meta.putRaw("toolTrace", tutorAgentTraceJson(agent.trace))
+    meta.putStr("mode", gathered.mode); meta.putRaw("citations", citations)
+    meta.putRaw("toolTrace", tutorAgentTraceJson(gathered.trace))
     meta.putStr("conversationId", plan.conversationId)
     response.write(tutorSseFrame(meta.toJson()))
-    let delta = JsonWriter(); delta.putStr("type", "delta"); delta.putStr("text", answer)
-    response.write(tutorSseFrame(delta.toJson()))
+    let answer = try {
+        tutorAgentAnswerStreaming(plan, gathered) { piece: String =>
+            if (piece.size > 0) {
+                let delta = JsonWriter()
+                delta.putStr("type", "delta")
+                delta.putStr("text", piece)
+                response.write(tutorSseFrame(delta.toJson()))
+            }
+        }
+    } catch (error: Exception) {
+        response.write(tutorSseError(tutorModelFailure(error.message, plan.images.size > 0)))
+        return
+    }
+    if (answer.trimAscii().size == 0) {
+        response.write(tutorSseError("模型返回了空回答，请重试"))
+        return
+    }
     try {
         saveTutorMessage(cfg, userId, "user", tutorAttachmentSummary(plan.message, plan.images), "",
             plan.courseId, plan.index, plan.conversationId)

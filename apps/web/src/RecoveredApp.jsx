@@ -34,7 +34,7 @@ import CoursewareReferences, { CoursewareMarkdown } from "./CoursewareReferences
 import { lessonReferences } from "./courseware-references.js";
 import PresentationArtifact from "./PresentationArtifact.jsx";
 import TutorChat from "./TutorChat.jsx";
-import { askTutor } from "./tutor.js";
+import { askTutor, askTutorStream } from "./tutor.js";
 import SystemLogo from "./SystemLogo.jsx";
 import { LearningPlanPanel } from "./learning-plan.jsx";
 import { LearningActivityGrid, PopularLearningResources, useDashboardInsights } from "./HomeLearningWidgets.jsx";
@@ -6213,17 +6213,49 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
       Q("");
       setLuminError("");
       setLuminPending(true);
+      let streamed = "";
+      $((K) => [...K, "…"]);
       try {
-        const result = await askTutor({
-          message: D,
-          quote,
-          courseId: n.id,
-          lessonIndex: resolvedIndex,
-          lessonTitle: r,
-          conversationId: `lesson:${n.id}:${resolvedIndex}`,
-        });
-        $((K) => [...K, result.answer || "没有收到回答，请重试"]);
+        const result = await askTutorStream(
+          {
+            message: D,
+            quote,
+            courseId: n.id,
+            lessonIndex: resolvedIndex,
+            lessonTitle: r,
+            conversationId: `lesson:${n.id}:${resolvedIndex}`,
+          },
+          (event) => {
+            if (event.type === "delta") {
+              streamed += event.text || "";
+              $((K) => {
+                const next = [...K];
+                next[next.length - 1] = streamed;
+                return next;
+              });
+            } else if (event.type === "done") {
+              if (event.answer) streamed = event.answer;
+              $((K) => {
+                const next = [...K];
+                next[next.length - 1] = streamed || "没有收到回答，请重试";
+                return next;
+              });
+            } else if (event.type === "error") {
+              setLuminError(event.message || "Lumin 暂时无法回答，请稍后再试。");
+            }
+          },
+        );
+        if (!streamed && result?.answer) {
+          $((K) => {
+            const next = [...K];
+            next[next.length - 1] = result.answer;
+            return next;
+          });
+        }
       } catch (error) {
+        if (!streamed) {
+          $((K) => K.slice(0, -1));
+        }
         setLuminError(error.message || "Lumin 暂时无法回答，请稍后再试。");
       } finally {
         setLuminPending(false);

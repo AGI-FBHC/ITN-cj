@@ -19,6 +19,66 @@ class TutorAgentResult {
     }
 }
 
+/** 检索阶段的产物：完整消息（含工具结果）、引用、工具轨迹。 */
+class TutorAgentGatherResult {
+    let messagesJson: String
+    let citations: ArrayList<KbHit>
+    let trace: ArrayList<String>
+    let mode: String
+
+    init(messagesJson: String, citations: ArrayList<KbHit>, trace: ArrayList<String>, mode: String) {
+        this.messagesJson = messagesJson
+        this.citations = citations
+        this.trace = trace
+        this.mode = mode
+    }
+}
+
+func tutorAgentUserTurn(text: String): String {
+    let message = JsonWriter()
+    message.putStr("role", "user")
+    message.putStr("content", text)
+    message.toJson()
+}
+
+/**
+ * 检索阶段：只让模型决定是否调用工具，不在本阶段写答案（需要时只回复 READY）。
+ * 这样最终答案可以交给真正的流式调用逐段输出。
+ */
+func tutorAgentGather(cfg: Config, plan: TutorChatPlan): TutorAgentGatherResult {
+    let tavily = loadTavilySettings(cfg)
+    let webEnabled = tavily.enabled && resolveTavilyKey(cfg, tavily).size > 0
+    let tools = tutorAgentToolsJson(webEnabled)
+    let phasePrompt = "【检索阶段】如果回答用户问题需要课程资料或联网信息，请先调用相应工具；" +
+        "如果不需要检索或资料已经足够，只回复 READY，禁止在本阶段写答案。"
+    var messages = tutorAgentAppend(plan.messagesJson, tutorAgentUserTurn(phasePrompt))
+    let citations = ArrayList<KbHit>()
+    let trace = ArrayList<String>()
+    var step: Int64 = 0
+    while (step < 4) {
+        let turn = chatWithTools(plan.endpoint, messages, tools)
+        if (turn.calls.size == 0) { break }
+        messages = tutorAgentAppend(messages, tutorAgentAssistantMessage(turn))
+        for (call in turn.calls) {
+            let (content, label) = tutorAgentExecuteTool(cfg, plan, call, citations)
+            trace.add(label)
+            messages = tutorAgentAppend(messages, tutorAgentToolMessage(call, content))
+        }
+        step += 1
+    }
+    let mode = if (trace.size == 0) { plan.mode } else { "Agent 工具调用" }
+    TutorAgentGatherResult(messages, citations, trace, mode)
+}
+
+/** 回答阶段：基于检索阶段的消息做真正的流式生成。 */
+func tutorAgentAnswerStreaming(plan: TutorChatPlan, gathered: TutorAgentGatherResult,
+                               onDelta: (String) -> Unit): String {
+    let directive = "【回答阶段】请基于以上信息用简体中文直接回答用户问题：先结论后解释，保留引用编号 [n]；" +
+        "不要提及检索阶段，不要输出 READY。"
+    let messages = tutorAgentAppend(gathered.messagesJson, tutorAgentUserTurn(directive))
+    chatStreamText(plan.endpoint, messages, 0.3, onDelta)
+}
+
 func tutorAgentSystemPrompt(memorySnapshot: String, webEnabled: Bool): String {
     let memory = learnerMemoryLimit(memorySnapshot, LEARNER_MEMORY_PROMPT_BYTES)
     "你是用户的个人学习助手——Lumin老师，也是一个会主动使用检索工具的学习 Agent。\n" +
