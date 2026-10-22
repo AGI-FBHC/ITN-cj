@@ -7449,6 +7449,11 @@ PAGES.chat = {
        会话栏只把高亮挪过去 —— 点一次就闪一次"加载中…"的问题就出在原来走的是整页 go()。 */
     state.chatOpenSession = async (id) => {
       state.chatSessionId = id;
+      // 右侧资源栏属于"这一段对话的产物"：换会话就收起，
+      // 否则上一条会话的产物会留在新会话旁边（实测可复现）。
+      if (typeof workbench !== "undefined" && workbench.open && typeof closeResourceDock === "function") {
+        closeResourceDock();
+      }
       window.LuminTeamPanel?.syncSession(id, []);
       syncChatBusy();
       state.chatEvents = [];

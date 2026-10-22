@@ -379,6 +379,54 @@ async function main() {
     });
     check('任务中心浮层在切页后关闭', taskAfterNav.hidden === true && taskAfterNav.expanded === 'false', JSON.stringify(taskAfterNav));
 
+    // K) 右侧资源栏不能把上一条会话的产物留在新会话上
+    await nav('chat');
+    const dockSid = await page.evaluate(() => state.chatSessionId);
+    await page.evaluate(() => {
+      workbench.file = null;
+      workbench.selected = {
+        id: 'fixture-dock', version: 1, versions: [1], kind: 'legacy',
+        title: 'A 会话专属产物', markdown: '# A 的会话产物', quality: {issues: []},
+      };
+      workbench.open = true;
+      renderResourceDock();
+    });
+    const dockShown = await page.evaluate(() => ({
+      hidden: document.getElementById('resource-dock').hidden,
+      text: document.getElementById('resource-dock').innerText,
+    }));
+    check('资源栏能显示当前会话的产物（前置条件）', dockShown.hidden === false && dockShown.text.includes('A 会话专属产物'), JSON.stringify({hidden: dockShown.hidden}));
+    const otherSid = sidList.find((s) => s !== dockSid);
+    await page.evaluate(() => {
+      window.__openLog = [];
+      const originalOpen = window.openChatSession;
+      window.openChatSession = (id) => { window.__openLog.push(id); return originalOpen(id); };
+      window.__clicked = [];
+      document.getElementById('panel-body').addEventListener('click', (e) => {
+        const item = e.target.closest && e.target.closest('.panel-item');
+        if (item) window.__clicked.push(item.dataset.id);
+      }, true);
+    });
+    await page.locator('#panel-body .panel-item[data-id="' + otherSid + '"]').click();
+    // 会话事件是异步拉的：先等切换真正落地（最多 5 秒），再看资源栏有没有跟着清理
+    const dockSettleEnd = Date.now() + 5000;
+    while (Date.now() < dockSettleEnd && await page.evaluate(() => state.chatSessionId) !== otherSid) await sleep(120);
+    await sleep(300);
+    const dockAfterSwitch = await page.evaluate(() => ({
+      session: state.chatSessionId,
+      hidden: document.getElementById('resource-dock').hidden,
+      text: document.getElementById('resource-dock').innerText,
+      open: !!workbench.open,
+      openLog: window.__openLog || [],
+      clicked: window.__clicked || [],
+      hasOpenSession: typeof state.chatOpenSession,
+    }));
+    check('切到另一条会话后不继续显示上一条会话的产物',
+      dockAfterSwitch.session === otherSid && (dockAfterSwitch.hidden === true || !dockAfterSwitch.text.includes('A 会话专属产物')),
+      JSON.stringify({session: dockAfterSwitch.session, hidden: dockAfterSwitch.hidden, open: dockAfterSwitch.open,
+        hasOld: dockAfterSwitch.text.includes('A 会话专属产物'), openLog: dockAfterSwitch.openLog, clicked: dockAfterSwitch.clicked,
+        hasOpenSession: dockAfterSwitch.hasOpenSession}));
+
     check('全程没有前端或内核异常', errors.length === 0, errors.join('; '));
     const failed = checks.filter((c) => !c.ok);
     console.log('RESULT ' + (checks.length - failed.length) + '/' + checks.length + '; artifacts ' + dir);

@@ -5217,3 +5217,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - DeepSeek：从本机数据库 TEMP 只读副本取出 `deepseek-flash` 配置，经仓颉内核单问单答 → ASK_OK=true / TURN_OK=true / 95 字真实回答（「函数返回值就是函数执行完毕后交给调用者的那个结果…」）。凭据副本结束清零（0 字节）。
 - 真实模型 + 会话栏：新建 A 问「变量」、新建 B 问「循环」，再点回 A —— 打开会话、面板高亮、正文三者都回到 A，A 正文含「变量」且不含 B 的「循环」，0 页面异常。这是对之前"慢响应乱序导致高亮/正文错位"修复的真实模型复核。
 - 新增 tools/real-chat-smoke.cjs（单次真实问答）与 tools/real-chat-ui-smoke.cjs（真实模型 A/B 会话切换），均只从 TEMP 副本读取凭据并在 finally 清零，不打印密钥。
+
+### 2026-10-22 08:55 · 真实工具回路通过 + 修复"切会话后资源栏残留"
+
+- 真实模型工具回路（DeepSeek deepseek-flash）：要求模型调用 calc 计算 (12+8)*3/4 —— 事件里 tool/call=["calc"]、tool/result ok=(12+8)*3/4 = 15.000000、最终回答「(12+8)*3/4 = 15。」，ASK_OK/TURN_OK 均为 true。新增 tools/real-tool-smoke.cjs（凭据只从 TEMP 副本读取并清零）。
+- 侧边栏专项新增场景 K 并抓到真实缺陷：A 会话打开右侧资源栏（本段对话的产物），点击切到 B 会话后，资源栏仍显示 A 的产物（session=seed-26、hidden=false、open=true、hasOld=true）。修复：state.chatOpenSession 在切换会话时，若资源栏开着就调用 closeResourceDock() 收起。修复后同一用例 hidden=true/open=false，侧栏专项 46/46；连跑两次稳定。
+- 回归：session-switch 18、chat-ux 18、route-lifecycle 18/18 全部通过。
+- 说明：资源栏收起时不清空 DOM 内容，但 workbench.open=false 且节点 hidden，重新打开资源会走 openLearningResource 重新选中，不会把旧内容展示出来。
