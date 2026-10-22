@@ -1,135 +1,287 @@
-# 智训云枢 · Web 端
+# 智训云枢 · 专业版
 
-> 面向个性化学习的 Web 前端。学习数据、知识网络与智能体能力全部由 **仓颉（Cangjie）** 编写的后端服务提供，前端专注渲染与交互。
+> 面向个性化学习的在线学习平台。前端 React 19，后端核心服务全部使用 **仓颉（Cangjie）** 编写：API 网关、账号与学习业务、资源与游客逻辑都在仓颉服务中完成；内容生成与多智能体编排由 Python Agent 服务补充。
 
-![React](https://img.shields.io/badge/React-19-149ECA)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6)
-![Vite](https://img.shields.io/badge/Vite-7-646CFF)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-3-38BDF8)
-![Cangjie](https://img.shields.io/badge/Powered%20by-Cangjie-1F6F4A)
+<p>
+<img alt="Cangjie" src="https://img.shields.io/badge/Backend-Cangjie%201.1.3-1F6F4A">
+<img alt="React" src="https://img.shields.io/badge/Frontend-React%2019-149ECA">
+<img alt="Vite" src="https://img.shields.io/badge/Build-Vite%207-646CFF">
+<img alt="Nginx" src="https://img.shields.io/badge/Deploy-Nginx%20%2B%20Compose-009639">
+</p>
 
 ---
 
-## 为什么用仓颉做后端
+## 目录
 
-这个项目的服务端整体使用仓颉语言实现——网关、账号与学习业务、智能体编排都在仓颉服务里完成，前端通过同源代理直接对接：
+- [整体架构](#整体架构)
+- [仓颉后端](#仓颉后端)
+- [接口约定](#接口约定)
+- [目录结构](#目录结构)
+- [本地开发](#本地开发)
+- [构建](#构建)
+- [部署](#部署)
+- [发布与回滚](#发布与回滚)
+- [验证清单](#验证清单)
+- [工程约定](#工程约定)
+- [常见问题](#常见问题)
 
-| 接口前缀 | 提供方 | 返回形态 | 前端调用方式 |
+## 整体架构
+
+```text
+浏览器
+  │  HTTPS
+  ▼
+Nginx（静态站点 + 同源代理）
+  ├─ /               → apps/web 构建产物（dist）
+  ├─ /api/**         → services/api       （仓颉 · API 网关）
+  ├─ /v1/**          → services/api       （仓颉 · 转发到业务/智能体）
+  └─ /internal/**    → services/api       （仅服务间，禁止对外暴露）
+        │
+        ├─ services/business   （仓颉 · 账号 / 组织 / 学习者 / 游客）
+        ├─ MySQL               （业务数据、学习记录）
+        └─ Python Agent 服务   （内容生成、多智能体、对话、PPT）
+```
+
+分层原则：
+
+- **前端只做渲染与交互**，所有数据经仓颉服务读写，不直连数据库；
+- **仓颉服务是唯一业务入口**，鉴权、归属校验、写库都在这一层完成；
+- **Python Agent 只做生成与编排**，不承担账号与权限判断。
+
+## 仓颉后端
+
+两个仓颉服务均为 `cjpm` 工程，`cjc-version = "1.1.3"`，统一依赖 `soulsoft_web_http / routing / hosting / extensions_injection`：
+
+| 服务 | 工程 | 职责 | 默认端口 | 健康检查 |
+| --- | --- | --- | --- | --- |
+| API 网关 | `services/api` | 路由分发、鉴权、学习资源、讲义/实操/分阶题、转发业务与 Agent | `8100` | `GET /health` |
+| 业务服务 | `services/business` | 登录与 JWT 签发、组织、学习者画像、游客体验、邮件验证码 | `5000` | `GET /hello` |
+
+仓颉侧的工程化约束：
+
+- 编译必须显式指定 STDX 与动态库路径（见下方构建命令），否则 `soulsoft_*` 依赖链接失败；
+- 两个服务与 Agent 服务**共用同一 `JWT_SECRET`**，否则令牌互不认可；
+- 服务之间调用带 HMAC 签名（`X-*-Signature`），密钥只从环境变量注入，不落仓库；
+- 所有业务表按 `utf8mb4_unicode_ci` 统一排序规则，避免跨表 `UNION` 时的 collation 冲突。
+
+## 接口约定
+
+| 前缀 | 提供方 | 返回形态 | 前端封装 |
 | --- | --- | --- | --- |
-| `/api/v1/*` | 仓颉业务服务（网关 + 账号 / 学习 / 资源） | 统一信封 `{ code, message, data, timestamp }` | `request()` 自动拆包，失败统一抛错 |
-| `/v1/*` | 仓颉智能体服务（生成、会话、课件） | 直出 JSON / SSE 流 | `requestAgent()` 保留原始结构 |
-| `/internal/*` | 仓颉内部调用（仅服务之间） | — | 前端不直接访问 |
+| `/api/v1/**` | 仓颉 API 网关 | 统一信封 `{ code, message, data, timestamp }` | `request()`：自动拆包、非 0 抛错 |
+| `/v1/**` | 仓颉 API / Agent | 直出 JSON 或 SSE 流 | `requestAgent()` / `requestAgentEtag()` |
+| `/internal/**` | 服务间 | — | 前端不访问 |
 
-由此得到几条硬约束，也是本项目所有页面的实现前提：
-
-- **数据以仓颉服务为准**：学习记录、选课、资源、会话全部落库，前端不造演示数据；
-- **空态就是空态**：没有课程 / 没有资源时展示空状态，而不是用模拟数据填充；
-- **身份隔离**：登录态用 JWT Bearer；游客体验按设备分配独立身份，退出即清空；
-- **弱网可用**：列表与详情走 ETag 协商缓存，断点与视图状态本地留存。
-
-## 功能一览
-
-| 路由 | 页面 | 说明 |
-| --- | --- | --- |
-| `/login` | 登录 | 账号登录、管理端入口、游客体验 |
-| `/persona` | 选择体验角色 | 三种预置画像，进入即建档 |
-| `/welcome`、`/onboarding` | 建档向导 | 学习目标、基础水平、目标岗位 |
-| `/` | 平台总览 | 能力介绍、指标看板、智能体拓扑 |
-| `/me` | 我的学习 | 正在学习的课程与资源、本周投入、持续热学榜 |
-| `/discover` | 发现课程 | 领域 / 书籍 / 专栏，按画像匹配度推荐 |
-| `/learn` | 知识网络 | 3D 知识图谱、章节进度、推荐资源 |
-| `/learn/resource/:id` | 资源播放器 | 讲义、实操、分阶题；支持语音讲播与断点续学 |
-| `/learn/slide/:id` | 幻灯模式 | 与完整阅读同一套分块，逐块翻页 + 自评 |
-| `/resources` | 我的资源 | 本人定制的讲义 / 实操 / 分阶题 / 课件 |
-| `/me/notes`、`/me/wrong` | 笔记、错题本 | 按知识点归档，随学随记 |
-| `/me/garden`、`/report` | 成长与报告 | 养分来源、能力雷达、周报 |
-| `/admin/*` | 管理后台 | 领域与知识点、资源母版、账号与组织 |
-
-## 技术栈
-
-- **框架**：React 19 + TypeScript 5.9 + Vite 7（路由级懒加载）
-- **样式**：Tailwind CSS 3、Radix UI 原语、自定义设计令牌
-- **动效**：framer-motion（进出场）、GSAP + ScrollTrigger（长页叙事）
-- **可视化**：three.js / @react-three/fiber（3D 知识网络）、ECharts、Recharts
-- **内容渲染**：react-markdown + remark-gfm / remark-math + KaTeX + highlight.js
-- **状态与数据**：Context + 自定义 hooks，接口层统一封装与缓存
+- 鉴权：`Authorization: Bearer <accessToken>`，JWT 由业务服务签发；
+- 缓存：列表接口支持 ETag，`304` 时复用本地数据；
+- 流式：`/v1` 相关代理需关闭缓冲并放宽读超时（生成类请求可达数十分钟）。
 
 ## 目录结构
 
 ```text
-apps/web
-├─ src/pages          # 路由页面（登录、我的学习、知识网络、资源、后台…）
-├─ src/components     # 通用组件与业务组件（图谱、播放器、助手面板…）
-├─ src/context        # 登录、画像、智能体、笔记、成长等全局状态
-├─ src/hooks          # 学习地图、资源、轮询与缓存
-├─ src/lib            # 接口封装、Markdown 处理、工具函数
-├─ src/agent          # 伴学助手的规则与话术
-├─ src/data           # 类型与常量（不含演示数据）
-└─ src/assets         # 字体、图标、插画
+.
+├─ apps/web                 # React 19 + Vite 7 前端
+│  ├─ src/pages             # 路由页面
+│  ├─ src/components        # 业务组件（知识图谱、资源播放器、助手面板…）
+│  ├─ src/context           # 登录、画像、智能体、笔记、成长
+│  ├─ src/hooks             # 数据加载与缓存
+│  └─ src/lib               # 接口封装与工具
+├─ services/api             # 仓颉 · API 网关（itn_spire）
+├─ services/business        # 仓颉 · 账号与业务服务
+├─ services/python          # Python Agent 服务（FastAPI）
+├─ deploy/web               # 构建脚本、Compose、Nginx、环境变量示例
+└─ docs                     # 架构与开发说明
 ```
 
 ## 本地开发
 
+**环境要求**：Node.js ≥ 20、npm、仓颉 SDK 1.1.3 + STDX、Python 3.11+、MySQL 8。
+
 ```bash
+# 1) 前端
 cd apps/web
 npm install
-cp .env.example .env.local   # 按需修改后端地址
-npm run dev                  # http://localhost:3002
+cp .env.example .env.local     # 配好后端地址
+npm run dev                    # http://localhost:3002
+
+# 2) 仓颉 API 网关
+source /opt/cangjie/envsetup.sh
+export CANGJIE_STDX_PATH=/opt/stdx/linux_x86_64_cjnative/static/stdx
+export JWT_SECRET=<与 business 一致>
+export PLATFORM_DB_URL='mysql://user:pass@127.0.0.1:3306/<db>'
+cd services/api && cjpm build && ./target/release/bin/main
+
+# 3) 仓颉业务服务
+cd services/business
+cp .env.example .env           # 填数据库、JWT、SMTP 等
+cjpm build && ./target/release/bin/main
 ```
 
-环境变量（均可在 `.env.local` 覆盖）：
+前端开发服务器固定监听 `::`（双栈），并通过 Vite 代理把 `/api`、`/v1` 转发到后端，避免跨域：
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `VITE_API_PROXY_TARGET` | `http://localhost:8080` | 开发期 `/api` 代理目标（仓颉网关） |
-| `VITE_AGENT_BASE` | `http://localhost:8100` | 开发期 `/v1` 代理目标（仓颉智能体） |
-| `VITE_API_BASE` | 空 | 构建期接口前缀，仅在跨域部署时需要 |
+| `VITE_API_PROXY_TARGET` | `http://localhost:8080` | `/api` 代理目标 |
+| `VITE_AGENT_BASE` | `http://localhost:8100` | `/v1` 代理目标 |
+| `VITE_API_BASE` | 空 | 构建期接口前缀，仅跨域部署时需要 |
 
-开发服务器固定监听 `::`（双栈），避免 `localhost` 先解析到 IPv6 时每个模块请求都多等一次超时。
+## 构建
 
-## 构建与部署
+### 一键构建（推荐）
+
+```bash
+bash deploy/web/build.sh
+```
+
+脚本在仓颉 SDK 镜像内编译两个服务，产物落到 `deploy/web/app/api/main`、`deploy/web/app/business/main`，随后手动构建前端：
 
 ```bash
 cd apps/web
-npm run build     # 产物在 dist/
-npm run preview   # 本地预览构建结果
+npm ci
+npx vite build          # 产物：apps/web/dist/
 ```
 
-生产环境用 Nginx 托管静态文件，并把接口转发给仓颉服务：
+> 前端全量 `tsc -b` 仍存在历史类型错误，构建以 `vite build` 为准；提交前请确保新增代码无类型问题。
+
+### 镜像依赖
+
+`build.sh` 使用两个预置镜像，需自行准备（包含 SDK、STDX 与原生依赖）：
+
+- `itn-cangjie-sdk:1.1.3`：API 网关编译；
+- `itn-cangjie-sdk:1.1.3-mysql`：业务服务编译（额外带 MySQL 客户端库）。
+
+## 部署
+
+### 方案一：Docker Compose（推荐）
+
+部署目录约定：
+
+```text
+/opt/stack/
+├─ docker-compose.yml
+├─ nginx.conf
+├─ app/api/main
+├─ app/business/main
+├─ web/dist/
+└─ env/
+   ├─ api.env
+   └─ business.env
+```
+
+步骤：
+
+```bash
+# 1) 部署目录准备（env 只保留 0600 权限，不进 Git）
+mkdir -p /opt/stack/{app/api,app/business,web/dist,env}
+cp deploy/web/docker-compose.yml deploy/web/nginx.conf /opt/stack/
+cp deploy/web/app/api/main      /opt/stack/app/api/
+cp deploy/web/app/business/main /opt/stack/app/business/
+rsync -a apps/web/dist/ /opt/stack/web/dist/
+cp deploy/web/env/api.env.example      /opt/stack/env/api.env
+cp deploy/web/env/business.env.example /opt/stack/env/business.env
+chmod 600 /opt/stack/env/*.env
+
+# 2) 启动
+cd /opt/stack && docker compose up -d && docker compose ps
+
+# 3) 健康检查
+curl -fsS http://127.0.0.1:20889/health
+```
+
+要点：
+
+- Compose 把 Web 入口映射到宿主机 `20889`，网关与业务服务不直接暴露到公网；
+- 容器以只读根文件系统运行，仅挂载 `app/`、`web/dist/`、`nginx.conf`；
+- `business` 需要访问宿主机 MySQL 时用 `host.docker.internal`（Compose 已配置 `host-gateway`）；
+- Compose 引用了外部网络（见文件内 `networks` 段），首次部署需确认网段与 MySQL、Agent 容器地址一致。
+
+### 方案二：裸机 + systemd
+
+```ini
+# /etc/systemd/system/itn-api.service
+[Unit]
+Description=Platform API (Cangjie)
+After=network.target mysql.service
+
+[Service]
+WorkingDirectory=/opt/stack/app/api
+EnvironmentFile=/opt/stack/env/api.env
+ExecStart=/opt/stack/app/api/main
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+业务服务同理（`/opt/stack/app/business/main`，`/hello` 探活）。`deploy/web/deploy.sh` 提供了一个仅针对 API 的构建+替换辅助脚本，需要主机具备仓颉环境并已导出必要变量。
+
+### Nginx 关键配置
 
 ```nginx
 root /usr/share/nginx/html;
-index index.html;
 client_max_body_size 128m;
 
 location /assets/ {
     add_header Cache-Control "public, max-age=604800, immutable";
     try_files $uri =404;
 }
-
 location = /index.html {
     add_header Cache-Control "no-cache, no-store, must-revalidate";
     try_files $uri =404;
 }
-
-location /api/ { proxy_pass http://api:8100; proxy_read_timeout 120s; }
-location /v1/  { proxy_pass http://api:8100; proxy_buffering off; proxy_read_timeout 7200s; }
-location /     { try_files $uri $uri/ /index.html; }
+location /api/      { proxy_pass http://api:8100;      proxy_read_timeout 120s; }
+location /v1/       { proxy_pass http://api:8100;      proxy_buffering off; proxy_read_timeout 7200s; }
+location /internal/ { deny all; }
+location /          { try_files $uri $uri/ /index.html; }
 ```
 
-`/v1` 是流式接口（生成进度、助手对话），关闭缓冲、放宽超时；`/api` 为普通请求，保持短超时即可。
+## 发布与回滚
 
-## 约定
+前端必须**先补资源、后换 HTML**，避免已打开页面引用的哈希文件 404：
 
-- 新增接口一律走 `src/lib/api.ts`，不要在页面里裸写 `fetch`；
-- 页面只消费真实数据，为空时给空态与下一步入口；
-- 表格、卡片等公共样式优先复用设计令牌，避免页面各写一套；
-- 提交前跑 `npm run build`（含 TypeScript 检查），保持类型零报错。
+```bash
+rsync -a --exclude=/index.html apps/web/dist/ /opt/stack/web/dist/
+cp apps/web/dist/index.html /opt/stack/web/dist/index.html.next
+mv /opt/stack/web/dist/index.html.next /opt/stack/web/dist/index.html
+```
+
+仓颉服务替换遵循 **stop → 覆盖二进制 → start**，不要在运行中直接覆盖：
+
+```bash
+systemctl stop itn-api
+cp services/api/target/release/bin/main /opt/stack/app/api/main
+systemctl start itn-api
+```
+
+回滚时保留上一版二进制与 `web/dist` 历史资源目录即可，无需重新构建。
+
+## 验证清单
+
+上线后至少验证以下四项，健康检查通过不代表业务可用：
+
+1. `GET /health`（API 网关）、`GET /hello`（业务服务）返回 200；
+2. 登录成功并拿到 `accessToken`，`GET /api/v1/learners` 能返回本人画像；
+3. 学习页「我的课程 / 推荐资源」与数据库一致，空数据时展示空态；
+4. `/v1` 流式接口可正常增量返回（关闭了代理缓冲）。
+
+## 工程约定
+
+- **数据以服务端为准**：学习记录、选课、资源、会话全部落库，前端不造演示数据；
+- **空态不造假**：没有数据就展示空状态与下一步入口；
+- **身份隔离**：登录态用 JWT；游客体验按设备分配独立身份，退出即清空服务端与本地缓存；
+- **接口统一封装**：新增请求走 `apps/web/src/lib/api.ts`，页面不直接写 `fetch`；
+- **配置不入库**：`env/` 下真实变量权限 `0600`，仓库只保留 `*.example`；
+- **构建即检查**：前端 `vite build`、仓颉 `cjpm build` 必须通过后再提交。
 
 ## 常见问题
 
-**页面一直转圈 / 接口 404**：确认 `VITE_API_PROXY_TARGET` 指向的仓颉服务已启动，且 `/api/v1/health` 可访问。
+**仓颉编译报找不到 `soulsoft_*` / 链接失败**：确认已 `source /opt/cangjie/envsetup.sh`，且 `CANGJIE_STDX_PATH` 指向 `.../static/stdx`。
 
-**登录后立即跳回登录页**：多为 token 过期或后端时钟偏差，清理站点 LocalStorage 中的登录态后重新登录。
+**前端请求 404 或一直转圈**：检查 Nginx 的 `/api`、`/v1` 反代目标与容器网络是否可达；`/v1` 生成类请求需要放长超时。
 
-**3D 知识网络空白**：浏览器未启用 WebGL 时会降级为占位图，属预期行为。
+**登录后立刻被踢回登录页**：多为两个仓颉服务 `JWT_SECRET` 不一致或令牌过期。
+
+**知识图谱空白**：浏览器未启用 WebGL 时降级为占位图，属预期行为。
+
+**生成任务长时间无响应**：确认 `/v1` 关闭了 `proxy_buffering`，并检查 Agent 服务与 MySQL 连接。
