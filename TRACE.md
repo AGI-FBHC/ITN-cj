@@ -1127,3 +1127,11 @@
 - Python 依赖：服务器系统 Python 无 PIL，故新建 `/opt/zhixun-yunshu/venv` 安装 pillow 13.0.0 + python-pptx 1.0.2（PPT 渲染 `render_ppt.py` 与 Logo 归一化 `normalize_logo.py` 都以裸 `python` 调用，已通过 PATH 注入）。LLM/Tavily 调用走库内配置，未新增环境变量密钥。
 - 验收：服务器本地与外部实测 `http://113.249.102.41:6024/` 首页 200（HTML 407B，`/assets/index-BFYtsP2Q.js` 1.0MB、CSS 310KB 均 200）、SPA 路由 `/login` 200、`/api/health` 200、`/api/org` 返回真实机构数据（江南大学 + Logo + 官网 + 注册问题）、ragflow 6026 与 itn 6023 均 200；浏览器截图确认落地页与登录页正常渲染（登录页保留“邮箱登录/管理员登录/Powered by Cangjie”等既有设计）。
 - 边界与交接：部署细节、目录布局、端口分配、重部署命令写入 `docs/deploy-6024.md`；本机 SSH/SFTP/打包脚本位于被忽略的 `data/deploy-work/`（含 `remote.py`，口令只经环境变量传递，未入库）。本次未改动本地开发服务、未推送远程、未触碰旧 ITN 栈与 28801 页面；服务器 env 文件含数据库口令与 AUTH_SECRET，权限 600 且不入 Git。
+
+## 2026-10-22 6024 迁移验收补充（真实链路与清理）
+
+- 模型与检索出网实测：服务器直连 `https://maas.qianwenaiapi.com/compatible-mode/v1/models` 返回 401（TLS 正常、仅缺鉴权），`https://api.tavily.com/` 返回 200，说明库内配置的模型网关与 Tavily 在服务器上均可直连，无需走 mihomo 代理。
+- PPT 渲染器实机冒烟：用迁移过来的真实 `presentation.request.json` 在服务器执行 `venv/bin/python -X utf8 render_ppt.py <in> /tmp/ppt-render-smoke.pptx`，1.08s 产出 15 页 PPTX（含 15 条讲者备注），`python-pptx` 读回校验 15 页，说明“Agent 生成 PPT”的 Python 渲染段在服务器可用。
+- 端到端真实链路：从本机对 `http://113.249.102.41:6024` 执行匿名 `POST /api/session` → `GET /api/bootstrap`（返回 2 门已发布课程与 4 个课时）→ `POST /api/tutor/chat`（关闭课程上下文问“用一句话说明你是什么助手”），返回 200、`mode=Agent`、`model=deepseek-v4.1-flash`、真实中文回答并新建会话 `agent-2594a141-…`；证明 nginx→仓颉→MySQL→AUTH_SECRET 解密库内密钥→模型网关全链路可用。
+- 测试数据清理：验证过程共产生 5 个匿名游客用户与 1 个测试会话，已按 id 精确删除其 `tutor_messages/tutor_conversations/user_sessions/user_state/learner_activity_days/lesson_progress/lesson_resource_progress/quiz_attempts/user_learning_memory/users` 记录；复核 users 由 209 回到 204、tutor_conversations 由 20 回到 19、12:58 之后无新增用户，服务 health 正常。
+- 浏览器复核：`http://113.249.102.41:6024/` 落地页与 `/login` 登录页均正常渲染（登录页保留“邮箱登录 / 管理员登录 / Powered by Cangjie”等既有设计），静态资源 `/assets/index-BFYtsP2Q.js`（1.0MB）与 CSS（310KB）均 200。
