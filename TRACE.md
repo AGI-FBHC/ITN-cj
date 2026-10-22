@@ -5250,3 +5250,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 新增 tools/real-concurrent-sessions.cjs（DeepSeek deepseek-flash）：A 发起约 300 字长回答 → 确认 state.chatRequests 中 A 仍在跑 → 新建 B → B 提问并正常作答 → 切回 A 等收尾。
 - 结果：aStillRunning=true；A 536 字、turn/end ok；B 50 字；A 正文不含 B 的「循环」、B 事件不含 A 的「函数式编程」；切回 A 后打开会话与面板高亮都正确；0 页面异常，RESULT=PASS。这直接复核了用户最初报告"一个会话生成中新建会话导致插话/卡住"的场景。
 - 脚本与账面 pin 一致：凭据只从 TEMP 副本读取，finally 清零副本与隔离数据目录 itn.db，不打印密钥。
+
+### 2026-10-22 10:25 · 真实模型协作树界面验收
+
+- 新增 tools/real-team-ui-check.cjs（DeepSeek deepseek-flash）：在真实聊天页发"请研究并对比 MCP 与 A2A…"，模型自选 research_topic_team，右侧协作树自动弹出。
+- 结果：面板标题「主题研究小组」；树上 7 个节点、7 个已完成、6 条连线；点击节点后详情 2622 字（执行流程 + 最终回答）；0 页面异常，RESULT=PASS。这是对侧边栏/协作树界面的真实模型复核（此前 mock 的 34/34 之外）。
+- 脚本凭据只从 TEMP 副本读取，finally 清零副本与隔离 itn.db。
