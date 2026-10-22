@@ -5402,3 +5402,5 @@ read_chunk 读得到原文并带回库标识与正文。
 - 有意义的故障测试：仓颉 TcpServerSocket 实际发送 SSE/HTTP chunk 后提前关闭；覆盖角色帧后重试、正文中途断开且不重试、DONE 后不等 2.5s 对端关闭、finish_reason 后断开仍成功、缺失结束标记的工具参数不执行，以及完整 host 的 calc 结果+部分正文进入下一轮上下文、工具调用总数仍为 1。ProviderTest 19/19（其余 163 本轮未跑），包括原取消、超时、截断恢复、429、500 回归。初始 Content-Length 故障夹具会使传输库等待未声明完成的实体，与实际流式链路不符，改为完整 chunk + 缺失终止 chunk 后通过；测试超时只出现在该夹具调试阶段，不包装成产品验证成功。
 - 界面回归：chat-network-recovery-check 11/11，真实 Edge+renderer，内存 HTTP/事件夹具；包含 3134 字断连、真实连续点击、历史恢复、并发会话、草稿/附件保护和取消。旧版已验证失败；边界是该用例不验证真实模型与数据库。branch-guard-check 8/8，确认本次普通 send 调整不破坏分支/新建防重。
 - 仓颉 cjpm build 成功，重做 dist/core 后用新的实际内核执行真实 deepseek-flash 单次问答：ASK_OK=true、TURN_OK=true、98 字正文。该请求验证正常流式生成，非真实上游人为断网；真实断连语义由仓颉 TCP 测试覆盖。real-chat-smoke finally 补清零隔离模型数据库与 WAL/SHM，仅 TEMP 副本；不打印密钥、不重复昂贵资源生成。
+
+- 0.8.33 交付核验：dist/Lumin-0.8.33/Lumin.exe，ZIP=231337089 bytes，SHA256=BA83F12112B4E52149167F3EAC59A878D3868EFB7E25B386C897FDB22EEA1F1D；release.sourceCommit=0d023e38133eaf1bb992577053f9ef298a72652b；38 项关键资产哈希逐项一致；包内 renderer 再跑 network-recovery 11/11；实际 EXE 在全新 TEMP 用户目录原生启动 PRELOAD/TITLEBAR=ok、RESULT=OK，项目图标与0.8.33版本资源通过。前序0.8.32等目录保持原样，未发布或推送远端。用户使用时需从托盘退出仍运行的旧版后启动新 EXE，避免单实例机制继续激活旧进程。
