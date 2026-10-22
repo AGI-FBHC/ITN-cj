@@ -56,7 +56,7 @@ ITN-cj/
 
 ## 分支与发布约定
 
-- 开发分支：`codex/native-learning-v1`（本地 99+ 提交）。
+- 开发分支：`itn-lite`（远端同名分支，2026-10-22 由 `lite` 更名）。
 - 远端 `AGI-FBHC/ITN-cj` 已有 `main`、`cangjie-integration`、`desktop`、`front`、`full`、`itn-pro`、`yjyprojects` 等分支；本仓库推送为**独立分支**，不覆盖既有分支。
 - 本地构建：`scripts/build-backend.ps1`（仓颉）、`npm run build --prefix apps/web`（前端）。
 - 上线：见 `docs/deploy-6024.md`。

@@ -1152,3 +1152,9 @@
 - 标签页 Logo：原 `favicon.png` 仍是旧的紫色涂鸦标记，按当前品牌标记 `logo-mark.png` 重新生成 `favicon.png`(64)、`favicon-32.png`(32)、`apple-touch-icon.png`(180)（白底圆角 + 黑标），`index.html` 增加 32/64 图标、apple-touch-icon 与 theme-color；Vite 开发与构建产物均已验证（dev 返回的 favicon 与新文件哈希一致）。
 - 验证：本地后端旁路构建 `main-next.exe` 成功（仅 2 条既有告警），备份旧 binary 到 `data/backend-backups/20261022-142638-plan/` 后替换并重启 8312，health 正常；migration 025 已用本地 root 账号执行（应用账号无 ALTER 权限）；真实模型端到端：游客 + 问卷画像调用 `POST /api/learner/plan` 26.9s 返回 3 阶段/6 周/3 里程碑计划并落库（plan_model=deepseek-v4.1-flash）；浏览器完整走通注册向导（身份→目标→科目→基础→偏好→时间）→“生成我的学习计划”约 35s 后显示“已为你规划 3 个阶段、4 周安排，每周约 8 小时；学习画像与计划已保存到我的画像”；“我的画像”页展示真实计划全文与 LLM 产出的画像字段；`npm run build --prefix apps/web` 通过（既有 chunk 告警）。验证产生的 4 个匿名游客及其消息已精确清理，无孤儿消息。
 - 边界：本轮未部署 6024 服务器（用户明确“只对本机操作”），服务器仍是迁移时版本，后续需要时按 `docs/deploy-6024.md` 重建后端 + 上传前端 + 执行 migration 025；未推送远程。
+
+## 2026-10-22 版本分支统一命名（itn-lite）
+
+- 远端 `lite` 为本轮刚创建、尚未开过 PR 的版本分支；按用户要求把 lite 版本分支统一命名为 `itn-lite`：本地 `codex/native-learning-v1` → `itn-lite`，远端 `lite` → `itn-lite`，提交哈希与历史不变。
+- `docs/PROJECT_STRUCTURE.md` 开发分支说明同步为 `itn-lite`；TRACE 历史记录中的旧分支名保留（描述当时状态，不回改）。
+- 操作方式：先提交文档与 TRACE 更新，再 `git branch -m` + 推送新分支 + 删除远端旧 `lite`；删除前确认该分支没有任何 PR（GitHub 界面对 open PR 的自动重定向不适用于“删旧建新”，因此仅在无 PR 时执行）。
