@@ -1,0 +1,56 @@
+{
+  "sources": [
+    {
+      "edition": "main",
+      "sha": "cc2e6208ec9fc670639813970abfe5d68d1a0408",
+      "commitCount": 1261,
+      "tree": "6fe90b3315264124201652b3f2e967a8baff5fc3",
+      "importCommit": null,
+      "ancestry": true,
+      "tracePreserved": true
+    },
+    {
+      "edition": "pro",
+      "sha": "2aa5c345d243acd3b3094bb1e68df3aba231cffc",
+      "commitCount": 4,
+      "tree": "0f81b58129f41268ba6d1bb946f4007b438c7a5c",
+      "importCommit": "7a1534a6d2f0e05edc6b913be65873e769bb83e7",
+      "ancestry": true,
+      "tracePreserved": true
+    },
+    {
+      "edition": "lite",
+      "sha": "d529278be8043f0981cef6a8164f8116cc9de787",
+      "commitCount": 105,
+      "tree": "336d40e413b5b7a8941f0fe8e97ea25b67c2c477",
+      "importCommit": "0547a0f1640d09c85743f03097f72568f0a14e38",
+      "ancestry": true,
+      "tracePreserved": true
+    },
+    {
+      "edition": "desktop",
+      "sha": "6fa3624d629e58b1597412087c80567bc69c919a",
+      "commitCount": 356,
+      "tree": "a1f908465916c2373f35d3c5ac5ca647e75f549b",
+      "importCommit": "2cf6cbb2af45210053ac58e6702ef0a2871a4344",
+      "ancestry": true,
+      "tracePreserved": true
+    }
+  ],
+  "docs": {
+    "localLinksChecked": 27,
+    "brokenLinks": [],
+    "bannerValidXml": true
+  },
+  "validationScope": "Repository layout, immutable source imports, complete commit ancestry, local documentation links and script paths; not a deployment or live business regression.",
+  "authors": {
+    "originalMainIdentities": 8,
+    "retainedIdentities": 8,
+    "combinedIdentities": 9
+  },
+  "commitsReachable": 1463,
+  "validatedCommit": "992a5975b7336fd78c76a43c2c6637411a21b737",
+  "postImportAdaptation": [
+    "versions/desktop/scripts/publish-lumin.ps1"
+  ]
+}

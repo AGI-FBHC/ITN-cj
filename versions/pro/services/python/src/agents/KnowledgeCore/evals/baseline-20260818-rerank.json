@@ -1,0 +1,14 @@
+{
+  "total_queries": 18,
+  "evaluated_queries": 18,
+  "hit@3": 1.0,
+  "hit@8": 1.0,
+  "stage_distribution": {
+    "mysql": 13,
+    "parent": 5,
+    "rag": 0,
+    "empty": 0
+  },
+  "avg_hf": 0.7468825296587488,
+  "avg_latency_ms": 4553.929988888234
+}

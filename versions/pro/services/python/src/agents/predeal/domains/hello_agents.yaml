@@ -1,0 +1,46 @@
+domain_id: hello_agents
+domain_code: agent  # knowledge_domain.code in MySQL
+domain_version_id: v1
+pipeline_profile: markdown_tutorial
+language: zh-CN
+
+discovery:
+  root: ../../../itn_source/hello_agents/docs
+  include:
+    - "chapter*/*.md"
+    - "前言.md"
+    - "Preface.md"
+  exclude:
+    - "_sidebar*.md"
+    - "README*.md"
+    - "index.html"
+    - "*/Chapter*.md"
+    - "*_副本.md"
+
+chunk_policy:
+  target_min_chars: 300
+  target_max_chars: 1200
+  hard_max_chars: 1800
+  preserve_code_block: true
+  preserve_table: true
+  preserve_figure: true
+  semantic_split: true  # LLM 语义辅助切分（无规则锚点的超长段，与图片归属共用同一 LLM）
+
+figure_policy:
+  download_remote_images: true
+  enable_ocr: false
+  enable_vlm_summary: true
+  keep_decorative_images: false
+  enable_image_pipeline: true
+
+metadata_defaults:
+  authority_level: official
+  document_type: course_markdown
+  source_type: web
+  source_name: "自建Agents · Datawhale"
+  publisher: Datawhale
+  publish_year: 2025
+  version: v1.0
+  reliability_score: 0.90
+  applicability_scope:
+    course: 自建Agents

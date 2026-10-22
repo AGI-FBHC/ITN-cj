@@ -239,3 +239,31 @@ scripts/package-app.ps1原来强制复制两份docs说明，公开检出缺docs�
 验证：两个打包脚本PowerShell AST通过；分别从各脚本AST提取真实说明复制函数，在临时空工程验证无docs时不报错且不生成说明，在仅有一份本地说明时只复制该份且跳过另一份。未为这项局部变化重跑不相关的内核或完整应用打包。再次核验36个本地文件SHA256无变化；两个Git索引中各自docs均为0个；README相对链接均指向仍被跟踪的文件；diff --check通过。
 
 哈希清单 D:\Temp\itn-private-docs-preservation-20261019.json。两分支分别本地提交，再用普通原子推送更新main和desktop；禁止强推。文档在旧提交中仍存在，本轮只从最新版本停止跟踪，不重写历史，也未改变线上部署或数据库。
+
+## 2026-10-23 三版本总仓库整合：建立历史快照与目录边界
+
+- 用户授权以 main 展示并维护 Pro、Lite、Desktop，要求保留成员贡献、原始提交、PR 与仓库记录，并优化根 README 的视觉呈现。
+- 实施于独立检出 D:/Desktop/ITN/ITN-cj-unified，整合分支 integration/three-editions，从远端 main cc2e6208ec9fc670639813970abfe5d68d1a0408 出发；运行中的 Lite 目录不搬动。
+- 固定导入来源：Pro 2aa5c345d243acd3b3094bb1e68df3aba231cffc（4 个可达提交）、Lite d529278be8043f0981cef6a8164f8116cc9de787（105）、Desktop 6fa3624d629e58b1597412087c80567bc69c919a（356）；原 main 保留 1261 个可达提交。使用完整提交图的非浅检出，blob 按需下载不影响祖先关系。
+- 本地创建 snapshot/20261023/{main,pro,lite,desktop} 四个附注标签。原 main 全量文件归档到 archive/legacy-main/，根 AGENTS.md、TRACE.md 与 Git 属性/忽略规则继续保留；归档中的 README、TRACE 保持源字节。
+- 接下来以不 squash 的 git subtree add 导入 versions/{pro,lite,desktop}，逐项比对来源树和祖先可达性；完成验证后通过整合 PR 的 merge commit 接入 main。已有版本分支保持不变。
+
+### 总仓库文档入口
+
+- 新建根 README：提供 Pro / Lite / Desktop 对比、源码入口、分版本启动命令和架构；新增品牌 SVG 横幅，沿用用户确认的“你的 AI 学习搭档 / 懂课程，也懂你。”标题。
+- 新建 docs/GETTING_STARTED.md、docs/REPOSITORY.md，明确版本工作目录、SDK 差异、来源快照和保留历史的合并方式；根 AGENTS.md 同步三版本路径，版本原文与历史 TRACE 均不回改。
+- 导入期间 GitHub Git 下载连接多次中断；使用现有本地对象及 GitHub Git Blob API 按原 SHA 补齐文件对象。逐个验证内容哈希，只填充 Git 对象库，不改动来源提交。
+
+### 三版本导入完成与路径验收
+
+- 不 squash 导入提交：Pro 7a1534a、Lite 0547a0f、Desktop 2cf6cbb。三个导入目录的 Git 树哈希分别与固定来源一致；各版本 TRACE 字节保持，原 main TRACE 仍为根日志的完整前缀。
+- 祖先验证：四个来源 tip 均为整合分支祖先，来源提交在 `rev-list <source> --not HEAD` 中缺失数为 0；原 main 的 8 组作者姓名/邮箱身份全部保留，合并后共 9 组身份。
+- 路径检查发现 Desktop 发布 Lumin 的旧脚本固定使用 `--prefix=lumin`，在总仓库会指向错误位置。脚本改为相对于 Git 根计算前缀，使用临时独立仓库/总仓库夹具执行脚本原始前缀代码，分别得到 lumin 和 versions/desktop/lumin，均通过；未执行实际发布。
+- 15 个 PowerShell 脚本完成 AST 语法检查，Pro 两个构建/部署 shell 脚本完成 bash -n 检查。已修正根文档的 Desktop 启动顺序：build 后先 package，把内核与运行库放入 Electron 查找的 dist/core；补充 Windows SDK 的 mt.exe 依赖。
+- 独立只读审查指出 Pro 的完整 TypeScript 构建有来源分支已记录的遗留错误；根文档沿用该版本前端说明中的 Vite 静态构建入口，并明确不等于类型检查通过。本轮未修改业务逻辑、数据库或服务配置，也未启动应用或外部模型。
+- 根 README / 启动与组织文档的本地链接检查通过，SVG 横幅 XML 合法。源版本的历史空白格式按原样保留；本轮新增和修改文件单独检查空白错误。
+
+### 整合审计记录
+
+- 结构与历史审计结果保存到 docs/history/2026-10-23-editions.json，记录四个来源 tip / 树哈希 / 原提交数、三个 subtree 导入提交、8/8 原 main 作者身份保留、27 个本地链接检查、Desktop 唯一路径适配及验证范围。
+- 审计基准提交为 992a5975；之后的文档记录提交仅增加审计结果。本地整合检出保留 main 作为原有远端基线，完成整合 PR 后再将其快进至合并结果。

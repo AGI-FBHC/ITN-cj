@@ -1,0 +1,40 @@
+{"query": "什么是ReAct范式？它的思考-行动-观察循环是怎么运转的？", "label": "answerable", "key_points": ["Reasoning与Acting结合", "Thought->Action->Observation循环", "观察结果追加进上下文", "Finish输出最终答案"]}
+{"query": "ReAct诞生之前的纯思考型和纯行动型方法各有什么问题？", "label": "answerable", "key_points": ["思维链无法与外部世界交互", "容易产生事实幻觉", "纯行动型缺乏规划和纠错能力"]}
+{"query": "定义一个智能体工具需要哪三个核心要素？", "label": "answerable", "key_points": ["名称", "描述", "执行逻辑", "描述决定模型何时选用工具"]}
+{"query": "ReAct范式有哪些固有局限性？", "label": "answerable", "key_points": ["强依赖LLM能力", "多次调用效率低", "提示词脆弱", "可能陷入局部最优"]}
+{"query": "Plan-and-Solve范式分为哪两个阶段？各做什么？", "label": "answerable", "key_points": ["规划阶段分解问题生成计划", "执行阶段按计划逐步执行", "先谋后动保持目标一致性"]}
+{"query": "Plan-and-Solve的规划器提示词是如何保证输出可解析的？", "label": "answerable", "key_points": ["角色设定AI规划专家", "输出强制为Python列表格式", "简化代码解析"]}
+{"query": "Reflection范式中记忆模块起什么作用？", "label": "answerable", "key_points": ["存储初稿与反思记录", "为下一轮迭代提供上下文", "支撑自我批判和修正"]}
+{"query": "ReAct智能体调试有哪些实用技巧？", "label": "answerable", "key_points": ["打印完整提示词", "分析原始输出", "验证工具输入输出", "加few-shot示例", "换模型或调temperature"]}
+{"query": "LangChain框架的具体用法是什么？", "label": "restricted", "key_points": ["库内仅说明为何不直接用框架", "无LangChain使用细节"]}
+{"query": "Transformer架构的内部结构是怎样的？", "label": "restricted", "key_points": ["库内仅一句带过上一章讲过", "无架构细节"]}
+{"query": "SerpApi的完整功能和计费方式是什么？", "label": "restricted", "key_points": ["库内只有搜索工具的基础接入代码", "无完整功能与计费信息"]}
+{"query": "MySQL事务的ACID特性是什么？", "label": "unanswerable", "key_points": []}
+{"query": "TCP三次握手的过程是怎样的？", "label": "unanswerable", "key_points": []}
+{"query": "Kubernetes如何部署一个服务？", "label": "unanswerable", "key_points": []}
+{"query": "Redis的持久化机制有哪几种？", "label": "unanswerable", "key_points": []}
+{"query": "ReAct范式是谁在哪一年提出的？", "label": "answerable", "key_points": ["Shunyu Yao", "2022年", "推理与行动结合"]}
+{"query": "ReAct的提示词模板由哪几个部分构成？", "label": "answerable", "key_points": ["角色定义", "工具清单", "Thought/Action格式规约", "question与history动态上下文"]}
+{"query": "搜索工具解析SerpApi返回结果时的优先级是怎样的？", "label": "answerable", "key_points": ["answer_box优先", "knowledge_graph其次", "前三条有机结果摘要兜底"]}
+{"query": "Plan-and-Solve是谁提出的？它要解决思维链的什么问题？", "label": "answerable", "key_points": ["Lei Wang", "2023年", "多步骤复杂问题容易偏离轨道"]}
+{"query": "Plan-and-Solve执行器的提示词需要包含哪几类关键信息？", "label": "answerable", "key_points": ["原始问题", "完整计划", "历史步骤与结果", "当前步骤"]}
+{"query": "Reflection的反思阶段会从哪些维度评估初稿？", "label": "answerable", "key_points": ["事实性错误", "逻辑漏洞", "效率问题", "遗漏信息"]}
+{"query": "Reflection智能体的迭代循环在什么条件下终止？", "label": "answerable", "key_points": ["反馈包含无需改进", "达到最大迭代次数max_iterations"]}
+{"query": "ReAct、Plan-and-Solve、Reflection三种范式分别适合什么任务？", "label": "answerable", "key_points": ["需外部交互选ReAct", "逻辑路径清晰选Plan-and-Solve", "结果质量要求极高选Reflection"]}
+{"query": "Reflexion框架的verbal reinforcement learning机制是怎么实现的？", "label": "restricted", "key_points": ["库内仅提及Reflexion框架名与文献引用", "无强化学习机制细节"]}
+{"query": "思维链（Chain-of-Thought）提示有哪些具体写法和技巧？", "label": "restricted", "key_points": ["库内仅在对比ReAct时提到CoT概念与不足", "无CoT提示技巧"]}
+{"query": "用低代码平台构建智能体有哪些方案？", "label": "restricted", "key_points": ["库内仅在小结中预告下一节将讲低代码平台", "无具体方案"]}
+{"query": "多模态记忆系统应该如何设计？", "label": "restricted", "key_points": ["库内仅一句提到记忆系统可以是多模态的", "无设计细节"]}
+{"query": "埃拉托斯特尼筛法的分段筛法（Segmented Sieve）如何实现？", "label": "restricted", "key_points": ["库内仅在反思输出中一句带过分段筛法概念", "无实现细节"]}
+{"query": "python-dotenv库都有哪些用法？", "label": "restricted", "key_points": ["库内仅有安装命令与加载.env的基本用途", "无完整用法"]}
+{"query": "few-shot提示工程的系统方法论是什么？", "label": "restricted", "key_points": ["库内仅在调试技巧中一句建议加few-shot示例", "无系统方法"]}
+{"query": "OpenAI Python SDK的完整参数和用法有哪些？", "label": "restricted", "key_points": ["库内仅用到chat.completions.create的少数参数", "无完整SDK文档内容"]}
+{"query": "Google知识图谱（Knowledge Graph）的数据结构是怎样的？", "label": "restricted", "key_points": ["库内仅在解析搜索结果时提及knowledge_graph字段", "无数据结构说明"]}
+{"query": "LangGraph如何构建智能体工作流？", "label": "unanswerable", "key_points": []}
+{"query": "MCP（Model Context Protocol）是什么？如何接入？", "label": "unanswerable", "key_points": []}
+{"query": "Milvus和FAISS这些向量数据库该怎么选型？", "label": "unanswerable", "key_points": []}
+{"query": "RAG检索增强生成系统的架构应该怎么设计？", "label": "unanswerable", "key_points": []}
+{"query": "如何用LoRA对大模型做微调？", "label": "unanswerable", "key_points": []}
+{"query": "Prompt注入攻击有哪些防御手段？", "label": "unanswerable", "key_points": []}
+{"query": "如何用Docker部署一个Python服务？", "label": "unanswerable", "key_points": []}
+{"query": "操作系统中进程和线程的区别是什么？", "label": "unanswerable", "key_points": []}

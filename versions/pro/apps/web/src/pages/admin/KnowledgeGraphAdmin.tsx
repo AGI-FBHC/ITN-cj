@@ -1,0 +1,1058 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, GitBranch, Loader2, Minus, Plus, RefreshCw, Sparkles, X } from "lucide-react";
+import { toast } from "sonner";
+import { api, type RagDomain } from "@/lib/api";
+import { adminKnowledgeApi, type KcCategoryNode, type KcGraphEdge } from "@/lib/adminKnowledgeApi";
+import { cn } from "@/lib/utils";
+
+type Tab = "overview" | "edges" | "dag" | "builder";
+type CategoryInfo = Pick<KcCategoryNode, "id" | "name" | "level" | "parent_id" | "node_type" | "sort_order" | "chunk_count">;
+const tabs: { id: Tab; label: string }[] = [
+  { id: "overview", label: "网络概览" },
+  { id: "edges", label: "建边情况" },
+  { id: "dag", label: "DAG 图" },
+  { id: "builder", label: "快速建图" },
+];
+const statusLabel: Record<string, string> = {
+  active: "生效",
+  proposed: "待审核",
+  needs_review: "待重审",
+  rejected: "已拒绝",
+  deprecated: "已废弃",
+  redundant: "冗余",
+};
+const typeLabel: Record<string, string> = {
+  prerequisite: "先修",
+  cross_domain_prerequisite: "跨域先修",
+  related: "相关",
+  contrasts_with: "易混淆",
+};
+function Status({ value }: { value: string }) {
+  return <span className={cn("lf-pill", value === "active" ? "lf-pill-ok" : value === "proposed" || value === "needs_review" ? "lf-pill-warn" : value === "rejected" ? "lf-pill-danger" : "lf-pill-null")}>{statusLabel[value] || value}</span>;
+}
+
+function walkCategories(nodes: KcCategoryNode[], map = new Map<number, CategoryInfo>()) {
+  nodes.forEach((node) => {
+    map.set(node.id, node);
+    walkCategories(node.children, map);
+  });
+  return map;
+}
+
+/** 与学习页“章节速览”同口径：先按 L1 大类 sort_order，再按章节 sort_order。 */
+function chapterNodesByDbOrder(categories: Map<number, CategoryInfo>): CategoryInfo[] {
+  const nodes = [...categories.values()];
+  const roots = nodes
+    .filter((node) => node.level === 1 && (node.node_type === "category" || node.node_type === "domain"))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.id).localeCompare(String(b.id)));
+  const rootRank = new Map<number, number>();
+  roots.forEach((root, index) => rootRank.set(root.id, index));
+  return nodes
+    .filter((node) => node.level === 2 && (node.node_type === "category" || node.node_type === "domain"))
+    .sort((a, b) => {
+      const ra = rootRank.get(a.parent_id ?? -1) ?? Number.MAX_SAFE_INTEGER;
+      const rb = rootRank.get(b.parent_id ?? -1) ?? Number.MAX_SAFE_INTEGER;
+      if (ra !== rb) return ra - rb;
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.id).localeCompare(String(b.id));
+    });
+}
+
+function dbDisplayNumbers(categories: Map<number, CategoryInfo>): Map<number, string> {
+  const result = new Map<number, string>();
+  const chapters = chapterNodesByDbOrder(categories);
+  chapters.forEach((chapter, chapterIndex) => {
+    result.set(chapter.id, String(chapterIndex + 1));
+    const topics = [...categories.values()]
+      .filter((node) => node.parent_id === chapter.id && node.level === 3)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.id).localeCompare(String(b.id)));
+    topics.forEach((topic, topicIndex) => {
+      result.set(topic.id, `${chapterIndex + 1}-${topicIndex + 1}`);
+    });
+  });
+  return result;
+}
+
+function EdgeDetails({ edge, names, onClose, onAction: _onAction }: { edge: KcGraphEdge; names: Map<number, CategoryInfo>; onClose: () => void; onAction: (action: "approve" | "reject" | "reverse") => void }) {
+  return (
+    <div className="lf-overlay fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
+      <div className="lf-glass h-full w-full max-w-md overflow-y-auto rounded-none">
+        <div className="flex items-center justify-between border-b border-white/60 p-5">
+          <h3 className="font-semibold">先修边审批详情</h3>
+          <button onClick={onClose} className="p-1 text-ink-muted">
+            <X size={18} />
+          </button>
+        </div>
+        <dl className="grid grid-cols-[92px_1fr] gap-y-3 p-5 text-sm">
+          <dt className="text-ink-muted">边 ID</dt>
+          <dd>#{edge.id}</dd>
+          <dt className="text-ink-muted">先修节点</dt>
+          <dd>{names.get(edge.prereq_category_id)?.name || `#${edge.prereq_category_id}`}</dd>
+          <dt className="text-ink-muted">目标节点</dt>
+          <dd>{names.get(edge.category_id)?.name || `#${edge.category_id}`}</dd>
+          <dt className="text-ink-muted">边类型</dt>
+          <dd>{typeLabel[edge.edge_type] || edge.edge_type}</dd>
+          <dt className="text-ink-muted">状态</dt>
+          <dd>
+            <Status value={edge.status} />
+          </dd>
+          <dt className="text-ink-muted">来源</dt>
+          <dd>
+            {edge.source}
+            {edge.created_by ? ` · ${edge.created_by}` : ""}
+          </dd>
+          <dt className="text-ink-muted">置信度</dt>
+          <dd>{Number(edge.confidence).toFixed(2)}</dd>
+          <dt className="text-ink-muted">创建时间</dt>
+          <dd>{edge.created_at ? new Date(edge.created_at).toLocaleString("zh-CN") : "—"}</dd>
+          <dt className="text-ink-muted">理由 / 证据</dt>
+          <dd className="whitespace-pre-wrap leading-6 text-ink-2">{edge.rationale || "—"}</dd>
+        </dl>
+        <div className="border-t border-white/60 p-5 text-xs text-ink-muted">当前阶段为只读网络，审核与改边功能暂不开放。</div>
+      </div>
+    </div>
+  );
+}
+
+function Overview({ edges, setTab, setStatus, names = new Map() }: { edges: KcGraphEdge[]; setTab: (tab: Tab) => void; setStatus: (status: string) => void; names?: Map<number, CategoryInfo> }) {
+  const statuses = ["active", "proposed", "rejected", "deprecated"];
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {statuses.map((status) => (
+          <button
+            key={status}
+            type="button"
+            onClick={() => {
+              setStatus(status);
+              setTab("edges");
+            }}
+            className="lf-stat-card p-5 text-left"
+          >
+            <p className="text-xs text-ink-muted">
+              {statusLabel[status]} · {status}
+            </p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums">{edges.filter((edge) => edge.status === status).length}</p>
+          </button>
+        ))}
+      </div>
+      <div className="lf-card rounded-2xl">
+        <div className="border-b border-white/60 px-5 py-4 text-sm font-bold text-ink">最近建边</div>
+        {/* 必须把目录名称传入，否则最近建边只能显示 #115 → #121 这类编号（BUG-016）。 */}
+        <EdgeTable edges={edges.slice(0, 12)} compact names={names} />
+      </div>
+    </div>
+  );
+}
+
+function EdgeTable({ edges, names = new Map(), compact = false, onOpen, selected, onSelect }: { edges: KcGraphEdge[]; names?: Map<number, CategoryInfo>; compact?: boolean; onOpen?: (edge: KcGraphEdge) => void; selected?: Set<number>; onSelect?: (id: number, checked: boolean) => void }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[850px] text-left text-sm">
+        <thead>
+          <tr>
+            {selected && <th className="w-12 px-4 py-3"></th>}
+            <th className="px-4 py-3">先修节点</th>
+            <th className="px-2 py-3">→</th>
+            <th className="px-4 py-3">目标节点</th>
+            <th className="px-4 py-3">类型</th>
+            <th className="px-4 py-3">状态</th>
+            <th className="px-4 py-3">来源</th>
+            <th className="px-4 py-3">置信度</th>
+            {!compact && <th className="px-4 py-3">理由</th>}
+            <th className="px-4 py-3">时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {edges.map((edge) => (
+            <tr key={edge.id} onClick={() => onOpen?.(edge)} className={cn(onOpen && "cursor-pointer hover:bg-brand-tint/50")}>
+              {selected && (
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={selected.has(edge.id)} onChange={(e) => onSelect?.(edge.id, e.target.checked)} />
+                </td>
+              )}
+              <td className="px-4 py-3 font-medium">{names.get(edge.prereq_category_id)?.name || `#${edge.prereq_category_id}`}</td>
+              <td className="px-2 py-3 text-ink-muted">→</td>
+              <td className="px-4 py-3 font-medium">{names.get(edge.category_id)?.name || `#${edge.category_id}`}</td>
+              <td className="px-4 py-3 text-xs text-ink-2">{typeLabel[edge.edge_type] || edge.edge_type}</td>
+              <td className="px-4 py-3">
+                <Status value={edge.status} />
+              </td>
+              <td className="px-4 py-3 text-xs text-ink-muted">{edge.source}</td>
+              <td className="px-4 py-3 tabular-nums">{Number(edge.confidence).toFixed(2)}</td>
+              {!compact && <td className="max-w-xs truncate px-4 py-3 text-xs text-ink-muted">{edge.rationale || "—"}</td>}
+              <td className="px-4 py-3 text-xs text-ink-muted">{edge.created_at ? new Date(edge.created_at).toLocaleDateString("zh-CN") : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!edges.length && <div className="p-12 text-center text-sm text-ink-muted">暂无边数据</div>}
+    </div>
+  );
+}
+
+type ProposedSuggestion = {
+  prereqCategoryId: string;
+  categoryId: string;
+  edgeType: string;
+  rationale?: string;
+};
+
+function SimpleChapterCanvas({
+  categories,
+  edges,
+  pendingEdges = [],
+  pendingRemoveEdges = [],
+  sourceId,
+  targetId,
+  onPick,
+  onAddEdge,
+  onRemoveEdge,
+  onClear,
+}: {
+  categories: Map<number, CategoryInfo>;
+  edges: KcGraphEdge[];
+  pendingEdges?: Array<{ prereqCategoryId: number; categoryId: number; edgeType?: string; rationale?: string }>;
+  pendingRemoveEdges?: KcGraphEdge[];
+  sourceId: number | null;
+  targetId: number | null;
+  onPick: (id: number) => void;
+  onAddEdge?: (source: number, target: number) => void;
+  onRemoveEdge?: (source: number, target: number) => void;
+  onClear?: () => void;
+}) {
+  const chapters = useMemo(
+    () => chapterNodesByDbOrder(categories),
+    [categories],
+  );
+  const chapterCodes = useMemo(() => dbDisplayNumbers(categories), [categories]);
+  const chapterIds = useMemo(() => new Set(chapters.map((node) => node.id)), [chapters]);
+  const chapterEdges = useMemo(
+    () => edges.filter((edge) => chapterIds.has(edge.prereq_category_id) && chapterIds.has(edge.category_id)),
+    [edges, chapterIds],
+  );
+  const positions = useMemo(() => {
+    const result = new Map<number, { x: number; y: number }>();
+    const count = chapters.length;
+    if (!count) return result;
+    const indegree = new Map<number, number>();
+    chapters.forEach((node) => indegree.set(node.id, 0));
+    chapterEdges.forEach((edge) => {
+      indegree.set(edge.category_id, (indegree.get(edge.category_id) || 0) + 1);
+    });
+    const levels = new Map<number, number>();
+    const queue = chapters.filter((node) => !(indegree.get(node.id) || 0)).map((node) => node.id);
+    queue.forEach((id) => levels.set(id, 0));
+    for (let i = 0; i < queue.length; i += 1) {
+      const id = queue[i];
+      chapterEdges
+        .filter((edge) => edge.prereq_category_id === id)
+        .forEach((edge) => {
+          levels.set(edge.category_id, Math.max(levels.get(edge.category_id) || 0, (levels.get(id) || 0) + 1));
+          indegree.set(edge.category_id, (indegree.get(edge.category_id) || 0) - 1);
+          if ((indegree.get(edge.category_id) || 0) === 0) queue.push(edge.category_id);
+        });
+    }
+    chapters.forEach((node) => {
+      if (!levels.has(node.id)) levels.set(node.id, 0);
+    });
+    const groups = new Map<number, number[]>();
+    chapters.forEach((node) => {
+      const level = levels.get(node.id) || 0;
+      groups.set(level, [...(groups.get(level) || []), node.id]);
+    });
+    const maxLevel = Math.max(...groups.keys(), 0);
+    if (maxLevel === 0) {
+      const half = Math.ceil(chapters.length / 2);
+      chapters.forEach((node, index) => {
+        const col = Math.floor(index / half);
+        const row = index % half;
+        result.set(node.id, {
+          x: col === 0 ? 260 : 720,
+          y: 90 + row * Math.min(120, 520 / Math.max(half, 1)),
+        });
+      });
+      return result;
+    }
+    groups.forEach((ids, level) =>
+      ids.forEach((id, index) =>
+        result.set(id, {
+          x: 90 + level * (1040 / Math.max(maxLevel, 1)),
+          y: 80 + index * Math.min(96, 560 / Math.max(ids.length, 1)),
+        }),
+      ),
+    );
+    return result;
+  }, [chapters, chapterEdges]);
+
+  const [manualPositions, setManualPositions] = useState<Record<number, { x: number; y: number }>>({});
+  const nodePositions = useMemo(() => {
+    const merged = new Map<number, { x: number; y: number }>(positions);
+    Object.entries(manualPositions).forEach(([rawId, pos]) => merged.set(rawId, pos));
+    return merged;
+  }, [positions, manualPositions]);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const draggingId = useRef<number | null>(null);
+  const movedRef = useRef(false);
+
+  const toCanvasPoint = (clientX: number, clientY: number) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || !rect.width || !rect.height) return { x: 0, y: 0 };
+    return {
+      x: ((clientX - rect.left) / rect.width) * 1200,
+      y: ((clientY - rect.top) / rect.height) * 680,
+    };
+  };
+
+  return (
+    <div className="lf-card rounded-2xl">
+      <div className="border-b border-white/60 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <GitBranch size={15} className="text-brand" />
+          <h3 className="text-sm font-bold text-ink">章节网络 · 快速建边</h3>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-ink-muted">只展示章节和章节之间的边。橙色为已选起点，绿色为已选终点；节点可拖动调整位置，选好两点后点“加边”或“减边”，再统一确认生效。</p>
+      </div>
+      <div className="overflow-x-auto p-3">
+        <svg ref={svgRef} viewBox="0 0 1200 680" className="h-[560px] min-w-[900px] w-full cursor-grab rounded-xl border border-white/70 bg-white/40" onPointerMove={(event) => { if (draggingId.current == null) return; const point = toCanvasPoint(event.clientX, event.clientY); movedRef.current = true; setManualPositions((current) => ({ ...current, [draggingId.current as number]: point })); }} onPointerUp={() => { draggingId.current = null; }}>
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8" />
+            </marker>
+          </defs>
+          {chapterEdges.map((edge) => {
+            const from = nodePositions.get(edge.prereq_category_id);
+            const to = nodePositions.get(edge.category_id);
+            if (!from || !to) return null;
+            const color = edge.edge_type === "cross_domain_prerequisite" ? "#7c3aed" : edge.edge_type === "related" ? "#0ea5e9" : edge.edge_type === "contrasts_with" ? "#ea580c" : "#94a3b8";
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const sx = from.x + ux * 30;
+            const sy = from.y + uy * 30;
+            const ex = to.x - ux * 30;
+            const ey = to.y - uy * 30;
+            return (
+              <line key={edge.id} x1={sx} y1={sy} x2={ex} y2={ey} stroke={color} strokeWidth="2" strokeDasharray={edge.status === "proposed" ? "6 4" : undefined} markerEnd="url(#arrow)" opacity={0.72}>
+                <title>{categories.get(edge.prereq_category_id)?.name} → {categories.get(edge.category_id)?.name}</title>
+              </line>
+            );
+          })}
+          {pendingEdges.map((edge) => {
+            const from = nodePositions.get(edge.prereqCategoryId);
+            const to = nodePositions.get(edge.categoryId);
+            if (!from || !to) return null;
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const sx = from.x + ux * 30;
+            const sy = from.y + uy * 30;
+            const ex = to.x - ux * 30;
+            const ey = to.y - uy * 30;
+            return (
+              <line key={`pending-${edge.prereqCategoryId}-${edge.categoryId}`} x1={sx} y1={sy} x2={ex} y2={ey} stroke="#f59e0b" strokeWidth="3" strokeDasharray="8 6" markerEnd="url(#arrow)" opacity={0.95}>
+                <title>待确认：{categories.get(edge.prereqCategoryId)?.name} → {categories.get(edge.categoryId)?.name}</title>
+              </line>
+            );
+          })}
+          {pendingRemoveEdges.map((edge) => {
+            const from = nodePositions.get(edge.prereq_category_id);
+            const to = nodePositions.get(edge.category_id);
+            if (!from || !to) return null;
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const sx = from.x + ux * 30;
+            const sy = from.y + uy * 30;
+            const ex = to.x - ux * 30;
+            const ey = to.y - uy * 30;
+            return (
+              <line key={`delete-${edge.id}`} x1={sx} y1={sy} x2={ex} y2={ey} stroke="#dc2626" strokeWidth="4" strokeDasharray="8 6" markerEnd="url(#arrow)" opacity={0.9}>
+                <title>待删除：{categories.get(edge.prereq_category_id)?.name} → {categories.get(edge.category_id)?.name}</title>
+              </line>
+            );
+          })}
+          {sourceId != null && targetId != null && sourceId !== targetId && (() => {
+            const from = nodePositions.get(sourceId);
+            const to = nodePositions.get(targetId);
+            if (!from || !to) return null;
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const ex = to.x - ux * 30;
+            const ey = to.y - uy * 30;
+            return <line x1={from.x + ux * 30} y1={from.y + uy * 30} x2={ex} y2={ey} stroke="#d97706" strokeWidth="3" strokeDasharray="8 6" markerEnd="url(#arrow)" opacity={0.9} />;
+          })()}
+          {chapters.map((node) => {
+            const pos = nodePositions.get(node.id);
+            if (!pos) return null;
+            const isSource = sourceId === node.id;
+            const isTarget = targetId === node.id;
+            const color = isSource ? "#d97706" : isTarget ? "#059669" : "#2563eb";
+            return (
+              <g key={node.id} transform={`translate(${pos.x},${pos.y})`} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture?.(event.pointerId); movedRef.current = false; draggingId.current = node.id; }} onClick={() => { if (!movedRef.current) onPick(node.id); }} className="cursor-grab active:cursor-grabbing">
+                <circle r="30" fill={isSource || isTarget ? color : "#fff"} stroke={color} strokeWidth={isSource || isTarget ? 4 : 2} />
+                <text y="-38" textAnchor="middle" fontSize="12" fill={isSource || isTarget ? color : "#334155"} fontWeight={isSource || isTarget ? 700 : 500}>
+                  {node.name}
+                </text>
+                <text y="4" textAnchor="middle" fontSize="10" fill={isSource || isTarget ? "#fff" : "#64748b"}>
+                  {chapterCodes.get(node.id) ? `#${chapterCodes.get(node.id)?.padStart(2, "0")}` : `#${String(chapters.findIndex((item) => item.id === node.id) + 1).padStart(2, "0")}`}
+                </text>
+                <title>{node.name} · 章节</title>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
+        <div>
+          {pendingEdges.length > 0 || pendingRemoveEdges.length > 0
+            ? `待确认 加边 ${pendingEdges.length} 条 / 删除 ${pendingRemoveEdges.length} 条`
+            : sourceId == null
+            ? "请先点选前置章节"
+            : targetId == null
+              ? "已选前置章节，请再点选目标章节"
+              : `当前连线：${categories.get(sourceId)?.name ?? sourceId} → ${categories.get(targetId)?.name ?? targetId}`}
+        </div>
+        <div className="flex items-center gap-2">
+          {(sourceId != null || targetId != null) && onClear && (
+            <button onClick={onClear} className="lf-row-btn text-ink-muted">
+              <X size={12} />
+              清除
+            </button>
+          )}
+          {sourceId != null && targetId != null && sourceId !== targetId && onAddEdge && (
+            <button onClick={() => onAddEdge(sourceId, targetId)} className="lf-btn-primary justify-center gap-1 !px-3 !py-1.5 text-xs">
+              <Plus size={13} />
+              加边
+            </button>
+          )}
+          {sourceId != null && targetId != null && sourceId !== targetId && onRemoveEdge && (
+            <button onClick={() => onRemoveEdge(sourceId, targetId)} className="inline-flex items-center rounded-xl border border-brand-danger/30 bg-brand-danger/5 px-3 py-1.5 text-xs font-semibold text-brand-danger transition hover:border-brand-danger/60 hover:bg-brand-danger/10">
+              <Minus size={13} />
+              减边
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DagQuickBuilder({
+  categories,
+  edges,
+  sourceId,
+  targetId,
+  onStageEdge,
+  onPreviewEdge,
+}: {
+  categories: Map<number, CategoryInfo>;
+  edges: KcGraphEdge[];
+  sourceId: number | null;
+  targetId: number | null;
+  onStageEdge?: (source: number, target: number, edgeType: string, rationale: string) => void;
+  onPreviewEdge?: (source: number, target: number) => void;
+}) {
+  const options = useMemo(
+    () => chapterNodesByDbOrder(categories),
+    [categories],
+  );
+  const existingKeys = useMemo(() => new Set(edges.map((edge) => `${edge.prereq_category_id}->${edge.category_id}`)), [edges]);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<ProposedSuggestion[]>([]);
+
+  const runAiSuggest = async () => {
+    if (!options.length) return toast.error("当前没有可建边的章节");
+    setAiBusy(true);
+    setSuggestions([]);
+    try {
+      const compactNodes = options.slice(0, 120).map((node) => ({
+        id: node.id,
+        name: node.name,
+        level: node.level,
+      }));
+      const existingEdges = edges.slice(0, 300).map((edge) => ({
+        from: edge.prereq_category_id,
+        to: edge.category_id,
+        type: edge.edge_type,
+        status: edge.status,
+      }));
+      const suggestionPayload = await api.graphSuggest(compactNodes, existingEdges);
+      const parsed = (suggestionPayload.edges || []).map((item) => ({
+        prereqCategoryId: String(item.prereqCategoryId || (item as unknown as { prereq_category_id?: string }).prereq_category_id),
+        categoryId: String(item.categoryId || (item as unknown as { category_id?: string }).category_id),
+        edgeType: String(item.edgeType || "prerequisite"),
+        rationale: item.rationale || "",
+      }));
+      const seen = new Set<string>();
+      const valid = parsed.filter((item) => {
+        if (!item.prereqCategoryId || !item.categoryId || item.prereqCategoryId === item.categoryId) return false;
+        const key = `${item.prereqCategoryId}->${item.categoryId}`;
+        if (existingKeys.has(key) || seen.has(key)) return false;
+        seen.add(key);
+        return categories.has(item.prereqCategoryId) && categories.has(item.categoryId);
+      });
+      if (!valid.length) throw new Error("没有新建议，或建议与现有边重复");
+      setSuggestions(valid.slice(0, 5));
+      toast.success(`AI 给出 ${valid.length} 条建议，可直接加入待保存`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "AI 建议生成失败");
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const stageSuggestion = (item: ProposedSuggestion) => {
+    if (!onStageEdge) return;
+    onStageEdge(item.prereqCategoryId, item.categoryId, item.edgeType, item.rationale || "");
+  };
+
+  return (
+    <div className="lf-card rounded-2xl">
+      <div className="border-b border-white/60 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GitBranch size={15} className="text-brand" />
+            <h3 className="text-sm font-bold text-ink">智能建边</h3>
+          </div>
+          <button onClick={() => void runAiSuggest()} disabled={aiBusy} className="lf-row-btn lf-row-btn-primary">
+            {aiBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            AI 建议
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-ink-muted">
+          {sourceId != null && targetId != null
+            ? `${categories.get(sourceId)?.name ?? sourceId} → ${categories.get(targetId)?.name ?? targetId}`
+            : "在左侧章节网络里点选两个章节，或在 AI 建议里直接加入待保存。"}
+        </p>
+      </div>
+      <div className="space-y-3 p-4 text-xs">
+        {aiBusy && suggestions.length === 0 ? (
+          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-brand/30 bg-brand-tint/15 px-3 py-6 text-center">
+            <Loader2 size={18} className="animate-spin text-brand" />
+            <span className="text-[11.5px] leading-4 text-ink-muted">正在根据章节关系生成建边建议，请稍候…</span>
+          </div>
+        ) : suggestions.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-black/10 px-3 py-5 text-center text-ink-muted">
+            点击“AI 建议”，让模型基于当前章节关系直接给出可建边、关系和理由。
+          </div>
+        ) : (
+          suggestions.map((item, index) => (
+            <div key={`${item.prereqCategoryId}-${item.categoryId}-${index}`} className="rounded-xl border border-brand/20 bg-brand-tint/20 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-ink">
+                  {categories.get(item.prereqCategoryId)?.name || item.prereqCategoryId} → {categories.get(item.categoryId)?.name || item.categoryId}
+                </span>
+                <span className="rounded-md border border-brand/20 bg-white/70 px-1.5 py-0.5 text-[10px] text-brand">{typeLabel[item.edgeType] || item.edgeType}</span>
+              </div>
+              <p className="mt-1.5 leading-4 text-ink-2">{item.rationale || "模型未给出理由"}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {onPreviewEdge && (
+                  <button onClick={() => onPreviewEdge(item.prereqCategoryId, item.categoryId)} className="lf-row-btn text-brand">
+                    <GitBranch size={12} />
+                    图中预览
+                  </button>
+                )}
+                <button onClick={() => stageSuggestion(item)} className="lf-row-btn lf-row-btn-primary">
+                  <Plus size={12} />
+                  加入待保存
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GraphCanvas({
+  edges,
+  categories,
+  edgeMode = false,
+  selectedIds,
+  onPickNode,
+}: {
+  edges: KcGraphEdge[];
+  categories: Map<number, CategoryInfo>;
+  edgeMode?: boolean;
+  selectedIds?: Set<number>;
+  onPickNode?: (id: number) => void;
+}) {
+  const [layout, setLayout] = useState<"topology" | "band">("topology");
+  const [statuses, setStatuses] = useState(new Set(["active"]));
+  const [types, setTypes] = useState(new Set(["prerequisite", "cross_domain_prerequisite", "related"]));
+  const [confidence, setConfidence] = useState(0.7);
+  const [focus, setFocus] = useState<number | null>(null);
+  const displayCodes = useMemo(() => dbDisplayNumbers(categories), [categories]);
+  const filtered = useMemo(() => edges.filter((edge) => statuses.has(edge.status) && types.has(edge.edge_type) && edge.confidence >= confidence), [edges, statuses, types, confidence]);
+  const nodes = useMemo(() => [...new Set(filtered.flatMap((edge) => [edge.prereq_category_id, edge.category_id]))], [filtered]);
+  const focusSet = useMemo(() => {
+    if (focus == null) return null;
+    const seen = new Set([focus]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      filtered.forEach((edge) => {
+        if (seen.has(edge.category_id) && !seen.has(edge.prereq_category_id)) {
+          seen.add(edge.prereq_category_id);
+          changed = true;
+        }
+        if (seen.has(edge.prereq_category_id) && !seen.has(edge.category_id)) {
+          seen.add(edge.category_id);
+          changed = true;
+        }
+      });
+    }
+    return seen;
+  }, [focus, filtered]);
+  const positions = useMemo(() => {
+    const result = new Map<number, { x: number; y: number }>();
+    if (!nodes.length) return result;
+    if (layout === "topology") {
+      const indegree = new Map(nodes.map((id) => [id, 0]));
+      filtered.forEach((edge) => indegree.set(edge.category_id, (indegree.get(edge.category_id) || 0) + 1));
+      const levels = new Map<number, number>();
+      const queue = nodes.filter((id) => !indegree.get(id));
+      queue.forEach((id) => levels.set(id, 0));
+      for (let i = 0; i < queue.length; i += 1) {
+        const id = queue[i];
+        filtered
+          .filter((edge) => edge.prereq_category_id === id)
+          .forEach((edge) => {
+            levels.set(edge.category_id, Math.max(levels.get(edge.category_id) || 0, (levels.get(id) || 0) + 1));
+            indegree.set(edge.category_id, (indegree.get(edge.category_id) || 0) - 1);
+            if (indegree.get(edge.category_id) === 0) queue.push(edge.category_id);
+          });
+      }
+      nodes.forEach((id) => {
+        if (!levels.has(id)) levels.set(id, 0);
+      });
+      const groups = new Map<number, number[]>();
+      nodes.forEach((id) => {
+        const level = levels.get(id) || 0;
+        groups.set(level, [...(groups.get(level) || []), id]);
+      });
+      const maxLevel = Math.max(...groups.keys(), 0);
+      groups.forEach((ids, level) =>
+        ids.forEach((id, index) =>
+          result.set(id, {
+            x: 90 + level * (1000 / Math.max(maxLevel, 1)),
+            y: 70 + index * Math.min(90, 570 / Math.max(ids.length, 1)),
+          }),
+        ),
+      );
+    } else {
+      const groups = new Map<number, number[]>();
+      nodes.forEach((id) => {
+        const key = categories.get(id)?.parent_id || 0;
+        groups.set(key, [...(groups.get(key) || []), id]);
+      });
+      [...groups.entries()].forEach(([, ids], band) =>
+        ids.forEach((id, index) =>
+          result.set(id, {
+            x: 100 + index * Math.min(150, 980 / Math.max(ids.length, 1)),
+            y: 90 + band * Math.min(120, 570 / Math.max(groups.size, 1)),
+          }),
+        ),
+      );
+    }
+    return result;
+  }, [nodes, filtered, layout, categories]);
+  const toggleSet = (current: Set<string>, value: string, set: (next: Set<string>) => void) => {
+    const next = new Set(current);
+    next.has(value) ? next.delete(value) : next.add(value);
+    set(next);
+  };
+  return (
+    <div className="lf-card rounded-2xl">
+      <div className="flex flex-wrap items-center gap-4 border-b border-white/60 p-4 text-xs">
+        <label>
+          <input type="radio" checked={layout === "topology"} onChange={() => setLayout("topology")} /> 拓扑分层
+        </label>
+        <label>
+          <input type="radio" checked={layout === "band"} onChange={() => setLayout("band")} /> 章节带
+        </label>
+        <span className="text-ink-muted">状态：</span>
+        {["active", "proposed", "redundant"].map((value) => (
+          <label key={value}>
+            <input type="checkbox" checked={statuses.has(value)} onChange={() => toggleSet(statuses, value, setStatuses)} /> {value}
+          </label>
+        ))}
+        <span className="text-ink-muted">类型：</span>
+        {["prerequisite", "cross_domain_prerequisite", "related"].map((value) => (
+          <label key={value}>
+            <input type="checkbox" checked={types.has(value)} onChange={() => toggleSet(types, value, setTypes)} /> {typeLabel[value]}
+          </label>
+        ))}
+        <label className="flex items-center gap-2">
+          置信度 ≥ <input type="range" min="0" max="1" step="0.05" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} />
+          <span className="tabular-nums">{confidence.toFixed(2)}</span>
+        </label>
+        {focus != null && (
+          <button onClick={() => setFocus(null)} className="text-brand">
+            退出焦点模式
+          </button>
+        )}
+      </div>
+      <div className="overflow-x-auto p-3">
+        <svg viewBox="0 0 1200 720" className="h-[620px] min-w-[900px] w-full rounded-xl border border-white/70 bg-white/40">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8" />
+            </marker>
+          </defs>
+          {filtered.map((edge) => {
+            const from = positions.get(edge.prereq_category_id);
+            const to = positions.get(edge.category_id);
+            if (!from || !to) return null;
+            const dim = focusSet && (!focusSet.has(edge.prereq_category_id) || !focusSet.has(edge.category_id));
+            return (
+              <line key={edge.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={edge.edge_type === "cross_domain_prerequisite" ? "#7c3aed" : edge.edge_type === "related" ? "#0ea5e9" : "#94a3b8"} strokeWidth="2" strokeDasharray={edge.status === "proposed" ? "6 4" : undefined} markerEnd="url(#arrow)" opacity={dim ? 0.1 : 0.75}>
+                <title>
+                  {categories.get(edge.prereq_category_id)?.name} → {categories.get(edge.category_id)?.name}
+                </title>
+              </line>
+            );
+          })}
+          {nodes.map((id) => {
+            const pos = positions.get(id);
+            if (!pos) return null;
+            const info = categories.get(id);
+            const display = displayCodes.get(id);
+            const radius = 20 + Math.min(13, Math.log2((info?.chunk_count || 0) + 1) * 3);
+            const dim = focusSet && !focusSet.has(id);
+            return (
+              <g key={id} transform={`translate(${pos.x},${pos.y})`} onClick={() => (onPickNode ? onPickNode(id) : setFocus(id))} className="cursor-pointer" opacity={dim ? 0.12 : 1}>
+                <circle r={radius} fill={selectedIds?.has(id) ? "#d97706" : focus === id ? "#2563eb" : "#fff"} stroke={selectedIds?.has(id) ? "#d97706" : "#2563eb"} strokeWidth={selectedIds?.has(id) ? 3 : 2} />
+                <text y={radius + 16} textAnchor="middle" fontSize="11" fill="#334155">
+                  {(info?.name || `#${id}`).slice(0, 12)}
+                </text>
+                <text y="4" textAnchor="middle" fontSize="10" fill={focus === id ? "#fff" : "#64748b"}>
+                  {display ? `#${display}` : (info?.chunk_count || 0)}
+                </text>
+                <title>
+                  {info?.name || `#${id}`} · {display ? `序号 ${display}` : `${info?.chunk_count || 0} 切片`}
+                </title>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
+        {edgeMode ? "编辑模式：先点前置节点，再点目标节点；右侧表单会同步当前选中。" : `显示 ${nodes.length} 个节点、${filtered.length} 条边；点击节点聚焦上下游，节点大小按 log(切片数) 缩放。`}
+      </div>
+    </div>
+  );
+}
+
+export default function KnowledgeGraphAdmin() {
+  const [domains, setDomains] = useState<RagDomain[]>([]);
+  const [domainCode, setDomainCode] = useState("");
+  const [edges, setEdges] = useState<KcGraphEdge[]>([]);
+  const [categories, setCategories] = useState(new Map<number, CategoryInfo>());
+  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState("");
+  const [type, setType] = useState("");
+  const [search, setSearch] = useState("");
+  const [detail, setDetail] = useState<KcGraphEdge | null>(null);
+  const [builderSourceId, setBuilderSourceId] = useState<number | null>(null);
+  const [builderTargetId, setBuilderTargetId] = useState<number | null>(null);
+  const [pendingEdges, setPendingEdges] = useState<{ prereqCategoryId: number; categoryId: number; edgeType: string; rationale: string }[]>([]);
+  const [pendingRemoveEdges, setPendingRemoveEdges] = useState<KcGraphEdge[]>([]);
+  const handleBuilderPick = useCallback(
+    (id: number) => {
+      if (builderSourceId == null || builderSourceId === id) {
+        setBuilderSourceId(id);
+        setBuilderTargetId(null);
+        return;
+      }
+      if (builderTargetId == null) {
+        setBuilderTargetId(id);
+        return;
+      }
+      setBuilderSourceId(builderTargetId);
+      setBuilderTargetId(id);
+    },
+    [builderSourceId, builderTargetId],
+  );
+  const refresh = useCallback(async () => {
+    if (!domainCode) return;
+    setLoading(true);
+    try {
+      /* 两个请求互相独立：任一个失败都不应让另一个的数据白拉。 */
+      const [edgesResult, treeResult] = await Promise.allSettled([
+        adminKnowledgeApi.edges(),
+        adminKnowledgeApi.tree(domainCode),
+      ]);
+      let domainCategories = new Map<number, CategoryInfo>();
+      if (treeResult.status === "fulfilled") {
+        const raw = treeResult.value as unknown as { tree?: unknown; nodes?: unknown };
+        const nodes = Array.isArray(raw?.tree) ? raw.tree : Array.isArray(raw?.nodes) ? raw.nodes : [];
+        domainCategories = walkCategories(nodes as KcCategoryNode[]);
+        setCategories(domainCategories);
+      } else {
+        toast.error(treeResult.reason instanceof Error ? treeResult.reason.message : "知识目录读取失败（连线将只显示编号）");
+      }
+      if (edgesResult.status === "fulfilled") {
+        const all = [...edgesResult.value].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+        /* 只保留当前领域内的边：目标/前置节点属于该领域目录树 */
+        const scoped = domainCategories.size
+          ? all.filter((edge) => domainCategories.has(edge.category_id) || domainCategories.has(edge.prereq_category_id))
+          : all;
+        setEdges(scoped);
+      } else {
+        toast.error(edgesResult.reason instanceof Error ? edgesResult.reason.message : "网络数据读取失败");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [domainCode]);
+
+  /* 领域列表：默认“智能体”，其次第一个领域 */
+  useEffect(() => {
+    let alive = true;
+    api.listRagDomains()
+      .then((items) => {
+        if (!alive) return;
+        setDomains(items);
+        setDomainCode((current) => current
+          || items.find((item) => item.code === "agent")?.code
+          || items[0]?.code
+          || "");
+      })
+      .catch((error) => toast.error(error instanceof Error ? error.message : "领域列表读取失败"));
+    return () => { alive = false; };
+  }, []);
+  const stageBuilderEdge = useCallback(
+    (source: number, target: number, edgeType = "prerequisite", rationale = "") => {
+      if (source === target) return;
+      const duplicate = pendingEdges.some((item) => item.prereqCategoryId === source && item.categoryId === target);
+      if (duplicate) {
+        toast.warning("这条边已经在待保存列表里");
+        return;
+      }
+      setPendingEdges((current) => [...current, {
+        prereqCategoryId: source,
+        categoryId: target,
+        edgeType,
+        rationale: rationale.trim() || "在章节网络快速建图中手动加边",
+      }]);
+      setBuilderSourceId(null);
+      setBuilderTargetId(null);
+      toast.success("已暂存一条边，可继续编辑或确认保存");
+    },
+    [pendingEdges],
+  );
+  const handleBuilderAddEdge = useCallback(
+    (source: number, target: number) => stageBuilderEdge(source, target),
+    [stageBuilderEdge],
+  );
+  const handleBuilderRemoveEdge = useCallback(
+    (source: number, target: number) => {
+      const matches = edges.filter(
+        (edge) => edge.prereq_category_id === source
+          && edge.category_id === target
+          && ["active", "proposed", "needs_review"].includes(edge.status),
+      );
+      if (!matches.length) {
+        toast.warning("没有找到可删除的生效边");
+        return;
+      }
+      setPendingRemoveEdges((current) => {
+        const existing = new Set(current.map((edge) => edge.id));
+        const fresh = matches.filter((edge) => !existing.has(edge.id));
+        if (fresh.length) toast.success(`已暂存 ${fresh.length} 条待删除边`);
+        else toast.warning("这条边已经在待删除列表里");
+        return [...current, ...fresh];
+      });
+      setBuilderSourceId(null);
+      setBuilderTargetId(null);
+    },
+    [edges],
+  );
+  const confirmPendingEdges = useCallback(async () => {
+    if (!pendingEdges.length) return;
+    const queue = [...pendingEdges];
+    const errors: string[] = [];
+    setPendingEdges([]);
+    try {
+      for (const item of queue) {
+        try {
+          await adminKnowledgeApi.addPrerequisite({
+            prereqCategoryId: item.prereqCategoryId,
+            categoryId: item.categoryId,
+            edgeType: item.edgeType,
+            source: "human",
+            rationale: item.rationale,
+            directActive: true,
+          });
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+      if (errors.length) {
+        toast.error(`部分边保存失败：${errors.join("；")}`);
+      } else {
+        toast.success(`已确认保存 ${queue.length} 条章节边`);
+      }
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存失败");
+    }
+  }, [pendingEdges, refresh]);
+  const confirmPendingRemovals = useCallback(async () => {
+    if (!pendingRemoveEdges.length) return;
+    const queue = [...pendingRemoveEdges];
+    const errors: string[] = [];
+    setPendingRemoveEdges([]);
+    try {
+      for (const item of queue) {
+        try {
+          await adminKnowledgeApi.deleteEdge(item.id);
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+      if (errors.length) {
+        toast.error(`部分边删除失败：${errors.join("；")}`);
+      } else {
+        toast.success(`已确认删除 ${queue.length} 条章节边`);
+      }
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+    }
+  }, [pendingRemoveEdges, refresh]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  const filtered = edges.filter((edge) => (!status || edge.status === status) && (!type || edge.edge_type === type) && (!search.trim() || `${categories.get(edge.prereq_category_id)?.name} ${categories.get(edge.category_id)?.name}`.toLowerCase().includes(search.trim().toLowerCase())));
+  const action = async (kind: "approve" | "reject" | "reverse", edgeIds: number[]) => {
+    if (!edgeIds.length) return toast.error("请先选择要处理的边");
+    if (!window.confirm(`确认${kind === "approve" ? "通过" : kind === "reject" ? "拒绝" : "反转"} ${edgeIds.length} 条先修边？`)) return;
+    try {
+      if (edgeIds.length > 1 && kind !== "reverse") await adminKnowledgeApi.reviewEdges(edgeIds, kind === "approve");
+      else
+        for (const id of edgeIds) {
+          if (kind === "approve") await adminKnowledgeApi.approveEdge(id);
+          else if (kind === "reject") await adminKnowledgeApi.rejectEdge(id);
+          else await adminKnowledgeApi.reverseEdge(id);
+        }
+      toast.success("网络审核操作已完成");
+      setDetail(null);
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "网络操作失败");
+    }
+  };
+  return (
+    <>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-ink">知识网络管理</h2>
+          <p className="mt-1 text-sm text-ink-muted">按领域构建知识网络：选择领域后，在 2D 网络图上点选前置/目标节点建边。</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={domainCode}
+            onChange={(event) => {
+              setDomainCode(event.target.value);
+              setPendingEdges([]);
+              setPendingRemoveEdges([]);
+              setBuilderSourceId(null);
+              setBuilderTargetId(null);
+            }}
+            className="lf-select w-auto"
+            aria-label="选择领域"
+          >
+            {domains.length === 0 && <option value="">正在读取领域…</option>}
+            {domains.map((item) => (
+              <option key={item.code} value={item.code}>{item.name}</option>
+            ))}
+          </select>
+          <button onClick={() => void refresh()} disabled={loading || !domainCode} className="lf-page-pill">
+            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+            刷新
+          </button>
+        </div>
+      </div>
+      {loading && !edges.length && !categories.size ? (
+        <div className="lf-empty flex min-h-72 items-center justify-center text-sm">
+          <Loader2 size={16} className="mr-2 animate-spin" />
+          正在读取网络数据…
+        </div>
+      ) : (
+        <>
+        {pendingEdges.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand/25 bg-[#EEF6FF] px-4 py-3">
+            <div>
+              <p className="text-xs font-bold text-brand">待确认边 {pendingEdges.length} 条</p>
+              <p className="mt-0.5 text-[10.5px] text-ink-muted">确认后才会写入并刷新图形。</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => setPendingEdges([])} className="lf-row-btn text-ink-muted">
+                清空
+              </button>
+              <button onClick={() => void confirmPendingEdges()} className="lf-btn-primary justify-center gap-1 !px-4 !py-2">
+                <CheckCircle2 size={14} />
+                确认保存 {pendingEdges.length} 条
+              </button>
+            </div>
+          </div>
+        )}
+        {pendingRemoveEdges.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-danger/30 bg-red-50 px-4 py-3">
+            <div>
+              <p className="text-xs font-bold text-brand-danger">待删除边 {pendingRemoveEdges.length} 条</p>
+              <p className="mt-0.5 text-[10.5px] text-ink-muted">确认后会软删除并刷新图形。</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => setPendingRemoveEdges([])} className="lf-row-btn text-ink-muted">
+                清空
+              </button>
+              <button onClick={() => void confirmPendingRemovals()} className="inline-flex items-center justify-center gap-1 rounded-xl border border-brand-danger/30 bg-brand-danger px-4 py-2 text-xs font-semibold text-paper transition hover:bg-brand-danger/90">
+                <Minus size={13} />
+                确认删除 {pendingRemoveEdges.length} 条
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <SimpleChapterCanvas
+            categories={categories}
+            edges={edges}
+            pendingEdges={pendingEdges}
+            pendingRemoveEdges={pendingRemoveEdges}
+            sourceId={builderSourceId}
+            targetId={builderTargetId}
+            onPick={handleBuilderPick}
+            onAddEdge={(source, target) => void handleBuilderAddEdge(source, target)}
+            onRemoveEdge={(source, target) => handleBuilderRemoveEdge(source, target)}
+            onClear={() => { setBuilderSourceId(null); setBuilderTargetId(null); }}
+          />
+          <DagQuickBuilder
+            categories={categories}
+            edges={edges}
+            sourceId={builderSourceId}
+            targetId={builderTargetId}
+            onStageEdge={(source, target, edgeType, rationale) => stageBuilderEdge(source, target, edgeType, rationale)}
+            onPreviewEdge={(source, target) => {
+              setBuilderSourceId(source);
+              setBuilderTargetId(target);
+            }}
+          />
+        </div>
+        </>
+      )}
+    </>
+  );
+}

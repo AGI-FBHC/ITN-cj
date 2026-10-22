@@ -1,0 +1,30 @@
+[
+  {
+    "position": 689,
+    "expression": "fetch(d.href,p)"
+  },
+  {
+    "position": 339231,
+    "expression": "localStorage.getItem(yx)"
+  },
+  {
+    "position": 339323,
+    "expression": "localStorage.setItem(yx,JSON.stringify(n))"
+  },
+  {
+    "position": 393812,
+    "expression": "localStorage.getItem(vx)"
+  },
+  {
+    "position": 394165,
+    "expression": "localStorage.setItem(vx,JSON.stringify([...z]))"
+  },
+  {
+    "position": 402057,
+    "expression": "localStorage.getItem(wx)"
+  },
+  {
+    "position": 405340,
+    "expression": "localStorage.setItem(wx,JSON.stringify([...p]))"
+  }
+]

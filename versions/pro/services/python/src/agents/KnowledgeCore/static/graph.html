@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITN 知识图谱控制台 · 审核与建边情况</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/graph.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>ITN 知识图谱控制台</h1>
+    <span class="sub">先修边审核 · 建边情况 · DAG 可视化（dag-design.md G5 配套）</span>
+  </div>
+  <div class="api-base">
+    <label for="apiBase">API 地址</label>
+    <input id="apiBase" placeholder="留空 = 同源 /api/v1">
+    <a class="top-link" href="/">← 返回知识库控制台</a>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="overview">📈 概览</button>
+  <button class="tab-btn" data-tab="review">🩺 审核队列 <span id="review-badge" class="badge-count">0</span></button>
+  <button class="tab-btn" data-tab="edges">🔗 建边情况</button>
+  <button class="tab-btn" data-tab="dag">🌐 DAG 图</button>
+</nav>
+
+<main>
+  <!-- ── 概览 ─────────────────────────────────────────── -->
+  <section id="tab-overview" class="tab-panel active">
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card" data-st="active"><div class="stat-num" id="st-active">–</div><div class="stat-label">生效 active</div></div>
+      <div class="stat-card warn" data-st="proposed"><div class="stat-num" id="st-proposed">–</div><div class="stat-label">待审核 proposed</div></div>
+      <div class="stat-card" data-st="rejected"><div class="stat-num" id="st-rejected">–</div><div class="stat-label">已拒绝 rejected</div></div>
+      <div class="stat-card muted" data-st="deprecated"><div class="stat-num" id="st-deprecated">–</div><div class="stat-label">已废弃 deprecated</div></div>
+    </div>
+    <div class="card">
+      <h3>最近建边（全部来源，按时间倒序）</h3>
+      <div class="table-wrap"><table id="recent-table"><thead><tr>
+        <th>先修</th><th>→</th><th>目标</th><th>类型</th><th>状态</th><th>来源</th><th>置信度</th><th>时间</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ── 审核队列 ─────────────────────────────────────── -->
+  <section id="tab-review" class="tab-panel">
+    <div class="card">
+      <div class="toolbar">
+        <label><input type="checkbox" id="review-select-all"> 全选</label>
+        <button id="btn-review-approve" class="primary">✅ 批量通过</button>
+        <button id="btn-review-reject" class="danger">❌ 批量拒绝</button>
+        <span class="muted">通过 = active（经 activate_edges 闸门：Kahn 环检测 + 传递归约 T4.7）；拒绝 = rejected（不再重试）；点击行可查看详情/单条反转方向</span>
+      </div>
+      <div class="table-wrap"><table id="review-table"><thead><tr>
+        <th></th><th>先修</th><th></th><th>目标</th><th>置信度</th><th>来源</th><th>理由/证据（rationale）</th><th>创建时间</th><th>操作</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ── T4.8：审批侧栏（proposed 边详情 + 通过/拒绝/反转） ───── -->
+  <div id="edge-drawer-mask" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:998;"></div>
+  <aside id="edge-drawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:380px;max-width:92vw;background:#fff;box-shadow:-8px 0 24px rgba(0,0,0,.15);z-index:999;overflow-y:auto;padding:18px;box-sizing:border-box;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="margin:0;font-size:15px;">先修边审批详情</h3>
+      <button id="edge-drawer-close" class="btn-mini">✖ 关闭</button>
+    </div>
+    <div id="edge-drawer-body" style="font-size:13px;line-height:1.9;"></div>
+    <div id="edge-drawer-actions" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;"></div>
+  </aside>
+
+  <!-- ── 建边情况 ─────────────────────────────────────── -->
+  <section id="tab-edges" class="tab-panel">
+    <div class="card">
+      <div class="toolbar">
+        <span class="chips" id="edge-status-chips">
+          <button class="chip active" data-status="">全部</button>
+          <button class="chip" data-status="active">active</button>
+          <button class="chip" data-status="proposed">proposed</button>
+          <button class="chip" data-status="rejected">rejected</button>
+          <button class="chip" data-status="deprecated">deprecated</button>
+          <button class="chip" data-status="redundant">redundant（T4.7 归约）</button>
+        </span>
+        <span class="chips" id="edge-type-chips">
+          <button class="chip active" data-type="">全部类型</button>
+          <button class="chip" data-type="prerequisite">prerequisite</button>
+          <button class="chip" data-type="cross_domain_prerequisite">跨域</button>
+          <button class="chip" data-type="related">related</button>
+        </span>
+        <input id="edge-search" placeholder="搜索知识点名称…">
+      </div>
+      <div class="table-wrap"><table id="edge-table"><thead><tr>
+        <th>ID</th><th>先修</th><th>→</th><th>目标</th><th>类型</th><th>状态</th><th>来源</th><th>置信度</th><th>理由</th><th>创建时间</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ── DAG 图 ───────────────────────────────────────── -->
+  <section id="tab-dag" class="tab-panel">
+    <div class="card">
+      <div class="toolbar" id="dag-layout-toolbar">
+        <span style="display:flex;gap:12px;align-items:center;">
+          <label><input type="radio" name="dag-layout" value="dagre" checked> 拓扑分层（dagre，降噪）</label>
+          <label><input type="radio" name="dag-layout" value="band"> 章节带（经典）</label>
+        </span>
+        <label><input type="checkbox" id="dag-show-kp" checked> 显示知识点</label>
+        <button id="btn-dag-refresh" class="primary">刷新图</button>
+        <button id="btn-dag-clear-focus" class="btn-mini" style="display:none;">✖ 退出焦点模式</button>
+      </div>
+      <div class="toolbar" id="dag-filter-toolbar">
+        <span class="muted">边状态：</span>
+        <span class="chips" id="dag-status-chips">
+          <button class="chip active" data-status="active">active</button>
+          <button class="chip" data-status="proposed">proposed</button>
+          <button class="chip" data-status="redundant">redundant</button>
+        </span>
+        <span class="muted">边类型：</span>
+        <span class="chips" id="dag-type-chips">
+          <button class="chip active" data-type="prerequisite">prerequisite</button>
+          <button class="chip active" data-type="cross_domain_prerequisite">跨域</button>
+          <button class="chip active" data-type="related">related</button>
+        </span>
+        <label style="display:flex;align-items:center;gap:6px;">
+          置信度 ≥ <input type="range" id="dag-conf-slider" min="0" max="1" step="0.05" value="0.7" style="width:120px;">
+          <span id="dag-conf-val" class="muted">0.70</span>
+        </label>
+      </div>
+      <div class="muted" style="margin-bottom:6px;">
+        hover/点击节点 = 焦点模式（高亮上下游，其余淡出）· 节点大小 ∝ log(切片数) · 默认仅显示 active + 高置信边（降噪）
+      </div>
+      <div class="dag-wrap"><svg id="dag-svg" width="1400" height="900"></svg></div>
+      <div class="muted" id="dag-legend"></div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/vendor/dagre.min.js"></script>
+<script src="/static/graph.js"></script>
+</body>
+</html>

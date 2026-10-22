@@ -1,0 +1,33 @@
+.env
+.env.local
+*.log
+node_modules/
+dist/
+build/
+release/
+core/target/
+core/libs/
+*.pdb
+# 内置依赖的构建产物与本地探针数据不入库（源码入库，保证可复现）
+third_party/*/target/
+third_party/sqlite-driver/.git/
+third_party/sqlite-driver/build/
+third_party/probe/*.db
+third_party/probe/*.db-journal
+third_party/probe/*.db-wal
+tmp/
+
+# 本地安装的第三方 agent skills（npx skills add ...）与它生成的锁文件
+.agents/
+skills-lock.json
+target/
+
+# Python test caches
+__pycache__/
+*.pyc
+
+# PPT renderer 的随包 Python 运行时（由 scripts/prepare-ppt-runtime.ps1 生成，不入库）
+shell/renderer/ppt-renderer/python/
+
+# Desktop notes and manuals are local-only.
+/docs/

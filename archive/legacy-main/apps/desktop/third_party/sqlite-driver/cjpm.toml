@@ -1,0 +1,62 @@
+[package]
+  cjc-version = "1.1.0"
+  name = "sqlite_driver"
+  description = "纯仓颉 SQLite 驱动，实现 std.database.sql"
+  version = "0.0.2"
+  output-type = "static"
+  license = ["Apache-2.0"]
+  authors = ["赵俊"]
+  repository = "https://gitcode.com/ZhaoJun-zfh/sqlite-driver"
+  documentation = "https://gitcode.com/ZhaoJun-zfh/sqlite-driver/tree/main/docs"
+  tag = ["database", "sqlite", "driver"]
+  category = ["Database Driver"]
+  include = ["src", "docs", "README.md", "CHANGELOG.md", "LICENSE"]
+  exclude = [
+    "src/unittests",
+    "src/*_test.cj",
+    "examples",
+    "build",
+    "target",
+    "cjpm.lock",
+    ".gitignore",
+    ".cache",
+    ".bin-cache",
+    ".cjpm-history",
+    "env"
+  ]
+  compile-option = "-Woff unused -Woff deprecated"
+
+[dependencies]
+
+[target]
+  [target.aarch64-linux-ohos]
+    compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -B \"${DEVECO_CANGJIE_HOME}/compiler/third_party/llvm/bin\" -B \"${DEVECO_CANGJIE_HOME}/musl/usr/lib/aarch64-linux-ohos\" -L \"${DEVECO_CANGJIE_HOME}/musl/usr/lib/aarch64-linux-ohos\" -L \"${DEVECO_CANGJIE_HOME}/build/linux_ohos_aarch64_llvm/openssl\" --sysroot \"${DEVECO_CANGJIE_HOME}/musl\" -ldl"
+    [target.aarch64-linux-ohos.bin-dependencies]
+      path-option = [ "${AARCH64_LIBS}", "${AARCH64_MACRO_LIBS}", "${CANGJIE_STDX_PATH}/linux_ohos_aarch64_llvm/dynamic/stdx" ]
+  [target.x86_64-linux-ohos]
+    compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -B \"${DEVECO_CANGJIE_HOME}/compiler/third_party/llvm/bin\" -B \"${DEVECO_CANGJIE_HOME}/musl/usr/lib/x86_64-linux-ohos\" -L \"${DEVECO_CANGJIE_HOME}/musl/usr/lib/x86_64-linux-ohos\" -L \"${DEVECO_CANGJIE_HOME}/build/linux_ohos_x86_64_llvm/openssl\" --sysroot \"${DEVECO_CANGJIE_HOME}/musl\" -ldl"
+    [target.x86_64-linux-ohos.bin-dependencies]
+      path-option = [ "${X86_64_OHOS_LIBS}", "${X86_64_OHOS_MACRO_LIBS}", "${CANGJIE_STDX_PATH}/linux_ohos_x86_64_llvm/dynamic/stdx" ]
+  [target.x86_64-unknown-windows-gnu]
+    compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -lcrypt32"
+    [target.x86_64-unknown-windows-gnu.bin-dependencies]
+      path-option = [ "${X86_64_LIBS}", "${X86_64_MACRO_LIBS}", "${CANGJIE_STDX_PATH}/windows_x86_64_llvm/dynamic/stdx" ]
+  [target.x86_64-unknown-linux-gnu]
+    compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -ldl"
+    [target.x86_64-unknown-linux-gnu.bin-dependencies]
+      path-option = [ "${CANGJIE_STDX_PATH}/linux_x86_64_llvm/dynamic/stdx" ]
+  [target.aarch64-apple-darwin]
+    compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -ldl"
+    [target.aarch64-apple-darwin.bin-dependencies]
+      path-option = ["${CANGJIE_STDX_PATH}/darwin_aarch64_llvm/dynamic/stdx"]
+  # 本项目使用的 Windows 目标段。上游只写了 x86_64-unknown-windows-gnu，
+  # 而仓颉 1.2.0 的实际目标是 x86_64-w64-mingw32；作为路径依赖时若不补这一段，
+  # 依赖方会因找不到 stdx 而报「imports package 'stdx.encoding.json' but not declared」。
+  [target.x86_64-w64-mingw32]
+    compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -lcrypt32"
+    [target.x86_64-w64-mingw32.bin-dependencies]
+      path-option = [ "${CANGJIE_STDX_PATH}" ]
+  [target.aarch64-unknown-linux-gnu]
+    compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -ldl"
+    [target.aarch64-unknown-linux-gnu.bin-dependencies]
+      path-option = [ "${CANGJIE_STDX_PATH}/linux_aarch64_llvm/dynamic/stdx" ]

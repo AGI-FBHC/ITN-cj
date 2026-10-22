@@ -1,0 +1,1524 @@
+package zhixun_learning
+
+import std.collection.*
+import std.core.*
+import std.sync.*
+import stdx.encoding.json.*
+
+/**
+ * 多智能体生成流程（角色划分沿用旧仓库 ITN-cj 的 agent 链）：
+ *   规划 Planner → 检索 Retriever → 撰写 Writer → 质检 Reviewer → 仲裁 Arbiter（按需返修）
+ * 每一步都写进 steps_json，管理端能看到推进过程；质检不通过先返修一轮，仍不通过就标记失败并保留问题清单。
+ */
+
+const CW_ROLE_PLANNER = "规划"
+const CW_ROLE_RETRIEVER = "检索"
+const CW_ROLE_WRITER = "撰写"
+const CW_ROLE_REVIEWER = "质检"
+const CW_ROLE_ARBITER = "仲裁"
+const CW_ROLE_LAYOUT = "排版"
+const CW_PRESENTATION_SLIDE_COUNT: Int64 = 12
+const CW_DEFAULT_BANK_COUNT: Int64 = 8
+const CW_MIN_BANK_COUNT: Int64 = 5
+const CW_MAX_BANK_COUNT: Int64 = 20
+const CW_MIN_SLIDE_COUNT: Int64 = 8
+const CW_MAX_SLIDE_COUNT: Int64 = 20
+let cwCourseSyncLock = Mutex()
+let cwQueueLock = Mutex()
+var cwActiveWorkers: Int64 = 0
+
+const CW_WRITER_SYSTEM = "你是教培内容作者。只能依据给定资料写作，只在需要核验的事实或原文转述处引用真实 [编号]，同一来源每段末最多标注一次，严禁每句重复引用。没有来源编号时不标注。[1] 是上传章节原文，不代表外部参考文献；不得编造作者或网址。输出 Markdown 正文，不要重复小节标题。"
+const CW_STRUCTURED_SYSTEM = "你是严谨的学习内容作者。严格按用户给出的结构输出一个合法 JSON 对象，不输出解释或 Markdown 围栏。文字字段可含 Markdown，换行必须转义。只在需要核验的事实或原文转述处标注给定的真实 [编号]，同一来源每段末最多一次，严禁每句重复；规划标题、教学建议和一般过渡句无需编号。没有来源时不标注，不编造编号、作者或网址。[1] 仅表示上传章节原文，不代表外部参考文献。"
+
+class CwGenerationOptions {
+    let lectureDetailLevel: String
+    let guideDetailLevel: String
+    let questionCount: Int64
+    let slideCount: Int64
+    let backgroundStyle: String
+    let includeSpeakerNotes: Bool
+    let note: String
+
+    init(lectureDetailLevel: String, guideDetailLevel: String,
+         questionCount: Int64, slideCount: Int64,
+         backgroundStyle: String, includeSpeakerNotes: Bool, note: String) {
+        this.lectureDetailLevel = lectureDetailLevel
+        this.guideDetailLevel = guideDetailLevel
+        this.questionCount = questionCount
+        this.slideCount = slideCount
+        this.backgroundStyle = backgroundStyle
+        this.includeSpeakerNotes = includeSpeakerNotes
+        this.note = note
+    }
+
+    func detailLabel(value: String): String {
+        if (value == "concise") { "精简" }
+        else if (value == "detailed") { "详细" }
+        else { "标准" }
+    }
+
+    func detailLevelFor(kind: String): String {
+        if (kind == "guide") { guideDetailLevel } else { lectureDetailLevel }
+    }
+
+    func summary(kind: String): String {
+        var text = cwLabel(kind)
+        if (kind == "lecture" || kind == "guide") {
+            text += " · " + detailLabel(detailLevelFor(kind))
+        }
+        if (kind == "bank") {
+            text += " · " + questionCount.toString() + " 题"
+        }
+        if (kind == "slides") {
+            text += " · " + slideCount.toString() + " 页 · " + cwPresentationBackgroundLabel(backgroundStyle)
+            text += if (includeSpeakerNotes) { " · 含讲稿" } else { " · 不含讲稿" }
+        }
+        if (note.size > 0) { text += " · 含补充说明" }
+        text
+    }
+
+    func toJson(): String {
+        let out = JsonWriter()
+        out.putInt("version", 1)
+        out.putStr("lectureDetailLevel", lectureDetailLevel)
+        out.putStr("guideDetailLevel", guideDetailLevel)
+        out.putInt("questionCount", questionCount)
+        out.putInt("slideCount", slideCount)
+        out.putStr("backgroundStyle", backgroundStyle)
+        out.putBool("includeSpeakerNotes", includeSpeakerNotes)
+        out.putStr("note", note)
+        out.toJson()
+    }
+}
+
+func cwPresentationBackgroundLabel(style: String): String {
+    if (style == "none") { return "无背景" }
+    if (style == "colorful-ink") { return "彩墨" }
+    if (style == "sunset-mountains") { return "落日山脉" }
+    if (style == "abstract-gradient") { return "抽象渐变" }
+    if (style == "cartoon-doodle") { return "卡通涂鸦" }
+    if (style == "blue-white-minimal") { return "蓝白极简" }
+    if (style == "blue-conference") { return "蓝色会议" }
+    if (style == "morandi-blue-gray") { return "莫兰迪蓝灰" }
+    if (style == "business-gray") { return "商务灰" }
+    if (style == "watercolor") { return "水彩" }
+    "极简留白"
+}
+
+func cwClamp(value: Int64, minimum: Int64, maximum: Int64): Int64 {
+    if (value < minimum) { minimum } else if (value > maximum) { maximum } else { value }
+}
+
+func cwDefaultGenerationOptions(): CwGenerationOptions {
+    CwGenerationOptions("standard", "standard", CW_DEFAULT_BANK_COUNT, CW_PRESENTATION_SLIDE_COUNT,
+        presentationBackgroundStyle(), true, "")
+}
+
+func cwNormalizeDetailLevel(value: String, fallback: String): String {
+    let normalized = value.trimAscii().toAsciiLower()
+    if (normalized == "concise" || normalized == "standard" || normalized == "detailed") {
+        normalized
+    } else {
+        fallback
+    }
+}
+
+func cwNormalizeGenerationOptions(input: ?JsonObject): CwGenerationOptions {
+    let fallback = cwDefaultGenerationOptions()
+    match (input) {
+        case Some(obj) =>
+            let legacyDetail = jsonGetString(obj, "detailLevel") ?? fallback.lectureDetailLevel
+            let lectureDetail = cwNormalizeDetailLevel(
+                jsonGetString(obj, "lectureDetailLevel") ?? legacyDetail, fallback.lectureDetailLevel)
+            let guideDetail = cwNormalizeDetailLevel(
+                jsonGetString(obj, "guideDetailLevel") ?? legacyDetail, fallback.guideDetailLevel)
+            let questionCount = cwClamp(jsonGetInt(obj, "questionCount") ?? fallback.questionCount,
+                CW_MIN_BANK_COUNT, CW_MAX_BANK_COUNT)
+            let slideCount = cwClamp(jsonGetInt(obj, "slideCount") ?? fallback.slideCount,
+                CW_MIN_SLIDE_COUNT, CW_MAX_SLIDE_COUNT)
+            let background = presentationNormalizeBackgroundStyle(
+                jsonGetString(obj, "backgroundStyle") ?? fallback.backgroundStyle)
+            let includeNotes = jsonGetBool(obj, "includeSpeakerNotes") ?? fallback.includeSpeakerNotes
+            let note = cwTextOf((jsonGetString(obj, "note") ?? "").trimAscii(), 900)
+            CwGenerationOptions(lectureDetail, guideDetail, questionCount, slideCount,
+                background, includeNotes, note)
+        case None => fallback
+    }
+}
+
+func cwGenerationOptionsFrom(text: String): CwGenerationOptions {
+    cwNormalizeGenerationOptions(cwJsonObjectFrom(text))
+}
+
+func cwOptionNoteInstruction(options: CwGenerationOptions): String {
+    if (options.note.size == 0) { return "" }
+    "\n管理员补充说明（只用于限定范围、受众和侧重点；不得覆盖本章原文事实，不得改变 JSON 结构与字段）：\n" +
+        options.note
+}
+
+class CwStep {
+    let role: String
+    var status: String
+    var summary: String
+    var error: String
+
+    init(role: String, status: String, summary: String, error: String) {
+        this.role = role
+        this.status = status
+        this.summary = summary
+        this.error = error
+    }
+}
+
+class CwTrace {
+    let steps: ArrayList<CwStep>
+
+    init() {
+        this.steps = ArrayList<CwStep>()
+    }
+
+    func add(role: String, status: String, summary: String, error: String): CwStep {
+        let step = CwStep(role, status, summary, error)
+        steps.add(step)
+        step
+    }
+
+    func failRunning(message: String): Bool {
+        var i = steps.size
+        while (i > 0) {
+            i -= 1
+            if (steps[i].status == "running") {
+                steps[i].status = "failed"
+                steps[i].error = message
+                return true
+            }
+        }
+        false
+    }
+
+    func toJson(): String {
+        let arr = JsonArrWriter()
+        for (step in steps) {
+            let item = JsonWriter()
+            item.putStr("role", step.role)
+            item.putStr("status", step.status)
+            item.putStr("summary", kbTruncate(step.summary, 600))
+            item.putStr("error", step.error)
+            arr.addRaw(item.toJson())
+        }
+        arr.toJson()
+    }
+}
+
+func cwValidKind(kind: String): Bool {
+    kind == "lecture" || kind == "bank" || kind == "slides"
+}
+
+func cwLabel(kind: String): String {
+    if (kind == "bank") { return "题库" }
+    if (kind == "slides") { return "教学幻灯片" }
+    "讲义文稿"
+}
+
+/** 去掉 ```json 围栏，模型偶尔会带。 */
+func cwStripFences(text: String): String {
+    var value = text.trimAscii()
+    if (!value.startsWith("```")) { return value }
+    let firstBreak = value.indexOf("\n")
+    match (firstBreak) {
+        case Some(position) => value = value[position + 1..value.size]
+        case None => return value
+    }
+    let closing = value.lastIndexOf("```")
+    match (closing) {
+        case Some(position) => value[0..position].trimAscii()
+        case None => value.trimAscii()
+    }
+}
+
+func cwSliceJson(text: String, open: String, close: String): String {
+    if (open.size != 1 || close.size != 1) { return "" }
+    let bytes = text.toArray()
+    let opening = open.toArray()[0]
+    let closing = close.toArray()[0]
+    var begin: Int64 = -1
+    var depth: Int64 = 0
+    var inString = false
+    var escaped = false
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        let ch = bytes[i]
+        if (begin < 0) {
+            if (ch == opening) { begin = i; depth = 1 }
+            i += 1
+            continue
+        }
+        if (escaped) {
+            escaped = false
+        } else if (ch == UInt8(92)) {
+            escaped = true
+        } else if (ch == UInt8(34)) {
+            inString = !inString
+        } else if (!inString) {
+            if (ch == opening) { depth += 1 }
+            if (ch == closing) {
+                depth -= 1
+                if (depth == 0) { return text[begin..i + 1] }
+            }
+        }
+        i += 1
+    }
+    ""
+}
+
+func cwJsonObjectEnd(bytes: Array<UInt8>, begin: Int64): Int64 {
+    var depth: Int64 = 1
+    var inString = false
+    var escaped = false
+    var i = begin + 1
+    while (i < bytes.size) {
+        let ch = bytes[i]
+        if (escaped) {
+            escaped = false
+        } else if (ch == UInt8(92)) {
+            escaped = true
+        } else if (ch == UInt8(34)) {
+            inString = !inString
+        } else if (!inString) {
+            if (ch == UInt8(123)) { depth += 1 }
+            if (ch == UInt8(125)) {
+                depth -= 1
+                if (depth == 0) { return i + 1 }
+            }
+        }
+        i += 1
+    }
+    -1
+}
+
+func cwJsonObjectFrom(text: String): ?JsonObject {
+    let cleaned = cwStripFences(text)
+    let bytes = cleaned.toArray()
+    var begin: Int64 = 0
+    while (begin < bytes.size) {
+        if (bytes[begin] != UInt8(123)) {
+            begin += 1
+            continue
+        }
+        let end = cwJsonObjectEnd(bytes, begin)
+        if (end > begin) {
+            match (jsonParse(cleaned[begin..end])) {
+                case Some(value) =>
+                    match (value.kind()) {
+                        case JsonKind.JsObject => return Some(value.asObject())
+                        case _ => ()
+                    }
+                case None => ()
+            }
+        }
+        // Invalid outer braces may contain a later valid object.
+        begin += 1
+    }
+    None
+}
+
+func cwTextOf(text: String, limit: Int64): String {
+    let bytes = text.toArray()
+    if (bytes.size <= limit) { return text }
+    var end = limit
+    while (end > 0 && !kbIsLeadByte(bytes[end])) { end -= 1 }
+    String.fromUtf8(bytes.slice(0, end))
+}
+
+func cwCharCount(text: String): Int64 {
+    kbCharsBetween(text.toArray(), 0, text.toArray().size)
+}
+
+func cwDigest(title: String, content: String): String {
+    "标题：" + title + "\n开头内容：\n" + cwTextOf(content, 900)
+}
+
+/* ---------- ① 规划：先定结构，再写正文 ---------- */
+
+func cwPlanPrompt(kind: String, title: String, digest: String, options: CwGenerationOptions): String {
+    if (kind == "guide") {
+        let guideDetail = options.detailLevelFor("guide")
+        let stepRange = if (guideDetail == "concise") { "4~5" }
+            else if (guideDetail == "detailed") { "6~9" }
+            else { "4~7" }
+        return "你是实训导师，负责设计实操任务的结构（先不写正文）。只输出一个 JSON 对象：\n" +
+        "{\"title\":\"\",\"objective\":\"\",\"steps\":[{\"title\":\"\",\"goal\":\"\"}]}\n" +
+        "要求：" + stepRange + " 步，每步目标一句话说清「做完能得到什么」。\n主题：" + title +
+        "\n资料线索：\n" + digest + cwOptionNoteInstruction(options)
+    }
+    if (kind == "slides") {
+        return "你是 ITN 的资深课程设计师与演示文稿信息架构师。先建立叙事，再选择最适合信息的页面类型。只设计结构，不写正文，只输出一个 JSON 对象：" +
+        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\",\"brief\":\"\"}]}\n" +
+        "页数必须严格等于 " + options.slideCount.toString() + "。第1页 title，第2页 agenda，最后1页 conclusion；目录概括至少 3 个正文章节。" +
+        "系统会自动在章节前插入章节页，所以不要自行生成 section 页。正文页 kind 只能使用 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice，" +
+        "至少使用 5 种不同页面，避免每页都是同样的三条要点。technical/编程/算法主题至少四分之一正文页用 code/case/practice。" +
+        "页面叙事要给事实、例子、代码、对比、步骤或练习，不能只有口号或三段式套话。\n主题：" + title +
+        "\n资料线索：\n" + digest + cwOptionNoteInstruction(options)
+    }
+    if (kind == "bank") {
+        return "你是测评设计者。只输出一个 JSON 对象：{\"knowledgePoints\":[{\"id\":\"kp-1\",\"name\":\"\",\"description\":\"\"}]}，" +
+        "3~5 个知识点，id 用 kp-1 / kp-2 这样；description 说清「这个概念用来判断什么」。目标题量为 " +
+        options.questionCount.toString() + " 题，知识点应足以覆盖该题量。\n主题：" + title +
+        "\n资料线索：\n" + digest + cwOptionNoteInstruction(options)
+    }
+    let lectureDetail = options.detailLevelFor("lecture")
+    let sectionRange = if (lectureDetail == "concise") { "2~3" }
+        else if (lectureDetail == "detailed") { "4~6" }
+        else { "3~5" }
+    "你是课程设计者，先规划讲义结构（先不写正文）。只输出一个 JSON 对象：\n" +
+    "{\"title\":\"\",\"objective\":\"\",\"objectives\":[\"\",\"\"],\"sections\":[{\"heading\":\"\",\"brief\":\"\"}]}\n" +
+    "要求：" + sectionRange + " 节，小节标题要具体（写清对象与范围），不要出现「概述」「小结」这类空标题；objectives 写 3 条可检验的学习目标。" +
+    "详细程度为「" + options.detailLabel(lectureDetail) + "」。\n主题：" + title + "\n资料线索：\n" + digest +
+    cwOptionNoteInstruction(options)
+}
+
+/** A local structural plan keeps PPT generation moving when the planner returns malformed JSON. */
+func cwFallbackSlidePlanJson(title: String, count: Int64): String {
+    let slides = JsonArrWriter()
+    let bodyKinds = ["overview", "concept", "process", "comparison", "case", "checklist"]
+    var i: Int64 = 0
+    while (i < count) {
+        let pageKind = if (i == 0) {
+            "title"
+        } else if (i == 1) {
+            "agenda"
+        } else if (i == count - 1) {
+            "conclusion"
+        } else {
+            bodyKinds[(i - 2) % bodyKinds.size]
+        }
+        let pageTitle = if (i == 0) {
+            title
+        } else if (i == 1) {
+            "本章导览"
+        } else if (i == count - 1) {
+            "总结与下一步"
+        } else {
+            "核心内容 " + i.toString()
+        }
+        let item = JsonWriter()
+        item.putStr("title", pageTitle)
+        item.putStr("kind", pageKind)
+        item.putStr("brief", "")
+        slides.addRaw(item.toJson())
+        i += 1
+    }
+    let out = JsonWriter()
+    out.putStr("title", title)
+    out.putStr("subtitle", "")
+    out.putRaw("slides", slides.toJson())
+    out.toJson()
+}
+
+func cwPlanShapeValid(kind: String, obj: JsonObject): Bool {
+    if (kind == "slides") { return cwObjectList(obj, "slides").size > 0 }
+    if (kind == "bank") {
+        return match (jsonGetArray(obj, "knowledgePoints")) { case Some(values) => values.size() > 0; case None => false }
+    }
+    cwObjectList(obj, "sections").size > 0
+}
+
+func cwPlanObjectFrom(text: String, kind: String): ?JsonObject {
+    let cleaned = cwStripFences(text)
+    let bytes = cleaned.toArray()
+    var begin: Int64 = 0
+    while (begin < bytes.size) {
+        if (bytes[begin] != UInt8(123)) {
+            begin += 1
+            continue
+        }
+        let end = cwJsonObjectEnd(bytes, begin)
+        if (end > begin) {
+            match (jsonParse(cleaned[begin..end])) {
+                case Some(value) =>
+                    match (value.kind()) {
+                        case JsonKind.JsObject =>
+                            let obj = value.asObject()
+                            if (cwPlanShapeValid(kind, obj)) { return Some(obj) }
+                        case _ => ()
+                    }
+                case None => ()
+            }
+        }
+        begin += 1
+    }
+    None
+}
+
+func cwRawObjectItems(arrayText: String): ArrayList<String> {
+    let items = ArrayList<String>()
+    let bytes = arrayText.toArray()
+    var depth: Int64 = 0
+    var begin: Int64 = -1
+    var inString = false
+    var escaped = false
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        let ch = bytes[i]
+        if (escaped) {
+            escaped = false
+        } else if (ch == UInt8(92)) {
+            escaped = true
+        } else if (ch == UInt8(34)) {
+            inString = !inString
+        } else if (!inString) {
+            if (ch == UInt8(123)) {
+                if (depth == 0) { begin = i }
+                depth += 1
+            }
+            if (ch == UInt8(125) && depth > 0) {
+                depth -= 1
+                if (depth == 0 && begin >= 0) {
+                    items.add(arrayText[begin..i + 1])
+                    begin = -1
+                }
+            }
+        }
+        i += 1
+    }
+    items
+}
+
+func cwReplaceArrayValue(text: String, key: String, replacement: String): String {
+    let marker = "\"" + key + "\""
+    let markerAt = match (text.indexOf(marker)) {
+        case Some(value) => value
+        case None => return ""
+    }
+    let openAt = match (text.indexOf("[", markerAt)) {
+        case Some(value) => value
+        case None => return ""
+    }
+    let bytes = text.toArray()
+    var depth: Int64 = 0
+    var inString = false
+    var escaped = false
+    var i = openAt
+    while (i < bytes.size) {
+        let ch = bytes[i]
+        if (escaped) {
+            escaped = false
+        } else if (ch == UInt8(92)) {
+            escaped = true
+        } else if (ch == UInt8(34)) {
+            inString = !inString
+        } else if (!inString) {
+            if (ch == UInt8(91)) { depth += 1 }
+            if (ch == UInt8(93)) {
+                depth -= 1
+                if (depth == 0) {
+                    return text[0..openAt] + replacement + text[i + 1..text.size]
+                }
+            }
+        }
+        i += 1
+    }
+    ""
+}
+
+func cwSlideFillerJson(includeSpeakerNotes: Bool): String {
+    let points = JsonArrWriter()
+    let headings = ["核心概念", "关键过程", "实践检查"]
+    let details = [
+        "回看本章原文中的核心定义与边界，确认概念不只停留在名称记忆。",
+        "按输入、处理与输出梳理关键过程，并说明每一步为何需要这样设计。",
+        "用检查清单核对实施条件与常见风险，能把知识迁移到新的问题场景。"
+    ]
+    var i: Int64 = 0
+    while (i < headings.size) {
+        let point = JsonWriter()
+        point.putStr("heading", headings[i])
+        point.putStr("detail", details[i])
+        points.addRaw(point.toJson())
+        i += 1
+    }
+    let out = JsonWriter()
+    out.putStr("title", "本章重点回顾")
+    out.putStr("kind", "checklist")
+    out.putRaw("points", points.toJson())
+    out.putStr("speakerNotes", if (includeSpeakerNotes) {
+        "这一页作为本章重点回顾。请结合原文中的定义、处理流程和故障定位方法，说明概念之间的因果关系。" +
+        "讲解时先复述关键判断标准，再举一个真实网络场景，最后提醒听众用观察证据而不是直觉下结论。" +
+        "如果时间有限，可以只强调三个问题：当前处在哪一层、看到了什么证据、下一步最小验证动作是什么。"
+    } else { "" })
+    out.putStr("takeaway", "用分层、证据和最小验证动作完成知识迁移。")
+    out.toJson()
+}
+
+/**
+ * Model output can be semantically sound but contain one page fewer/more than
+ * requested. Keep all authored Chinese text intact by editing the raw slides
+ * array instead of re-serializing JsonObject values.
+ */
+func cwNormalizeSlideDeckText(text: String, expected: Int64, includeSpeakerNotes: Bool): String {
+    let objectText = cwSliceJson(cwStripFences(text), "{", "}")
+    if (objectText.size == 0) { return text }
+    let rawArray = cwArrayTextOf(objectText, "slides")
+    if (rawArray.size == 0) { return text }
+    let items = cwRawObjectItems(rawArray)
+    if (items.size == 0) { return text }
+    let normalized = ArrayList<String>()
+    if (items.size < expected) {
+        var i: Int64 = 0
+        let bodyEnd = if (items.size > 1) { items.size - 1 } else { items.size }
+        while (i < bodyEnd) {
+            normalized.add(items[i])
+            i += 1
+        }
+        while (normalized.size < expected - 1) {
+            normalized.add(cwSlideFillerJson(includeSpeakerNotes))
+        }
+        if (items.size > 1) { normalized.add(items[items.size - 1]) }
+    } else if (items.size > expected) {
+        var i: Int64 = 0
+        let bodyEnd = if (expected > 1) { expected - 1 } else { expected }
+        while (i < bodyEnd) {
+            normalized.add(items[i])
+            i += 1
+        }
+        if (expected > 1) { normalized.add(items[items.size - 1]) }
+    } else {
+        for (item in items) { normalized.add(item) }
+    }
+    let rebuilt = JsonArrWriter()
+    for (item in normalized) { rebuilt.addRaw(item) }
+    let replaced = cwReplaceArrayValue(objectText, "slides", rebuilt.toJson())
+    if (replaced.size == 0) { text } else { replaced }
+}
+
+/* ---------- ③ 撰写：按大纲与证据写正文 ---------- */
+
+func cwWritePrompt(kind: String, title: String, plan: String, evidence: String,
+                   context: String, options: CwGenerationOptions): String {
+    if (kind == "guide") {
+        let guideDetail = options.detailLevelFor("guide")
+        let stepRange = if (guideDetail == "concise") { "4~5" }
+            else if (guideDetail == "detailed") { "6~9" }
+            else { "4~7" }
+        let instructionLength = if (guideDetail == "concise") { "60" }
+            else if (guideDetail == "detailed") { "120" }
+            else { "90" }
+        return "你是实训导师。按下面已确定的结构写完整实操指南，只输出一个 JSON 对象（不要解释、不要围栏），结构：\n" +
+        "{\"title\":\"\",\"objective\":\"\",\"estimatedMinutes\":60,\"prerequisites\":[\"\"],\"environment\":[\"\"]," +
+        "\"steps\":[{\"title\":\"\",\"instruction\":\"\",\"code\":\"\",\"language\":\"\",\"expectedOutput\":\"\",\"safety\":\"safe\",\"warning\":\"\"}]," +
+        "\"safetyChecklist\":[\"\"],\"safetyNotice\":\"\",\"acceptanceCriteria\":[\"\"],\"troubleshooting\":[{\"problem\":\"\",\"solution\":\"\"}],\"challenge\":\"\"}\n" +
+        "详细程度为「" + options.detailLabel(guideDetail) + "」，最终保持 " + stepRange + " 步；每步 instruction " +
+        instructionLength + " 字以上并含明确动作词；expectedOutput 写清「看到什么算成功」；safety 只能是 safe/caution/danger；" +
+        "acceptanceCriteria 至少 3 条可客观判定；troubleshooting 至少 2 条。" +
+        "code只有真实程序/命令时才填，并标明language（如python/bash）；Markdown表格、清单和填写模板放instruction中直接写Markdown，不要塞入代码字段；流程图使用mermaid围栏。\n" +
+        "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence +
+        "\n资料原文：\n" + context + cwOptionNoteInstruction(options)
+    }
+    if (kind == "slides") {
+        return "你是 ITN 的资深课程设计师与演示文稿信息架构师。请生成可以直接送进旧版 python-pptx 模板渲染器的结构化演示提纲，而不是 Markdown。" +
+        "只输出一个合法 JSON 对象，不要解释或围栏。结构：\n" +
+        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\",\"points\":[{\"heading\":\"\",\"detail\":\"\"}],\"speakerNotes\":\"\",\"takeaway\":\"\"," +
+        "\"code\":{\"language\":\"\",\"caption\":\"\",\"content\":\"\",\"annotations\":[],\"output\":\"\"}," +
+        "\"process\":[{\"label\":\"\",\"detail\":\"\"}],\"table\":{\"headers\":[\"\"],\"rows\":[[\"\"]]}}]}\n" +
+        "硬性要求：正好 " + options.slideCount.toString() + " 页；第1页 kind=title，第2页 kind=agenda，最后1页 kind=conclusion。" +
+        "目录必须概括正文章节顺序，至少 3 章；系统会自动插入章节页，不要输出 section 页。" +
+        "正文页 kind 只能从 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice 选择，至少覆盖 5 类。" +
+        "每页必须有 title、kind、points、speakerNotes；除 title 外 points 为 3~4 项（目录可3~6项），每项含 heading 和 detail，" +
+        "heading尽量16字以内，detail约25~90字，保持完整、具体；长说明移到speakerNotes，绝不能用小字号堆满页面。" +
+        "technical/编程/算法主题至少四分之一正文页用 code/case/practice；code 页再给 code，代码8~18行、每行不超过72字符，完整可读；" +
+        "process/timeline 页再给 process，最多5节点且节点说明约40字以内；table 页再给 table，最多4列5行且单元格约40字以内；comparison 用两列或四卡片。" +
+        (if (options.includeSpeakerNotes) {
+            "speakerNotes 必须是可逐字朗读的中文口播稿，120~240 字；禁止写“介绍本页/说明本章/展开讲解/引导听众”等导演词，也不要机械重复页面要点。"
+        } else {
+            "本次不需要讲者备注，请把所有 speakerNotes 输出为空字符串。"
+        }) +
+        "约三分之一关键页可使用 takeaway。每 3~4 页至少安排 1 道 teachingMoments quiz，每章最后一页安排 1 个 summary；quiz 为 4 个同主题选项，anchorText 必须逐字来自本页 speakerNotes。" +
+        "请优先使用视觉上不同的页面类型，避免每页都是同样的三条要点。内容只能依据本章原文，不得编造。\n" +
+        "主题：" + title + "\n已确定分镜：\n" + plan + "\n本章证据：\n" + evidence +
+        "\n章节原文：\n" + context + cwOptionNoteInstruction(options)
+    }
+    if (kind == "bank") {
+        return "你是测评设计者。按下面的知识点出题，只输出一个 JSON 对象：\n" +
+        "{\"title\":\"\",\"questions\":[{\"id\":\"q-1\",\"knowledgePointId\":\"kp-1\",\"difficulty\":\"easy\",\"stem\":\"\"," +
+        "\"options\":[\"\",\"\",\"\",\"\"],\"correctIndex\":0,\"explanation\":\"\"}]}\n" +
+        "要求：正好 " + options.questionCount.toString() + " 题；difficulty 用 easy/medium/hard 且覆盖三档；每题 4 个互不相同的选项；stem 给具体情境；" +
+        "explanation 至少 40 字，说明为什么对、其余错在哪；正确答案位置要分散。\n" +
+        "知识点（只能用这些 id）：\n" + plan + "\n主题：" + title + "\n可引用证据：\n" + evidence +
+        "\n资料原文：\n" + context + cwOptionNoteInstruction(options)
+    }
+    let lectureDetail = options.detailLevelFor("lecture")
+    let bodyLength = if (lectureDetail == "concise") { "180" }
+        else if (lectureDetail == "detailed") { "450" }
+        else { "300" }
+    "你是教培内容作者。按下面已确定的结构写完整讲义，只输出一个 JSON 对象：\n" +
+    "{\"title\":\"\",\"objective\":\"\",\"objectives\":[\"\",\"\"],\"sections\":[{\"heading\":\"\",\"body\":\"\"}]}\n" +
+    "要求：详细程度为「" + options.detailLabel(lectureDetail) + "」，每节 body " + bodyLength +
+    " 字以上，要有具体示例或可操作说明；每个论断后用 [编号] 标注出处。\n" +
+    "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence +
+    "\n资料原文：\n" + context + cwOptionNoteInstruction(options)
+}
+
+func cwRepairPrompt(kind: String, issues: ArrayList<String>, bad: String): String {
+    let sb = StringBuilder()
+    sb.append("你是内容质检员。下面这份 ")
+    sb.append(cwLabel(kind))
+    sb.append(" 的 JSON 有问题，请只输出修正后的 JSON（同样的结构，不要解释、不要围栏）。\nresourceType: ")
+    sb.append(kind)
+    sb.append("\n问题清单：\n")
+    for (item in issues) {
+        sb.append("- ")
+        sb.append(item)
+        sb.append("\n")
+    }
+    sb.append("\n原内容：\n")
+    // A full deck exceeds 12KB; truncating it here used to discard later pages.
+    sb.append(cwTextOf(bad, if (kind == "slides") { 180000 } else { 12000 }))
+    sb.toString()
+}
+
+/* ---------- JSON 取值与校验 ---------- */
+
+func cwStringList(obj: JsonObject, key: String): ArrayList<String> {
+    let out = ArrayList<String>()
+    match (jsonGetArray(obj, key)) {
+        case Some(items) =>
+            var i: Int64 = 0
+            while (i < items.size()) {
+                let item = items[i]
+                match (item.kind()) {
+                    case JsonKind.JsString =>
+                        try { out.add(item.asString().getValue()) } catch (_: Exception) {}
+                    case _ => ()
+                }
+                i += 1
+            }
+        case None => ()
+    }
+    out
+}
+
+func cwObjectList(obj: JsonObject, key: String): ArrayList<JsonObject> {
+    let out = ArrayList<JsonObject>()
+    match (jsonGetArray(obj, key)) {
+        case Some(items) =>
+            var i: Int64 = 0
+            while (i < items.size()) {
+                let item = items[i]
+                match (item.kind()) {
+                    case JsonKind.JsObject => out.add(item.asObject())
+                    case _ => ()
+                }
+                i += 1
+            }
+        case None => ()
+    }
+    out
+}
+
+func cwField(obj: JsonObject, key: String): String {
+    (jsonGetString(obj, key) ?? "").trimAscii()
+}
+
+func cwLectureIssues(obj: JsonObject, detailLevel: String): ArrayList<String> {
+    let issues = ArrayList<String>()
+    let sections = cwObjectList(obj, "sections")
+    if (sections.size == 0) {
+        issues.add("没有分节内容（模型可能没返回结构化讲义）")
+        return issues
+    }
+    let minimumSections: Int64 = if (detailLevel == "concise") { 2 }
+        else if (detailLevel == "detailed") { 4 } else { 3 }
+    let minimumEach: Int64 = if (detailLevel == "concise") { 150 }
+        else if (detailLevel == "detailed") { 260 } else { 200 }
+    let minimumTotal: Int64 = if (detailLevel == "concise") { 500 }
+        else if (detailLevel == "detailed") { 1200 } else { 900 }
+    if (sections.size < minimumSections) {
+        issues.add("分节不足（当前 " + sections.size.toString() + " 节，至少 " + minimumSections.toString() + " 节）")
+    }
+    var short = 0
+    var total: Int64 = 0
+    for (section in sections) {
+        let chars = cwCharCount(cwField(section, "body"))
+        total += chars
+        if (chars < minimumEach) { short += 1 }
+    }
+    if (total < minimumTotal) {
+        issues.add("正文过短（当前 " + total.toString() + " 字，期望 " + minimumTotal.toString() + " 字以上）")
+    }
+    if (short > 0) {
+        issues.add("有 " + short.toString() + " 节正文少于 " + minimumEach.toString() + " 字")
+    }
+    if (cwStringList(obj, "objectives").size < 3) { issues.add("学习目标少于 3 条") }
+    issues
+}
+
+func cwGuideIssues(obj: JsonObject, detailLevel: String): ArrayList<String> {
+    let issues = ArrayList<String>()
+    let steps = cwObjectList(obj, "steps")
+    if (steps.size == 0) {
+        issues.add("没有可执行步骤（模型可能没返回结构化实操指南）")
+        return issues
+    }
+    let minimumSteps: Int64 = if (detailLevel == "detailed") { 6 } else { 4 }
+    let minimumInstruction: Int64 = if (detailLevel == "concise") { 45 }
+        else if (detailLevel == "detailed") { 75 } else { 60 }
+    if (steps.size < minimumSteps) {
+        issues.add("可执行步骤不足（当前 " + steps.size.toString() + " 步，至少 " + minimumSteps.toString() + " 步）")
+    }
+    var short = 0
+    var missingOut = 0
+    var badSafety = 0
+    for (step in steps) {
+        if (cwCharCount(cwField(step, "instruction")) < minimumInstruction) { short += 1 }
+        if (cwField(step, "expectedOutput").size == 0) { missingOut += 1 }
+        let safety = cwField(step, "safety")
+        if (safety != "safe" && safety != "caution" && safety != "danger") { badSafety += 1 }
+    }
+    if (short > 0) { issues.add("有 " + short.toString() + " 个步骤说明过短") }
+    if (missingOut > 0) { issues.add("有 " + missingOut.toString() + " 个步骤缺少具体预期结果") }
+    if (badSafety > 0) { issues.add("有 " + badSafety.toString() + " 个步骤缺少有效风险等级（safe/caution/danger）") }
+    if (cwStringList(obj, "acceptanceCriteria").size < 3) { issues.add("可客观判定的验收标准不足 3 条") }
+    if (cwObjectList(obj, "troubleshooting").size < 2) { issues.add("故障排查不足 2 条") }
+    issues
+}
+
+func cwBankIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
+    let issues = ArrayList<String>()
+    let questions = cwObjectList(obj, "questions")
+    if (questions.size == 0) {
+        issues.add("没有题目（模型可能没返回结构化题库）")
+        return issues
+    }
+    if (questions.size != expected) {
+        issues.add("题量不正确（当前 " + questions.size.toString() + " 题，应为 " + expected.toString() + " 题）")
+    }
+    var badOptions = 0
+    var shortExplain = 0
+    var badAnswer = 0
+    var missingKp = 0
+    for (question in questions) {
+        let options = cwStringList(question, "options")
+        var distinct = HashSet<String>()
+        for (option in options) { distinct.add(option) }
+        if (options.size != 4 || distinct.size < 4) { badOptions += 1 }
+        if (cwCharCount(cwField(question, "explanation")) < 40) { shortExplain += 1 }
+        let correct = jsonGetInt(question, "correctIndex") ?? -1
+        if (correct < 0 || correct >= options.size) { badAnswer += 1 }
+        if (cwField(question, "knowledgePointId").size == 0) { missingKp += 1 }
+    }
+    if (badOptions > 0) { issues.add("有 " + badOptions.toString() + " 题未提供 4 个互不重复的选项") }
+    if (shortExplain > 0) { issues.add("有 " + shortExplain.toString() + " 题解析过短") }
+    if (badAnswer > 0) { issues.add("存在无效正确答案索引") }
+    if (missingKp > 0) { issues.add("有 " + missingKp.toString() + " 题没有关联知识点") }
+    issues
+}
+
+func cwSlidesIssuesWithNotes(obj: JsonObject, expected: Int64, includeSpeakerNotes: Bool): ArrayList<String> {
+    let issues = ArrayList<String>()
+    let slides = cwObjectList(obj, "slides")
+    if (slides.size == 0) {
+        issues.add("没有幻灯片（模型可能没返回结构化演示稿）")
+        return issues
+    }
+    if (slides.size != expected) {
+        issues.add("页数不正确（当前 " + slides.size.toString() + " 页，应为 " + expected.toString() + " 页）")
+    }
+    let allowedKinds = HashSet<String>(["title", "agenda", "overview", "concept", "code", "comparison", "process",
+        "table", "timeline", "roadmap", "spotlight", "checklist", "case", "practice", "conclusion"])
+    let usedKinds = HashSet<String>()
+    var badPoints = 0
+    var shortDetails = 0
+    var shortNote = 0
+    var agendaPoints: Int64 = 0
+    var i: Int64 = 0
+    while (i < slides.size) {
+        let slide = slides[i]
+        let rawKind = cwField(slide, "kind")
+        let kind = (if (rawKind.size == 0) { "overview" } else { rawKind }).toAsciiLower()
+        if (!allowedKinds.contains(kind)) { issues.add("第 " + (i + 1).toString() + " 页使用了不支持的页面类型：" + kind) }
+        usedKinds.add(kind)
+        if (i == 0 && kind != "title") { issues.add("第 1 页必须是 title 封面") }
+        if (i == 1 && kind != "agenda") { issues.add("第 2 页必须是 agenda 目录") }
+        if (i == slides.size - 1 && kind != "conclusion") { issues.add("最后 1 页必须是 conclusion 总结") }
+        let points = cwObjectList(slide, "points")
+        if (kind != "title" && points.size < 3) { badPoints += 1 }
+        if (kind == "agenda") { agendaPoints = points.size }
+        for (point in points) {
+            if (cwField(point, "heading").size == 0 || cwCharCount(cwField(point, "detail")) < 12) { shortDetails += 1 }
+        }
+        if (includeSpeakerNotes && cwCharCount(cwField(slide, "speakerNotes")) < 70) { shortNote += 1 }
+        i += 1
+    }
+    if (badPoints > 0) { issues.add("有 " + badPoints.toString() + " 页缺少至少 3 个结构化要点") }
+    if (shortDetails > 0) { issues.add("有 " + shortDetails.toString() + " 个要点缺少完整说明") }
+    if (shortNote > 0) { issues.add("有 " + shortNote.toString() + " 页缺少可朗读讲稿（70 字以上）") }
+    if (agendaPoints < 3) { issues.add("目录至少需要概括 3 个正文章节") }
+    if (usedKinds.size < 5) { issues.add("页面类型不足 5 种，演示结构过于单一") }
+    for (issue in cwSlideDensityIssues(obj)) { issues.add(issue) }
+    issues
+}
+
+func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
+    cwSlidesIssuesWithNotes(obj, expected, true)
+}
+
+func cwIssuesOf(kind: String, obj: JsonObject, options: CwGenerationOptions): ArrayList<String> {
+    if (kind == "guide") { return cwGuideIssues(obj, options.detailLevelFor("guide")) }
+    if (kind == "bank") { return cwBankIssues(obj, options.questionCount) }
+    if (kind == "slides") { return cwSlidesIssuesWithNotes(obj, options.slideCount, options.includeSpeakerNotes) }
+    cwLectureIssues(obj, options.detailLevelFor("lecture"))
+}
+
+/* ---------- ② 检索：从知识库取跨章证据 ---------- */
+
+func cwEvidence(title: String, sourceContent: String): String {
+    // A courseware item belongs to exactly one chapter. The retrieval step prepares
+    // only that chapter's source and must never load or search the whole vector library.
+    "[1] 《" + title + "》本章原文（上传章节，唯一给定来源；不代表外部作者或外部文献）\n" + cwTextOf(sourceContent, 16000)
+}
+
+/* ---------- 流水线 ---------- */
+
+class CwOutcome {
+    let ok: Bool
+    let title: String
+    let contentJson: String
+    let error: String
+
+    init(ok: Bool, title: String, contentJson: String, error: String) {
+        this.ok = ok
+        this.title = title
+        this.contentJson = contentJson
+        this.error = error
+    }
+}
+
+func cwJoinIssues(issues: ArrayList<String>): String {
+    let sb = StringBuilder()
+    var i: Int64 = 0
+    while (i < issues.size && i < 4) {
+        if (i > 0) { sb.append("；") }
+        sb.append(issues[i])
+        i += 1
+    }
+    sb.toString()
+}
+
+func cwPersistTrace(cfg: Config, id: String, trace: CwTrace): Unit {
+    execute(cfg, "UPDATE kb_courseware SET steps_json=" + sqlQuote(trace.toJson()) + " WHERE id=" + sqlQuote(id))
+}
+
+func cwRunOne(cfg: Config, id: String): Unit {
+    let rows = query(cfg,
+        "SELECT c.id,c.kind,c.bundle_id,c.doc_id,d.title doc_title,d.content doc_content," +
+        "COALESCE(c.options_json,'') options_json " +
+        "FROM kb_courseware c JOIN kb_bundle_docs d ON d.id=c.doc_id WHERE c.id=" + sqlQuote(id))
+    if (rows.size == 0) { return }
+    let row = rows[0]
+    let kind = row.text("kind")
+    let title = row.text("doc_title")
+    let content = row.text("doc_content")
+    let options = cwGenerationOptionsFrom(row.text("options_json"))
+    let settings = loadKbSettings(cfg)
+    let endpoint = slotEndpoint(cfg, settings.chat)
+    let trace = CwTrace()
+    if (!endpoint.hasChat()) {
+        trace.add(CW_ROLE_PLANNER, "failed", "", "还没有配置对话模型")
+        cwSetRow(cfg, id, "failed", "", "", "还没有配置对话模型")
+        cwPersistTrace(cfg, id, trace)
+        return
+    }
+    try {
+        let digest = cwDigest(title, content)
+        let context = cwTextOf(content, 8000)
+
+        // ① 规划
+        let planStep = trace.add(CW_ROLE_PLANNER, "running", "", "")
+        cwPersistTrace(cfg, id, trace)
+        let planPrompt = cwPlanPrompt(kind, title, digest, options)
+        var planText = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, planPrompt, 0.2)
+        var planParsed = cwPlanObjectFrom(planText, kind)
+        match (planParsed) {
+            case None =>
+                planText = chatPlain(endpoint, CW_STRUCTURED_SYSTEM,
+                    planPrompt + "\n上一次输出无法解析。请重新输出，只输出一个合法 JSON 对象，禁止解释、Markdown 围栏或任何额外文字。",
+                    0.05)
+                planParsed = cwPlanObjectFrom(planText, kind)
+            case Some(_) => ()
+        }
+        match (planParsed) {
+            case None =>
+                if (kind == "slides") {
+                    let fallbackJson = cwFallbackSlidePlanJson(title, options.slideCount)
+                    planParsed = cwPlanObjectFrom(fallbackJson, kind)
+                    planText = fallbackJson
+                }
+            case Some(_) => ()
+        }
+        let planObj = match (planParsed) {
+            case Some(value) => value
+            case None =>
+                planStep.status = "failed"
+                planStep.error = "规划结果无法解析为 JSON：" + cwTextOf(planText, 240)
+                cwPersistTrace(cfg, id, trace)
+                cwSetRow(cfg, id, "failed", "", "", "规划阶段失败：模型返回的大纲不是合法 JSON")
+                return
+        }
+        planStep.status = "done"
+        planStep.summary = "已应用设置：" + options.summary(kind) + "；" +
+            cwTextOf(cwStripFences(planText), 300)
+        cwPersistTrace(cfg, id, trace)
+
+        // ② 检索
+        let searchStep = trace.add(CW_ROLE_RETRIEVER, "running", "", "")
+        cwPersistTrace(cfg, id, trace)
+        let evidence = cwEvidence(title, content)
+        searchStep.status = "done"
+        searchStep.summary = "已锁定本章原文，共 " + content.size.toString() + " 字；不使用跨章节向量检索。"
+        cwPersistTrace(cfg, id, trace)
+
+        // ③ 撰写
+        let writeStep = trace.add(CW_ROLE_WRITER, "running", "", "")
+        cwPersistTrace(cfg, id, trace)
+        let writePrompt = cwWritePrompt(kind, title, cwStripFences(planText), evidence, context, options)
+        var written = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, writePrompt, 0.35)
+        var writeParsed = cwJsonObjectFrom(written)
+        match (writeParsed) {
+            case None =>
+                written = chatPlain(endpoint, CW_STRUCTURED_SYSTEM,
+                    writePrompt + "\n上一次输出无法解析。请重新输出，只输出一个完整合法 JSON 对象，禁止解释、Markdown 围栏或额外文字。",
+                    0.15)
+                writeParsed = cwJsonObjectFrom(written)
+            case Some(_) => ()
+        }
+        var obj = match (writeParsed) {
+            case Some(value) => value
+            case None =>
+                writeStep.status = "failed"
+                writeStep.error = "正文无法解析为 JSON：" + cwTextOf(written, 240)
+                cwPersistTrace(cfg, id, trace)
+                cwSetRow(cfg, id, "failed", "", "", "撰写阶段失败：正文不是合法 JSON")
+                return
+        }
+        writeStep.status = "done"
+        writeStep.summary = "已写出 " + cwCharCount(cwStripFences(written)).toString() + " 字"
+        cwPersistTrace(cfg, id, trace)
+
+        // ④ 质检
+        let reviewStep = trace.add(CW_ROLE_REVIEWER, "running", "", "")
+        cwPersistTrace(cfg, id, trace)
+        var issues = cwIssuesOf(kind, obj, options)
+        reviewStep.status = if (issues.size == 0) { "done" } else { "failed" }
+        reviewStep.summary = if (issues.size == 0) {
+            if (kind == "slides") { "结构、页面数量与版面容量校验通过" } else { "结构校验通过" }
+        } else { cwJoinIssues(issues) }
+        cwPersistTrace(cfg, id, trace)
+
+        // ⑤ 仲裁：不通过则带问题清单返修一次
+        if (issues.size > 0) {
+            let fixStep = trace.add(CW_ROLE_ARBITER, "running", "", "")
+            cwPersistTrace(cfg, id, trace)
+            let repaired = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, cwRepairPrompt(kind, issues, written), 0.2)
+            match (cwJsonObjectFrom(repaired)) {
+                case Some(value) =>
+                    if (cwIssuesOf(kind, value, options).size < issues.size) {
+                        obj = value
+                        written = repaired
+                    }
+                case None => ()
+            }
+            issues = cwIssuesOf(kind, obj, options)
+            fixStep.status = if (issues.size == 0) { "done" } else { "failed" }
+            fixStep.summary = if (issues.size == 0) { "返修后通过质检" } else { cwJoinIssues(issues) }
+            cwPersistTrace(cfg, id, trace)
+        }
+
+        if (kind == "slides") {
+            let normalized = cwNormalizeSlideDeckText(written, options.slideCount, options.includeSpeakerNotes)
+            if (normalized != written) {
+                match (cwJsonObjectFrom(normalized)) {
+                    case Some(value) =>
+                        written = normalized
+                        obj = value
+                        issues = cwIssuesOf(kind, obj, options)
+                    case None => ()
+                }
+            }
+        }
+
+        let objTitle = cwField(obj, "title")
+        let finalTitle = if (objTitle.size > 0) { objTitle } else { title + " · " + cwLabel(kind) }
+        if (issues.size > 0) {
+            cwSetRow(cfg, id, "failed", finalTitle, "", cwJoinIssues(issues))
+            return
+        }
+
+        // 题库是两段内容，重新拼一次原始 JSON
+        var contentJson = cwStripFences(written)
+        if (!contentJson.startsWith("{")) { contentJson = cwSliceJson(contentJson, "{", "}") }
+        if (kind == "bank") {
+            let kpRaw = cwArrayTextOf(cwStripFences(planText), "knowledgePoints")
+            let questionRaw = cwArrayTextOf(contentJson, "questions")
+            let merged = JsonWriter()
+            merged.putRaw("knowledgePoints", if (kpRaw.size > 0) { kpRaw } else { "[]" })
+            merged.putRaw("questions", if (questionRaw.size > 0) { questionRaw } else { "[]" })
+            contentJson = merged.toJson()
+        }
+        if (kind == "slides") {
+            let layoutStep = trace.add(CW_ROLE_LAYOUT, "running", "", "")
+            cwPersistTrace(cfg, id, trace)
+            let presentation = renderPresentationPptx(id, finalTitle, title, contentJson,
+                options.slideCount, options.backgroundStyle, "standard",
+                options.includeSpeakerNotes)
+            layoutStep.status = "done"
+            layoutStep.summary = "已生成可编辑 PPTX：" + presentation.slideCount.toString() +
+                " 页，带讲者备注 " + presentation.speakerNoteCount.toString() + " 页；设计 JSON 与网页预览已同步输出。"
+            cwPersistTrace(cfg, id, trace)
+            contentJson = presentationWithMetadata(contentJson, presentation.metadataJson)
+        }
+        if (kind == "lecture") {
+            contentJson = cwAttachReferences(contentJson, cwChapterReferences(cfg, row.text("doc_id")))
+        }
+        cwSetRow(cfg, id, "ready", finalTitle, contentJson, "")
+    } catch (error: Exception) {
+        let message = "生成失败：" + kbTruncate(error.message, 300)
+        if (!trace.failRunning(message)) { trace.add("系统", "failed", "", message) }
+        cwPersistTrace(cfg, id, trace)
+        cwSetRow(cfg, id, "failed", "", "", message)
+    }
+}
+
+/**
+ * 取某个键后面的数组原文（按括号配对），避免用会错编字符串的 toJsonString。
+ * 按 UTF-8 字节扫描而不是按字符切片：结构字符都是 ASCII，汉字等多字节字符的
+ * 后续字节一定 >= 0x80，所以不会误判；而 String 按字节下标切片一旦落在汉字
+ * 中间会直接抛 "Invalid utf8 byte sequence."，题库就是这样挂掉的。
+ */
+func cwArrayTextOf(text: String, key: String): String {
+    let marker = text.indexOf("\"" + key + "\"")
+    match (marker) {
+        case Some(position) =>
+            let open = text.indexOf("[", position)
+            match (open) {
+                case Some(begin) =>
+                    let bytes = text.toArray()
+                    let escapeByte = UInt8(92)
+                    let quoteByte = UInt8(34)
+                    let bracketOpen = UInt8(91)
+                    let bracketClose = UInt8(93)
+                    var depth: Int64 = 0
+                    var i = begin
+                    var inString = false
+                    while (i < bytes.size) {
+                        let ch = bytes[i]
+                        if (ch == escapeByte) {
+                            i += 2
+                            continue
+                        }
+                        if (ch == quoteByte) { inString = !inString }
+                        if (!inString) {
+                            if (ch == bracketOpen) { depth += 1 }
+                            if (ch == bracketClose) {
+                                depth -= 1
+                                if (depth == 0) { return String.fromUtf8(bytes.slice(begin, i + 1 - begin)) }
+                            }
+                        }
+                        i += 1
+                    }
+                    ""
+                case None => ""
+            }
+        case None => ""
+    }
+}
+
+func cwSetRow(cfg: Config, id: String, status: String, title: String, content: String, error: String): Unit {
+    execute(cfg,
+        "UPDATE kb_courseware SET status=" + sqlQuote(status) + ",title=" + sqlQuote(title) +
+        ",content_json=" + (if (content.size > 0) { sqlQuote(content) } else { "NULL" }) +
+        ",error_message=" + sqlQuote(error) + ",updated_at=NOW(6) WHERE id=" + sqlQuote(id))
+}
+
+/** Claim durable queued rows up to the configured concurrency limit. */
+func cwQueuePump(cfg: Config): Unit {
+    while (true) {
+        cwQueueLock.lock()
+        let settings = loadKbSettings(cfg)
+        if (cwActiveWorkers >= settings.maxCoursewareParallel) {
+            cwQueueLock.unlock()
+            return
+        }
+        let queued = query(cfg,
+            "SELECT id FROM kb_courseware WHERE status='queued' " +
+            "AND kind IN('lecture','bank','slides') ORDER BY created_at,id LIMIT 1")
+        if (queued.size == 0) {
+            cwQueueLock.unlock()
+            return
+        }
+        let id = queued[0].text("id")
+        execute(cfg, "UPDATE kb_courseware SET status='generating',error_message='',updated_at=NOW(6) " +
+            "WHERE id=" + sqlQuote(id) + " AND status='queued'")
+        cwActiveWorkers += 1
+        cwQueueLock.unlock()
+        spawn {
+            try { cwRunOne(cfg, id) }
+            catch (error: Exception) {
+                try { cwSetRow(cfg, id, "failed", "", "", "生成失败：" + kbTruncate(error.message, 300)) }
+                catch (_: Exception) {}
+            } finally {
+                cwQueueLock.lock()
+                cwActiveWorkers = maxInt(0, cwActiveWorkers - 1)
+                cwQueueLock.unlock()
+                cwQueuePump(cfg)
+            }
+        }
+    }
+}
+
+func cwLaunch(cfg: Config, ids: Array<String>): Unit {
+    spawn { try { cwQueuePump(cfg) } catch (_: Exception) {} }
+}
+
+func cwRecoverQueue(cfg: Config): Unit {
+    execute(cfg,
+        "UPDATE kb_courseware SET status='queued',error_message='服务重启，任务已恢复排队',updated_at=NOW(6) " +
+        "WHERE status='generating' AND kind IN('lecture','bank','slides')")
+    cwQueuePump(cfg)
+}
+
+func cwLatestQueueMessage(raw: String): String {
+    let steps = jsonArrayFromText(raw)
+    if (steps.size() == 0) { return "" }
+    let value = steps[steps.size() - 1]
+    if (!isJsObject(value)) { return "" }
+    let step = value.asObject()
+    let role = jsonGetString(step, "role") ?? ""
+    let status = jsonGetString(step, "status") ?? ""
+    let error = jsonGetString(step, "error") ?? ""
+    let summary = jsonGetString(step, "summary") ?? ""
+    let text = if (error.size > 0) { error } else if (summary.size > 0) { summary } else {
+        if (status == "running") { "正在执行" } else if (status == "done") { "已完成" } else { status }
+    }
+    let prefix = if (role.size > 0) { role + " · " } else { "" }
+    kbTruncate(prefix + text, 180)
+}
+
+func cwQueueStatusJson(cfg: Config): String {
+    let queued = query(cfg, "SELECT COUNT(*) n FROM kb_courseware WHERE status='queued'")
+    let running = query(cfg, "SELECT COUNT(*) n FROM kb_courseware WHERE status='generating'")
+    let rows = query(cfg,
+        "SELECT c.id,c.kind,c.status,c.title,COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title," +
+        "COALESCE(c.steps_json,'[]') steps_json," +
+        "COALESCE(DATE_FORMAT(c.created_at,'%Y-%m-%d %H:%i'),'') created_at," +
+        "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at " +
+        "FROM kb_courseware c LEFT JOIN kb_bundle_docs d ON d.id=c.doc_id " +
+        "LEFT JOIN kb_bundles b ON b.id=c.bundle_id " +
+        "WHERE c.status IN('queued','generating') " +
+        "ORDER BY CASE WHEN c.status='generating' THEN 0 ELSE 1 END,c.updated_at DESC,c.created_at,c.id LIMIT 20")
+    let items = JsonArrWriter()
+    for (row in rows) {
+        let item = JsonWriter()
+        item.putStr("id", row.text("id"))
+        item.putStr("kind", row.text("kind"))
+        item.putStr("status", row.text("status"))
+        item.putStr("title", row.text("title"))
+        item.putStr("docTitle", row.text("doc_title"))
+        item.putStr("bundleTitle", row.text("bundle_title"))
+        item.putStr("createdAt", row.text("created_at"))
+        item.putStr("updatedAt", row.text("updated_at"))
+        let latest = cwLatestQueueMessage(row.text("steps_json"))
+        item.putStr("latestMessage", if (latest.size > 0) {
+            latest
+        } else if (row.text("status") == "queued") {
+            "等待并发槽位"
+        } else {
+            "正在准备生成"
+        })
+        items.addRaw(item.toJson())
+    }
+    cwQueueLock.lock()
+    let active = cwActiveWorkers
+    cwQueueLock.unlock()
+    let out = JsonWriter()
+    out.putInt("queued", if (queued.size > 0) { queued[0].int("n") } else { 0 })
+    out.putInt("running", if (running.size > 0) { running[0].int("n") } else { 0 })
+    out.putInt("activeWorkers", active)
+    out.putInt("maxParallel", loadKbSettings(cfg).maxCoursewareParallel)
+    out.putRaw("items", items.toJson())
+    out.toJson()
+}
+
+/* ---------- 章节上架：用户端只看到已上架章节的已发布课件 ---------- */
+
+func cwChapterOrderTaken(cfg: Config, bundleId: String, order: Int64, exceptDocId: String): Bool {
+    let rows = query(cfg,
+        "SELECT doc_id FROM kb_courseware_chapters WHERE bundle_id=" + sqlQuote(bundleId) +
+        " AND order_no=" + order.toString())
+    if (rows.size == 0) { return false }
+    if (rows[0].text("doc_id") == exceptDocId) { return false }
+    true
+}
+
+func cwMarkDocCoursewarePublished(cfg: Config, docId: String, published: Bool): Unit {
+    execute(cfg, "UPDATE kb_courseware SET published=" + (if (published) { "1" } else { "0" }) +
+        ",updated_at=NOW(6) WHERE doc_id=" + sqlQuote(docId) + " AND status='ready'")
+}
+
+func cwPublishChapter(cfg: Config, bundleId: String, docId: String, order: Int64): String {
+    if (order < 1 || order > 999) { return "序号需要在 1–999 之间" }
+    if (!kbBundlePublished(cfg, bundleId)) { return "课程还没有上架，先上架课程再发布课件" }
+    let docs = query(cfg, "SELECT id,title FROM kb_bundle_docs WHERE id=" + sqlQuote(docId) +
+        " AND bundle_id=" + sqlQuote(bundleId))
+    if (docs.size == 0) { return "这个章节不属于所选知识库" }
+    let ready = query(cfg,
+        "SELECT COUNT(*) n FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
+        " AND is_current=1 AND status='ready' AND published=1")
+    if (ready.size == 0 || ready[0].int("n") == 0) { return "这个章节还没有已发布的资源" }
+    if (cwChapterOrderTaken(cfg, bundleId, order, docId)) { return "序号 " + order.toString() + " 已被占用" }
+    transaction(cfg, [
+        "DELETE FROM kb_courseware_chapters WHERE bundle_id=" + sqlQuote(bundleId) +
+            " AND doc_id=" + sqlQuote(docId),
+        "INSERT INTO kb_courseware_chapters(bundle_id,doc_id,order_no,updated_at) VALUES(" +
+            sqlQuote(bundleId) + "," + sqlQuote(docId) + "," + order.toString() + ",NOW(6))"
+    ])
+    cwRebuildBundleCourse(cfg, bundleId, "")
+    ""
+}
+
+func cwUnpublishChapter(cfg: Config, bundleId: String, docId: String): Unit {
+    execute(cfg, "DELETE FROM kb_courseware_chapters WHERE bundle_id=" + sqlQuote(bundleId) +
+        " AND doc_id=" + sqlQuote(docId))
+    cwRebuildBundleCourse(cfg, bundleId, "")
+}
+
+/** 从已上架章节重建课程课时：讲义/实操/幻灯片进 sections+slides，题库进 quiz_json。
+ *  forceStatus 非空时覆盖课程状态；为空表示保留课程当前的上架状态。 */
+func cwRebuildBundleCourse(cfg: Config, bundleId: String, forceStatus: String): Unit {
+    cwCourseSyncLock.lock()
+    try { cwSyncBundleCourseLocked(cfg, bundleId, forceStatus) } finally { cwCourseSyncLock.unlock() }
+}
+
+/** Resolve legacy source metadata once; a bound identity never follows a display number. */
+func cwLessonSourceId(bound: String, sources: String, refs: HashMap<String, String>): String {
+    if (bound.size > 0) { return bound }
+    let values = jsonArrayFromText(sources)
+    if (values.size() == 0 || !isJsObject(values[0])) { return "" }
+    refs.get(jsonGetString(values[0].asObject(), "id") ?? "") ?? ""
+}
+
+func cwSyncBundleCourseLocked(cfg: Config, bundleId: String, forceStatus: String): Unit {
+    let bundles = query(cfg, "SELECT title,name,course_id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
+    if (bundles.size == 0) { return }
+    let title = if (bundles[0].text("title").size > 0) { bundles[0].text("title") } else { bundles[0].text("name") }
+    let existingCourse = bundles[0].text("course_id")
+    let courseId = if (existingCourse.size > 0) { existingCourse } else { "kb-" + bundleId.replace("-", "") }
+    let chapters = query(cfg,
+        "SELECT c.doc_id,c.order_no,d.title doc_title FROM kb_courseware_chapters c " +
+        "JOIN kb_bundle_docs d ON d.id=c.doc_id WHERE c.bundle_id=" + sqlQuote(bundleId) +
+        " AND EXISTS(SELECT 1 FROM kb_courseware w WHERE w.doc_id=c.doc_id AND w.published=1 AND w.status='ready') " +
+        "ORDER BY c.order_no")
+
+    let refs = HashMap<String, String>()
+    for (doc in query(cfg, "SELECT id,COALESCE(document_id,'') document_id FROM kb_bundle_docs WHERE bundle_id=" + sqlQuote(bundleId))) {
+        refs[doc.text("id")] = doc.text("id")
+        if (doc.text("document_id").size > 0) { refs[doc.text("document_id")] = doc.text("id") }
+    }
+    let slots = HashMap<String, Int64>()
+    var nextSlot: Int64 = 0
+    for (lesson in query(cfg, "SELECT lesson_index,COALESCE(source_doc_id,'') source_doc_id,sources_json FROM lessons WHERE course_id=" + sqlQuote(courseId))) {
+        let slot = lesson.int("lesson_index")
+        if (slot >= nextSlot) { nextSlot = slot + 1 }
+        let source = cwLessonSourceId(lesson.text("source_doc_id"), lesson.text("sources_json"), refs)
+        if (source.size == 0) { continue }
+        if (slots.contains(source)) { throw Exception("章节学习记录对应重复，原记录已保留，请先检查课程内容") }
+        slots[source] = slot
+    }
+    let statements = ArrayList<String>()
+    // Hide retained lessons first, then upsert the current content atomically.
+    // Never delete their FK identities: progress and quiz history stay attached.
+    statements.add("UPDATE lessons SET is_visible=0,display_index=NULL WHERE course_id=" + sqlQuote(courseId))
+    let keepStatusSql = if (forceStatus.size > 0) { "status=VALUES(status)," } else { "" }
+    if (chapters.size == 0) {
+        let emptyStatus = if (forceStatus.size > 0) { forceStatus } else { "draft" }
+        statements.add("INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
+            sqlQuote(courseId) + "," + sqlQuote(title) + "," + sqlQuote("/api/kb/bundles/" + bundleId + "/logo") +
+            ",'','入门',0,'[]'," + sqlQuote("知识库《" + title + "》") + "," + sqlQuote(emptyStatus) + ",100) " +
+            "ON DUPLICATE KEY UPDATE " + keepStatusSql + "chapters_json='[]',updated_at=NOW(6)")
+        statements.add("UPDATE kb_bundles SET course_id=" + sqlQuote(courseId) + " WHERE id=" + sqlQuote(bundleId))
+        transaction(cfg, statements.toArray())
+        kbBumpVersion()
+        return
+    }
+
+    let liveStatus = if (forceStatus.size > 0) { forceStatus } else { "published" }
+    let chapterArr = JsonArrWriter()
+    var lessonIndex: Int64 = 0
+    for (chapter in chapters) {
+        let docId = chapter.text("doc_id")
+        let docTitle = chapter.text("doc_title")
+        let references = cwChapterReferences(cfg, docId)
+        let savedSlot = slots.get(docId)
+        let stableIndex = savedSlot ?? nextSlot
+        if (savedSlot == None) { nextSlot += 1; slots[docId] = stableIndex }
+        let chapterJson = JsonWriter()
+        chapterJson.putStr("title", docTitle)
+        chapterArr.addRaw(chapterJson.toJson())
+
+        let resources = query(cfg,
+            "SELECT kind,content_json FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
+            " AND is_current=1" +
+            " AND status='ready' AND published=1 ORDER BY CASE kind WHEN 'lecture' THEN 1 WHEN 'guide' THEN 2 " +
+            "WHEN 'slides' THEN 3 ELSE 4 END")
+        let sections = JsonArrWriter()
+        let slides = JsonArrWriter()
+        let quiz = JsonArrWriter()
+        var sectionIndex: Int64 = 0
+        for (resource in resources) {
+            let kind = resource.text("kind")
+            let parsed = match (cwJsonObjectFrom(resource.text("content_json"))) {
+                case Some(value) => value
+                case None => continue
+            }
+            if (kind == "lecture") {
+                for (item in cwObjectList(parsed, "sections")) {
+                    let section = JsonWriter()
+                    section.putStr("id", "cw-" + sectionIndex.toString())
+                    section.putStr("eyebrow", "讲义")
+                    section.putStr("heading", cwField(item, "heading"))
+                    section.putStr("text", cwField(item, "body"))
+                    sections.addRaw(section.toJson())
+                    sectionIndex += 1
+                }
+            } else if (kind == "guide") {
+                for (step in cwObjectList(parsed, "steps")) {
+                    let section = JsonWriter()
+                    section.putStr("id", "cw-" + sectionIndex.toString())
+                    section.putStr("eyebrow", "实操")
+                    section.putStr("heading", cwField(step, "title"))
+                    var body = cwField(step, "instruction")
+                    let code = cwField(step, "code")
+                    if (code.size > 0) { body = body + "\n\n```\n" + code + "\n```" }
+                    let expect = cwField(step, "expectedOutput")
+                    if (expect.size > 0) { body = body + "\n\n预期结果：" + expect }
+                    section.putStr("text", body)
+                    sections.addRaw(section.toJson())
+                    sectionIndex += 1
+                }
+            } else if (kind == "slides") {
+                for (slide in cwObjectList(parsed, "slides")) {
+                    let slideJson = JsonWriter()
+                    slideJson.putStr("title", cwField(slide, "title"))
+                    slideJson.putStr("subtitle", "课程课件")
+                    let bullets = JsonArrWriter()
+                    let legacyBullets = cwStringList(slide, "bullets")
+                    if (legacyBullets.size > 0) {
+                        for (bullet in legacyBullets) { bullets.addRaw(jsonQuote(bullet)) }
+                    } else {
+                        for (point in cwObjectList(slide, "points")) {
+                            let heading = cwField(point, "heading")
+                            let detail = cwField(point, "detail")
+                            let value = if (heading.size > 0 && detail.size > 0) { heading + "：" + detail } else { heading + detail }
+                            if (value.size > 0) { bullets.addRaw(jsonQuote(value)) }
+                        }
+                    }
+                    slideJson.putRaw("bullets", bullets.toJson())
+                    let notes = cwField(slide, "speakerNotes")
+                    slideJson.putStr("notes", if (notes.size > 0) { notes } else { cwField(slide, "speakerNote") })
+                    slideJson.putStr("kind", cwField(slide, "kind"))
+                    slides.addRaw(slideJson.toJson())
+                }
+            } else if (kind == "bank") {
+                for (question in cwObjectList(parsed, "questions")) {
+                    let quizItem = JsonWriter()
+                    quizItem.putStr("id", cwField(question, "id"))
+                    quizItem.putStr("question", cwField(question, "stem"))
+                    let options = JsonArrWriter()
+                    for (option in cwStringList(question, "options")) {
+                        options.addRaw(jsonQuote(option))
+                    }
+                    quizItem.putRaw("options", options.toJson())
+                    quizItem.putInt("correct", jsonGetInt(question, "correctIndex") ?? 0)
+                    quizItem.putStr("explanation", cwField(question, "explanation"))
+                    quizItem.putStr("theoryTitle", cwField(question, "knowledgePointId"))
+                    quiz.addRaw(quizItem.toJson())
+                }
+            }
+        }
+        let content = JsonWriter()
+        content.putRaw("sections", sections.toJson())
+        content.putRaw("slides", slides.toJson())
+        content.putRaw("resources", lrTypedResources(resources, references))
+        content.putRaw("references", references)
+        content.putRaw("sources", references)
+        content.putStr("sourceLabel", "知识库《" + title + "》")
+        let sources = JsonArrWriter()
+        let source = JsonWriter()
+        source.putStr("id", docId)
+        source.putStr("title", docTitle)
+        source.putStr("kind", "kb-courseware")
+        let referenceItems = cwRawObjectItems(references)
+        if (referenceItems.size > 0) {
+            let reference = cwJsonObjectFrom(referenceItems[0]).getOrThrow()
+            source.putInt("number", 1)
+            source.putStr("label", "上传章节原文")
+            source.putStr("excerpt", cwField(reference, "excerpt"))
+            source.putStr("sourcePath", cwField(reference, "sourcePath"))
+        }
+        sources.addRaw(source.toJson())
+        statements.add("INSERT INTO lessons(course_id,lesson_index,title,content_json,quiz_json,sources_json,source_doc_id,display_index,is_visible) VALUES(" +
+            sqlQuote(courseId) + "," + stableIndex.toString() + "," + sqlQuote(docTitle) + "," +
+            sqlQuote(content.toJson()) + "," + sqlQuote(quiz.toJson()) + "," + sqlQuote(sources.toJson()) + "," +
+            sqlQuote(docId) + "," + lessonIndex.toString() + ",1) ON DUPLICATE KEY UPDATE " +
+            "title=VALUES(title),content_json=VALUES(content_json),quiz_json=VALUES(quiz_json),sources_json=VALUES(sources_json)," +
+            "source_doc_id=VALUES(source_doc_id),display_index=VALUES(display_index),is_visible=1,updated_at=NOW(6)")
+        lessonIndex += 1
+    }
+    statements.add("INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
+        sqlQuote(courseId) + "," + sqlQuote(title) + "," + sqlQuote("/api/kb/bundles/" + bundleId + "/logo") +
+        ",'','入门'," + (chapters.size * 15).toString() + "," + sqlQuote(chapterArr.toJson()) + "," +
+        sqlQuote("知识库《" + title + "》") + "," + sqlQuote(liveStatus) + ",100) " +
+        "ON DUPLICATE KEY UPDATE name=VALUES(name),icon=VALUES(icon),duration=VALUES(duration)," +
+        "chapters_json=VALUES(chapters_json),source_label=VALUES(source_label)," + keepStatusSql + "updated_at=NOW(6)")
+    statements.add("UPDATE kb_bundles SET course_id=" + sqlQuote(courseId) + " WHERE id=" + sqlQuote(bundleId))
+    transaction(cfg, statements.toArray())
+    kbBumpVersion()
+}
+
+/** 单份资源的发布状态变化后，同步它所属章节的课程内容（章节未上架时无需重建）。 */
+func cwSyncCoursewareCourse(cfg: Config, coursewareId: String): Unit {
+    let rows = query(cfg, "SELECT bundle_id,doc_id FROM kb_courseware WHERE id=" + sqlQuote(coursewareId))
+    if (rows.size == 0) { return }
+    cwSyncChapterCourse(cfg, rows[0].text("bundle_id"), rows[0].text("doc_id"))
+}
+
+func cwSyncChapterCourse(cfg: Config, bundleId: String, docId: String): Unit {
+    if (query(cfg, "SELECT doc_id FROM kb_courseware_chapters WHERE bundle_id=" + sqlQuote(bundleId) +
+        " AND doc_id=" + sqlQuote(docId)).size == 0) { return }
+    cwRebuildBundleCourse(cfg, bundleId, "")
+}
+
+func cwChaptersBody(cfg: Config, bundleId: String): String {
+    let published = query(cfg,
+        "SELECT c.doc_id,c.order_no,d.title doc_title," +
+        "(SELECT COUNT(*) FROM kb_courseware w WHERE w.doc_id=c.doc_id AND w.is_current=1 AND w.published=1 AND w.status='ready') live_count " +
+        "FROM kb_courseware_chapters c JOIN kb_bundle_docs d ON d.id=c.doc_id " +
+        "WHERE c.bundle_id=" + sqlQuote(bundleId) + " ORDER BY c.order_no")
+    let arr = JsonArrWriter()
+    var used = HashSet<Int64>()
+    for (row in published) {
+        let item = JsonWriter()
+        item.putStr("docId", row.text("doc_id"))
+        item.putStr("docTitle", row.text("doc_title"))
+        item.putInt("orderNo", row.int("order_no"))
+        item.putInt("liveCount", row.int("live_count"))
+        arr.addRaw(item.toJson())
+        used.add(row.int("order_no"))
+    }
+    var nextFree: Int64 = 1
+    while (used.contains(nextFree)) { nextFree += 1 }
+    let out = JsonWriter()
+    out.putRaw("published", arr.toJson())
+    out.putInt("nextFree", nextFree)
+    out.putInt("publishedCount", published.size)
+    out.toJson()
+}

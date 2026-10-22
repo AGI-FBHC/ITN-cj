@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITN 文档切片入库管线</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; }
+.header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; padding: 24px 32px; }
+.header h1 { font-size: 22px; font-weight: 600; }
+.header p { font-size: 13px; color: #a0aec0; margin-top: 4px; }
+.container { max-width: 1200px; margin: 24px auto; padding: 0 24px; display: grid; grid-template-columns: 420px 1fr; gap: 24px; }
+@media (max-width: 900px) { .container { grid-template-columns: 1fr; } }
+
+/* ── Left: Form ── */
+.form-card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.form-card h2 { font-size: 16px; margin-bottom: 16px; color: #1a1a2e; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; font-weight: 600; color: #4a5568; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-group input, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px; transition: border-color 0.2s; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Drop zone */
+.drop-zone { border: 2px dashed #cbd5e0; border-radius: 8px; padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 16px; }
+.drop-zone:hover, .drop-zone.dragover { border-color: #4f46e5; background: #f7f7ff; }
+.drop-zone .icon { font-size: 36px; margin-bottom: 8px; }
+.drop-zone p { font-size: 13px; color: #718096; }
+.drop-zone .file-name { font-size: 14px; font-weight: 600; color: #4f46e5; margin-top: 8px; }
+
+/* Storage path */
+.path-preview { background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: #4a5568; margin-bottom: 14px; font-family: 'SF Mono', monospace; }
+
+/* Checkbox */
+.form-group.check { display: flex; align-items: center; gap: 8px; }
+.form-group.check input { width: auto; }
+.form-group.check label { margin: 0; text-transform: none; font-size: 14px; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%; }
+.btn-primary { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79,70,229,0.3); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ── Right: Progress ── */
+.progress-card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.progress-card h2 { font-size: 16px; margin-bottom: 16px; color: #1a1a2e; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+
+/* Steps list */
+.steps { list-style: none; }
+.step { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+.step:last-child { border: none; }
+.step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.step-num.pending { background: #edf2f7; color: #a0aec0; }
+.step-num.running { background: #ebf4ff; color: #4f46e5; animation: pulse 1.5s infinite; }
+.step-num.done { background: #c6f6d5; color: #276749; }
+.step-num.error { background: #fed7d7; color: #9b2c2c; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.step-info { flex: 1; min-width: 0; }
+.step-label { font-size: 13px; font-weight: 600; color: #2d3748; }
+.step-msg { font-size: 12px; color: #718096; margin-top: 2px; word-break: break-all; }
+
+/* Result box */
+.result-box { margin-top: 16px; padding: 16px; border-radius: 8px; display: none; }
+.result-box.success { background: #f0fff4; border: 1px solid #c6f6d5; display: block; }
+.result-box.warning { background: #fffff0; border: 1px solid #fefcbf; display: block; }
+.result-box.failed { background: #fff5f5; border: 1px solid #fed7d7; display: block; }
+.result-box h3 { font-size: 14px; margin-bottom: 8px; }
+.result-box .stats { display: flex; gap: 24px; font-size: 13px; color: #4a5568; }
+.result-box .stat-val { font-weight: 700; color: #2d3748; }
+.result-box .errors { margin-top: 8px; font-size: 12px; color: #e53e3e; }
+
+/* Empty state */
+.empty-state { text-align: center; padding: 48px 24px; color: #a0aec0; }
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+
+/* Log area */
+.log-area { margin-top: 16px; max-height: 200px; overflow-y: auto; background: #1a1a2e; border-radius: 8px; padding: 12px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #a0aec0; display: none; }
+.log-area.visible { display: block; }
+.log-line { margin-bottom: 2px; }
+.log-line .time { color: #4a5568; }
+.log-line .step { color: #818cf8; }
+.log-line .msg { color: #e2e8f0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📚 ITN 文档切片入库管线</h1>
+  <p>上传 Markdown 文件 → 规范化 → 切片 → 入库 → RAGFlow</p>
+</div>
+
+<div class="container">
+  <!-- Left: Form -->
+  <div class="form-card">
+    <h2>📄 文件与参数</h2>
+
+    <form id="pipelineForm" enctype="multipart/form-data">
+      <!-- Drop zone -->
+      <div class="drop-zone" id="dropZone">
+        <div class="icon">📎</div>
+        <p>拖拽 .md 文件到此处，或点击选择</p>
+        <div class="file-name" id="fileName"></div>
+        <input type="file" name="file" id="fileInput" accept=".md" hidden>
+      </div>
+
+      <!-- Storage path -->
+      <h2 style="font-size:14px; margin: 16px 0 12px;">📁 存储路径</h2>
+      <div class="path-preview" id="pathPreview">ITN / — / —</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>文献名称</label>
+          <input type="text" name="document_name" id="document_name" placeholder="hello_agents" value="">
+        </div>
+        <div class="form-group">
+          <label>章节名称</label>
+          <input type="text" name="chapter_name" id="chapter_name" placeholder="chapter4" value="">
+        </div>
+      </div>
+      <input type="hidden" name="project_name" value="ITN">
+
+      <!-- Metadata -->
+      <h2 style="font-size:14px; margin: 16px 0 12px;">📋 文档元数据</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label>文档类型</label>
+          <select name="document_type">
+            <option value="course_markdown" selected>教程 (Markdown)</option>
+            <option value="markdown_tutorial">教程 (Tutorial)</option>
+            <option value="markdown_reference">参考手册</option>
+            <option value="paper">论文</option>
+            <option value="report">报告</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>来源类型</label>
+          <select name="source_type">
+            <option value="local_file">本地文件</option>
+            <option value="web" selected>网页</option>
+            <option value="github">GitHub</option>
+            <option value="paper">论文</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>来源名称</label>
+        <input type="text" name="source_name" placeholder="自建Agents · Datawhale" value="">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>出版/发布组织</label>
+          <input type="text" name="publisher" placeholder="Datawhale" value="">
+        </div>
+        <div class="form-group">
+          <label>发布年份</label>
+          <input type="number" name="publish_year" placeholder="2025" value="">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>教程版本号</label>
+          <input type="text" name="version" placeholder="v1.0" value="">
+        </div>
+        <div class="form-group">
+          <label>主要语言</label>
+          <select name="language">
+            <option value="zh-CN" selected>中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <h2 style="font-size:14px; margin: 16px 0 12px;">⚙️ 可选覆盖</h2>
+      <div style="margin-bottom: 14px;">
+        <div class="form-group">
+          <label>RAGFlow URL</label>
+          <input type="text" name="ragflow_url" placeholder="留空则使用 .env 中的 RAGFLOW_URL">
+        </div>
+        <div class="form-group">
+          <label>RAGFlow API Key</label>
+          <input type="text" name="ragflow_api_key" placeholder="留空则使用 .env 中的 RAGFLOW_API_KEY">
+        </div>
+      </div>
+      <div style="margin-bottom: 14px;">
+        <div class="form-group">
+          <label>智谱 API Key</label>
+          <input type="text" name="vlm_api_key" id="vlm_api_key" placeholder="留空则使用 .env 中的 ZAI_API_KEY">
+        </div>
+      </div>
+      <input type="hidden" name="enable_ragflow" value="on">
+      <input type="hidden" name="enable_vlm" value="on">
+
+      <button type="submit" class="btn btn-primary" id="runBtn">🚀 开始处理</button>
+    </form>
+  </div>
+
+  <!-- Right: Progress -->
+  <div class="progress-card">
+    <h2>📊 处理进度</h2>
+
+    <div id="emptyState" class="empty-state">
+      <div class="icon">📋</div>
+      <p>上传文件并点击「开始处理」后，<br>此处将显示实时进度</p>
+    </div>
+
+    <ul class="steps" id="stepsList" style="display:none;"></ul>
+
+    <div class="log-area" id="logArea"></div>
+
+    <div class="result-box" id="resultBox">
+      <h3 id="resultTitle"></h3>
+      <div class="stats">
+        <span>切片: <span class="stat-val" id="statChunks">0</span></span>
+        <span>图片: <span class="stat-val" id="statFigures">0</span></span>
+        <span>状态: <span class="stat-val" id="statStatus">—</span></span>
+      </div>
+      <div class="errors" id="statErrors"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STEP_LABELS = {
+  intake: '1. 文件接入',
+  archive: '2. 原始归档',
+  normalizer: '3. Markdown 规范化',
+  image_pipeline: '4. 图片处理',
+  structure_parser: '5. 结构解析',
+  chunk_compiler: '6. 切片编译',
+  chunk_db_insert: '7. 切片入库',
+  category_classify: '8. 知识点分类',
+  ragflow_packager: '9. RAGFlow 打包',
+  preflight: '10. 质量检查',
+  audit: '11. 审计记录',
+  ragflow_upload: '12. RAGFlow 上传',
+};
+
+const STEP_NAMES = Object.keys(STEP_LABELS);
+let currentEventSource = null;
+
+// ── Drop zone ──
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileName = document.getElementById('fileName');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) {
+    fileInput.files = e.dataTransfer.files;
+    showFileName(e.dataTransfer.files[0].name);
+  }
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) showFileName(fileInput.files[0].name);
+});
+
+function showFileName(name) {
+  fileName.textContent = '✅ ' + name;
+  // Auto-fill document_name if empty
+  const docInput = document.getElementById('document_name');
+  if (!docInput.value) {
+    docInput.value = name.replace(/\.md$/, '').replace(/[_\s]+/g, '_');
+  }
+  updatePathPreview();
+}
+
+// ── Path preview ──
+function updatePathPreview() {
+  const doc = document.getElementById('document_name').value || '—';
+  const ch = document.getElementById('chapter_name').value || '—';
+  document.getElementById('pathPreview').textContent = `ITN / ${doc} / ${ch}`;
+}
+document.getElementById('document_name').addEventListener('input', updatePathPreview);
+document.getElementById('chapter_name').addEventListener('input', updatePathPreview);
+
+// ── Init steps list ──
+function initSteps() {
+  const list = document.getElementById('stepsList');
+  list.innerHTML = '';
+  STEP_NAMES.forEach((key, i) => {
+    const li = document.createElement('li');
+    li.className = 'step';
+    li.id = 'step-' + key;
+    li.innerHTML = `
+      <div class="step-num pending" id="stepNum-${key}">${i + 1}</div>
+      <div class="step-info">
+        <div class="step-label">${STEP_LABELS[key]}</div>
+        <div class="step-msg" id="stepMsg-${key}">等待中</div>
+      </div>
+    `;
+    list.appendChild(li);
+  });
+}
+
+// ── Update step ──
+function updateStep(stepName, status, message) {
+  const numEl = document.getElementById('stepNum-' + stepName);
+  const msgEl = document.getElementById('stepMsg-' + stepName);
+  if (!numEl) return;
+
+  numEl.className = 'step-num ' + status;
+  if (status === 'running') {
+    numEl.textContent = '⏳';
+  } else if (status === 'done') {
+    numEl.textContent = '✓';
+  } else if (status === 'error') {
+    numEl.textContent = '✗';
+  }
+  if (message) msgEl.textContent = message;
+}
+
+// ── Add log line ──
+function addLog(stepName, message) {
+  const logArea = document.getElementById('logArea');
+  const now = new Date().toLocaleTimeString();
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = `<span class="time">[${now}]</span> <span class="step">${stepName}</span> <span class="msg">${message}</span>`;
+  logArea.appendChild(div);
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+// ── Show result ──
+function showResult(result) {
+  const box = document.getElementById('resultBox');
+  const status = result.status || 'unknown';
+
+  document.getElementById('resultTitle').textContent =
+    status === 'passed' ? '✅ 处理完成' :
+    status === 'passed_with_warnings' ? '⚠️ 处理完成（有警告）' :
+    status === 'uploaded' ? '✅ 已上传至 RAGFlow' :
+    '❌ 处理失败';
+
+  document.getElementById('statChunks').textContent = result.chunk_count || 0;
+  document.getElementById('statFigures').textContent = result.figure_count || 0;
+  document.getElementById('statStatus').textContent = status;
+
+  const errors = result.errors || [];
+  document.getElementById('statErrors').textContent = errors.length ? errors.join('\n') : '';
+
+  box.className = 'result-box ' + (
+    status === 'passed' || status === 'uploaded' ? 'success' :
+    status === 'passed_with_warnings' ? 'warning' : 'failed'
+  );
+}
+
+// ── Form submit ──
+document.getElementById('pipelineForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+
+  if (!fileInput.files.length) {
+    alert('请先选择一个 .md 文件');
+    return;
+  }
+
+  // Reset UI
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('stepsList').style.display = 'block';
+  document.getElementById('logArea').className = 'log-area visible';
+  document.getElementById('resultBox').className = 'result-box';
+  initSteps();
+
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 处理中...';
+
+  const formData = new FormData(this);
+
+  try {
+    const resp = await fetch('/api/run', { method: 'POST', body: formData });
+    const data = await resp.json();
+
+    if (data.error) {
+      alert('错误: ' + data.error);
+      btn.disabled = false;
+      btn.textContent = '🚀 开始处理';
+      return;
+    }
+
+    // Connect SSE
+    if (currentEventSource) currentEventSource.close();
+    const es = new EventSource('/api/progress/' + data.task_id);
+    currentEventSource = es;
+
+    es.onmessage = function(event) {
+      const d = JSON.parse(event.data);
+      if (d.type === 'progress') {
+        const status = d.status === 'start' ? 'running' : 'done';
+        updateStep(d.step_name, status, d.message);
+        addLog(d.step_name, d.message);
+      } else if (d.type === 'done') {
+        es.close();
+        showResult(d.result || {});
+        btn.disabled = false;
+        btn.textContent = '🚀 开始处理';
+
+        // Mark all steps as done or error
+        STEP_NAMES.forEach(key => {
+          const numEl = document.getElementById('stepNum-' + key);
+          if (numEl && numEl.classList.contains('running')) {
+            updateStep(key, 'done', '');
+          }
+        });
+      }
+    };
+
+    es.onerror = function() {
+      es.close();
+      btn.disabled = false;
+      btn.textContent = '🚀 开始处理';
+    };
+
+  } catch (err) {
+    alert('请求失败: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = '🚀 开始处理';
+  }
+});
+</script>
+</body>
+</html>

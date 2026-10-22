@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ITN Knowledge Core - 知识决策系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f23;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a1a3e 0%, #2d1b69 100%);
+            padding: 20px 40px;
+            border-bottom: 1px solid #333;
+        }
+        .header h1 {
+            font-size: 1.5em;
+            color: #fff;
+        }
+        .header .subtitle {
+            color: #888;
+            font-size: 0.9em;
+            margin-top: 4px;
+        }
+
+        /* Main Layout */
+        .main {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            height: calc(100vh - 80px);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: #1a1a2e;
+            border-right: 1px solid #333;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .sidebar h3 {
+            color: #667eea;
+            margin-bottom: 16px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Input Section */
+        .input-group {
+            margin-bottom: 16px;
+        }
+        .input-group label {
+            display: block;
+            color: #888;
+            font-size: 0.85em;
+            margin-bottom: 6px;
+        }
+        .input-group input, .input-group textarea, .input-group select {
+            width: 100%;
+            padding: 10px 12px;
+            background: #0f0f23;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+        .input-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .input-group input:focus, .input-group textarea:focus, .input-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 8px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #2a2a4a;
+            color: #aaa;
+            border: 1px solid #444;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Content Area */
+        .content {
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        /* Pipeline Visualization */
+        .pipeline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .pipeline-step {
+            padding: 8px 16px;
+            background: #2a2a4a;
+            border-radius: 20px;
+            font-size: 0.85em;
+            white-space: nowrap;
+            opacity: 0.5;
+            transition: all 0.3s;
+        }
+        .pipeline-step.active {
+            background: #667eea;
+            color: white;
+            opacity: 1;
+        }
+        .pipeline-step.done {
+            background: #28a745;
+            color: white;
+            opacity: 1;
+        }
+        .pipeline-arrow {
+            color: #444;
+            font-size: 0.8em;
+        }
+
+        /* Result Cards */
+        .result-card {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 1px solid #333;
+        }
+        .result-card h3 {
+            color: #667eea;
+            margin-bottom: 12px;
+            font-size: 1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .result-card h3 .icon {
+            font-size: 1.2em;
+        }
+
+        /* Decision Badge */
+        .decision-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+        .decision-permit { background: #28a745; color: white; }
+        .decision-block { background: #dc3545; color: white; }
+        .decision-restrict { background: #ffc107; color: #333; }
+        .decision-retrieve { background: #17a2b8; color: white; }
+        .decision-review { background: #6f42c1; color: white; }
+
+        /* Score Bars */
+        .score-item {
+            margin-bottom: 12px;
+        }
+        .score-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            font-size: 0.85em;
+        }
+        .score-bar {
+            height: 8px;
+            background: #2a2a4a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .score-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.8s ease;
+        }
+        .score-high { background: #28a745; }
+        .score-medium { background: #ffc107; }
+        .score-low { background: #dc3545; }
+
+        /* HF Score Gauge */
+        .hf-gauge {
+            text-align: center;
+            padding: 20px;
+        }
+        .hf-score {
+            font-size: 3em;
+            font-weight: 700;
+            color: #667eea;
+        }
+        .hf-label {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        /* Eligibility Checks */
+        .check-list {
+            list-style: none;
+        }
+        .check-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #222;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9em;
+        }
+        .check-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7em;
+        }
+        .check-pass { background: #28a745; color: white; }
+        .check-fail { background: #dc3545; color: white; }
+
+        /* Evidence Table */
+        .evidence-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+        }
+        .evidence-table th {
+            background: #2a2a4a;
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+        }
+        .evidence-table td {
+            padding: 10px;
+            border-bottom: 1px solid #222;
+        }
+        .evidence-table tr:hover {
+            background: #1f1f3a;
+        }
+
+        /* JSON Viewer */
+        .json-viewer {
+            background: #0f0f23;
+            border-radius: 6px;
+            padding: 16px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.85em;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 8px;
+        }
+        .tab-btn {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 0.85em;
+        }
+        .tab-btn:hover { color: #fff; background: #2a2a4a; }
+        .tab-btn.active { color: #667eea; background: #2a2a4a; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* Quick Examples */
+        .examples {
+            margin-top: 16px;
+        }
+        .example-btn {
+            width: 100%;
+            padding: 8px 12px;
+            background: #0f0f23;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #aaa;
+            font-size: 0.85em;
+            cursor: pointer;
+            text-align: left;
+            margin-bottom: 6px;
+            transition: all 0.2s;
+        }
+        .example-btn:hover {
+            border-color: #667eea;
+            color: #fff;
+        }
+
+        /* Status */
+        .status-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            font-size: 0.85em;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        .status-dot.online { background: #28a745; }
+        .status-dot.offline { background: #dc3545; }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        .empty-state .icon {
+            font-size: 3em;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <h1>🧠 ITN Knowledge Core</h1>
+        <div class="subtitle">领域包驱动的规则-证据双轨知识决策内核</div>
+    </div>
+
+    <div class="main">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h3>📊 系统状态</h3>
+            <div class="status-bar">
+                <div class="status-item">
+                    <div class="status-dot" id="apiStatus"></div>
+                    <span>API</span>
+                </div>
+                <div class="status-item">
+                    <div class="status-dot" id="ragflowStatus"></div>
+                    <span>RAGFlow</span>
+                </div>
+                <div class="status-item">
+                    <div class="status-dot" id="dbStatus"></div>
+                    <span>MySQL</span>
+                </div>
+            </div>
+
+            <h3>🔮 双轨推断</h3>
+            <div class="input-group">
+                <label>查询内容</label>
+                <textarea id="query" placeholder="输入要查询的问题...">什么是数据库事务的 ACID 特性？</textarea>
+            </div>
+            <div class="input-group">
+                <label>任务类型</label>
+                <select id="taskType">
+                    <option value="question">❓ 问题</option>
+                    <option value="explanation">📖 解释</option>
+                    <option value="exercise">✏️ 练习</option>
+                    <option value="troubleshooting">🔧 故障排除</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>RAGFlow 数据集</label>
+                <select id="datasetId">
+                    <option value="">自动查找...</option>
+                </select>
+            </div>
+
+            <button class="btn btn-primary" id="btnResolve" onclick="runResolve()">
+                🚀 执行双轨推断
+            </button>
+
+            <h3 style="margin-top:24px;">💡 快速示例</h3>
+            <div class="examples">
+                <button class="example-btn" onclick="setQuery('什么是数据库事务的 ACID 特性？')">
+                    📚 数据库事务 ACID
+                </button>
+                <button class="example-btn" onclick="setQuery('如何优化慢 SQL 查询？')">
+                    ⚡ SQL 优化
+                </button>
+                <button class="example-btn" onclick="setQuery('解释 B+ 树索引的原理')">
+                    🌳 B+ 树索引
+                </button>
+                <button class="example-btn" onclick="setQuery('什么是死锁？如何避免？')">
+                    🔒 死锁问题
+                </button>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+            <!-- Empty State -->
+            <div id="emptyState" class="empty-state">
+                <div class="icon">🧠</div>
+                <h2>知识决策系统就绪</h2>
+                <p style="margin-top:12px;">在左侧输入查询，点击「执行双轨推断」开始</p>
+            </div>
+
+            <!-- Pipeline Visualization -->
+            <div id="pipelineViz" class="pipeline" style="display:none;">
+                <div class="pipeline-step" id="step1">📥 构建快照</div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step" id="step2">📋 预检索规则</div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step" id="step3">🔍 检索证据</div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step" id="step4">📦 构建证据包</div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step" id="step5">⚙️ 执行规则</div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step" id="step6">🚦 资格门控</div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step" id="step7">📊 HF 评分</div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step" id="step8">📜 生成契约</div>
+            </div>
+
+            <!-- Results -->
+            <div id="results" style="display:none;">
+                <!-- Decision Summary -->
+                <div class="result-card">
+                    <h3><span class="icon">📜</span> Knowledge Decision Contract</h3>
+                    <div style="display:flex;align-items:center;gap:20px;margin-bottom:16px;">
+                        <div>
+                            <div style="color:#888;font-size:0.85em;">决策结果</div>
+                            <div id="decisionBadge" class="decision-badge" style="margin-top:4px;"></div>
+                        </div>
+                        <div>
+                            <div style="color:#888;font-size:0.85em;">合约 ID</div>
+                            <div id="contractId" style="font-family:monospace;margin-top:4px;"></div>
+                        </div>
+                        <div>
+                            <div style="color:#888;font-size:0.85em;">查询</div>
+                            <div id="contractQuery" style="margin-top:4px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HF Score & Eligibility -->
+                <div style="display:grid;grid-template-columns:200px 1fr 1fr;gap:16px;margin-bottom:16px;">
+                    <!-- HF Score -->
+                    <div class="result-card">
+                        <h3><span class="icon">📊</span> HF 评分</h3>
+                        <div class="hf-gauge">
+                            <div class="hf-score" id="hfScore">0</div>
+                            <div class="hf-label">高保真评分</div>
+                        </div>
+                    </div>
+
+                    <!-- Eligibility -->
+                    <div class="result-card">
+                        <h3><span class="icon">🚦</span> 资格门控</h3>
+                        <ul class="check-list" id="eligibilityChecks"></ul>
+                    </div>
+
+                    <!-- Score Breakdown -->
+                    <div class="result-card">
+                        <h3><span class="icon">📈</span> 评分详情</h3>
+                        <div id="scoreBreakdown"></div>
+                    </div>
+                </div>
+
+                <!-- Actions & Evidence -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                    <!-- Permitted Actions -->
+                    <div class="result-card">
+                        <h3><span class="icon">✅</span> 允许的操作</h3>
+                        <div id="permittedActions"></div>
+                    </div>
+
+                    <!-- Required Citations -->
+                    <div class="result-card">
+                        <h3><span class="icon">📎</span> 必需引用</h3>
+                        <div id="requiredCitations"></div>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="result-card">
+                    <div class="tabs">
+                        <button class="tab-btn active" onclick="switchTab(this, 'tabEvidence')">📦 证据包</button>
+                        <button class="tab-btn" onclick="switchTab(this, 'tabRules')">⚙️ 规则命中</button>
+                        <button class="tab-btn" onclick="switchTab(this, 'tabRemediation')">💊 补救建议</button>
+                        <button class="tab-btn" onclick="switchTab(this, 'tabAudit')">📝 审计追踪</button>
+                        <button class="tab-btn" onclick="switchTab(this, 'tabJson')">📄 完整 JSON</button>
+                    </div>
+
+                    <div id="tabEvidence" class="tab-panel active"></div>
+                    <div id="tabRules" class="tab-panel"></div>
+                    <div id="tabRemediation" class="tab-panel"></div>
+                    <div id="tabAudit" class="tab-panel"></div>
+                    <div id="tabJson" class="tab-panel"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api/v1';
+        let currentResult = null;
+
+        // Load datasets
+        async function loadDatasets() {
+            try {
+                const resp = await fetch('/evidence/datasets');
+                const data = await resp.json();
+                const select = document.getElementById('datasetId');
+                select.innerHTML = '<option value="">自动查找...</option>';
+                (data.datasets || []).forEach(ds => {
+                    select.innerHTML += `<option value="${ds.id}">${ds.name}</option>`;
+                });
+                // Auto-select first dataset
+                if (data.datasets && data.datasets.length > 0) {
+                    select.value = data.datasets[0].id;
+                }
+            } catch (e) {
+                console.error('Failed to load datasets:', e);
+            }
+        }
+
+        // Check status
+        async function checkStatus() {
+            try {
+                await fetch('/health');
+                document.getElementById('apiStatus').className = 'status-dot online';
+            } catch { document.getElementById('apiStatus').className = 'status-dot offline'; }
+
+            try {
+                await fetch('/evidence/datasets');
+                document.getElementById('ragflowStatus').className = 'status-dot online';
+            } catch { document.getElementById('ragflowStatus').className = 'status-dot offline'; }
+
+            try {
+                await fetch(API + '/domains');
+                document.getElementById('dbStatus').className = 'status-dot online';
+            } catch { document.getElementById('dbStatus').className = 'status-dot offline'; }
+        }
+
+        // Set query from example
+        function setQuery(q) {
+            document.getElementById('query').value = q;
+        }
+
+        // Animate pipeline
+        async function animatePipeline(steps) {
+            document.getElementById('pipelineViz').style.display = 'flex';
+            for (let i = 1; i <= 8; i++) {
+                document.getElementById('step' + i).className = 'pipeline-step';
+            }
+            for (const step of steps) {
+                document.getElementById('step' + step).className = 'pipeline-step active';
+                await new Promise(r => setTimeout(r, 200));
+                document.getElementById('step' + step).className = 'pipeline-step done';
+            }
+        }
+
+        // Run resolve
+        async function runResolve() {
+            const btn = document.getElementById('btnResolve');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span>执行中...';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('results').style.display = 'none';
+
+            // Animate pipeline
+            await animatePipeline([1, 2, 3, 4, 5, 6, 7, 8]);
+
+            try {
+                const query = document.getElementById('query').value;
+                const taskType = document.getElementById('taskType').value;
+                const datasetId = document.getElementById('datasetId').value;
+
+                const body = {
+                    query: query,
+                    task_type: taskType,
+                };
+                if (datasetId) {
+                    body.dataset_ids = [datasetId];
+                }
+
+                const resp = await fetch(API + '/knowledge/resolve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || `HTTP ${resp.status}`);
+                }
+
+                currentResult = await resp.json();
+                renderResult(currentResult);
+                document.getElementById('results').style.display = 'block';
+
+            } catch (e) {
+                alert('推断失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🚀 执行双轨推断';
+            }
+        }
+
+        // Render result
+        function renderResult(data) {
+            // Decision badge
+            const decisionMap = {
+                'permit': { class: 'decision-permit', text: '✅ PERMIT - 允许执行' },
+                'block': { class: 'decision-block', text: '🚫 BLOCK - 阻止执行' },
+                'restrict_scope': { class: 'decision-restrict', text: '⚠️ RESTRICT - 限制范围' },
+                'retrieve_again': { class: 'decision-retrieve', text: '🔄 RETRIEVE - 需要重新检索' },
+                'request_human_review': { class: 'decision-review', text: '👤 REVIEW - 需要人工审核' },
+            };
+            const decision = decisionMap[data.decision] || { class: '', text: data.decision };
+            document.getElementById('decisionBadge').className = 'decision-badge ' + decision.class;
+            document.getElementById('decisionBadge').textContent = decision.text;
+            document.getElementById('contractId').textContent = data.contract_id;
+            document.getElementById('contractQuery').textContent = data.query || document.getElementById('query').value;
+
+            // HF Score
+            const hf = (data.high_fidelity_score * 100).toFixed(1);
+            document.getElementById('hfScore').textContent = hf + '%';
+            document.getElementById('hfScore').style.color = hf >= 80 ? '#28a745' : hf >= 50 ? '#ffc107' : '#dc3545';
+
+            // Eligibility checks
+            const elig = data.eligibility || {};
+            const checks = [
+                { name: '覆盖度', passed: elig.coverage_passed },
+                { name: '权威性', passed: elig.authority_passed },
+                { name: '适用性', passed: elig.applicability_passed },
+                { name: '时效性', passed: elig.freshness_passed },
+                { name: '冲突检查', passed: elig.conflict_check_passed },
+            ];
+            document.getElementById('eligibilityChecks').innerHTML = checks.map(c => `
+                <li class="check-item">
+                    <div class="check-icon ${c.passed ? 'check-pass' : 'check-fail'}">
+                        ${c.passed ? '✓' : '✗'}
+                    </div>
+                    <span>${c.name}</span>
+                </li>
+            `).join('');
+
+            // Score breakdown
+            const scores = elig.scores || {};
+            const scoreItems = [
+                { name: '覆盖度', value: scores.coverage || 0 },
+                { name: '权威性', value: scores.authority || 0 },
+                { name: '适用性', value: scores.applicability || 0 },
+                { name: '时效性', value: scores.freshness || 0 },
+                { name: '来源独立性', value: scores.source_independence || 0 },
+            ];
+            document.getElementById('scoreBreakdown').innerHTML = scoreItems.map(s => {
+                const pct = (s.value * 100).toFixed(0);
+                const cls = pct >= 70 ? 'score-high' : pct >= 40 ? 'score-medium' : 'score-low';
+                return `
+                    <div class="score-item">
+                        <div class="score-label">
+                            <span>${s.name}</span>
+                            <span>${pct}%</span>
+                        </div>
+                        <div class="score-bar">
+                            <div class="score-fill ${cls}" style="width:${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Permitted actions
+            const actions = data.permitted_actions || [];
+            document.getElementById('permittedActions').innerHTML = actions.length ?
+                actions.map(a => `<div style="padding:4px 0;">• ${a}</div>`).join('') :
+                '<div style="color:#888;">无允许操作</div>';
+
+            // Required citations
+            const citations = data.required_citations || [];
+            document.getElementById('requiredCitations').innerHTML = citations.length ?
+                citations.map(c => `<div style="padding:4px 0;font-family:monospace;font-size:0.85em;">• ${c}</div>`).join('') :
+                '<div style="color:#888;">无必需引用</div>';
+
+            // Evidence tab
+            const evidenceCount = data.evidence_count || 0;
+            const evidenceItems = data.evidence_items || [];
+            let evidenceHtml = `
+                <div style="margin-bottom:12px;">检索到 <strong>${evidenceCount}</strong> 条证据</div>
+                <div style="color:#888;font-size:0.85em;margin-bottom:16px;">
+                    覆盖度: ${((data.coverage_score || 0) * 100).toFixed(1)}% |
+                    权威性: ${((data.authority_score || 0) * 100).toFixed(1)}%
+                </div>
+            `;
+            if (evidenceItems.length > 0) {
+                evidenceHtml += `
+                    <table class="evidence-table">
+                        <thead>
+                            <tr>
+                                <th>证据 ID</th>
+                                <th>相似度</th>
+                                <th>角色</th>
+                                <th>权威性</th>
+                                <th>内容</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${evidenceItems.map(item => `
+                                <tr>
+                                    <td style="font-family:monospace;font-size:0.85em;">${item.evidence_id}</td>
+                                    <td>
+                                        <div class="score-bar" style="width:60px;display:inline-block;vertical-align:middle;">
+                                            <div class="score-fill ${(item.similarity_score * 100) >= 70 ? 'score-high' : (item.similarity_score * 100) >= 40 ? 'score-medium' : 'score-low'}" style="width:${(item.similarity_score * 100).toFixed(0)}%"></div>
+                                        </div>
+                                        <span style="margin-left:8px;">${(item.similarity_score * 100).toFixed(1)}%</span>
+                                    </td>
+                                    <td><span class="tag">${item.evidence_role}</span></td>
+                                    <td>${item.authority_level}</td>
+                                    <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.content}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+            document.getElementById('tabEvidence').innerHTML = evidenceHtml;
+
+            // Rules tab
+            const ruleHits = data.rule_hits || [];
+            let rulesHtml = '';
+            if (ruleHits.length > 0) {
+                rulesHtml = `
+                    <div style="margin-bottom:12px;">命中 <strong>${ruleHits.length}</strong> 条规则</div>
+                    <table class="evidence-table">
+                        <thead>
+                            <tr>
+                                <th>规则 ID</th>
+                                <th>名称</th>
+                                <th>级别</th>
+                                <th>动作</th>
+                                <th>消息</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${ruleHits.map(rule => `
+                                <tr>
+                                    <td style="font-family:monospace;font-size:0.85em;">${rule.rule_id}</td>
+                                    <td>${rule.name}</td>
+                                    <td><span class="tag">${rule.level}</span></td>
+                                    <td>${rule.action}</td>
+                                    <td>${rule.message || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                rulesHtml = '<div style="color:#888;">未命中任何规则</div>';
+            }
+            document.getElementById('tabRules').innerHTML = rulesHtml;
+
+            // Remediation tab
+            const remediation = data.remediation_items || [];
+            document.getElementById('tabRemediation').innerHTML = remediation.length ?
+                remediation.map(r => `<div style="padding:8px 0;border-bottom:1px solid #222;">💊 ${r}</div>`).join('') :
+                '<div style="color:#28a745;">✅ 无需补救措施</div>';
+
+            // Audit tab
+            const audit = data.audit_trail || [];
+            document.getElementById('tabAudit').innerHTML = audit.map(a => `
+                <div style="padding:12px 0;border-bottom:1px solid #222;">
+                    <div style="font-weight:600;">${a.step}</div>
+                    <div style="color:#888;font-size:0.85em;">${a.timestamp}</div>
+                    <pre style="margin-top:8px;font-size:0.8em;color:#aaa;">${JSON.stringify(a.result, null, 2)}</pre>
+                </div>
+            `).join('');
+
+            // JSON tab
+            document.getElementById('tabJson').innerHTML = `
+                <div class="json-viewer">${JSON.stringify(data, null, 2)}</div>
+            `;
+        }
+
+        // Tab switching
+        function switchTab(btn, panelId) {
+            btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            btn.closest('.result-card').querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(panelId).classList.add('active');
+        }
+
+        // Init
+        window.onload = () => {
+            checkStatus();
+            loadDatasets();
+        };
+    </script>
+</body>
+</html>

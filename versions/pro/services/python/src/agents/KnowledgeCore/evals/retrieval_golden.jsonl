@@ -1,0 +1,18 @@
+{"query": "什么是ReAct范式", "expected_chunk_ids": [1295, 1296], "category_id": 32}
+{"query": "ReAct的思考-行动-观察循环是如何工作的", "expected_chunk_ids": [1296], "category_id": 32}
+{"query": "ReAct适用于哪些任务场景", "expected_chunk_ids": [1296], "category_id": 32}
+{"query": "如何为智能体定义一个搜索工具", "expected_chunk_ids": [1297, 1298], "category_id": 33}
+{"query": "定义一个工具需要包含哪些核心要素", "expected_chunk_ids": [1297], "category_id": 33}
+{"query": "ToolExecutor工具执行器如何注册和管理工具", "expected_chunk_ids": [1299, 1300], "category_id": 33}
+{"query": "ReAct智能体的提示词模板怎么设计", "expected_chunk_ids": [1301], "category_id": 33}
+{"query": "如何解析ReAct智能体输出中的Thought和Action", "expected_chunk_ids": [1303], "category_id": 33}
+{"query": "ReAct范式有哪些局限性", "expected_chunk_ids": [1306], "category_id": 33}
+{"query": "ReAct智能体行为不符合预期时如何调试", "expected_chunk_ids": [1306], "category_id": 33}
+{"query": "Plan-and-Solve范式的工作原理是什么", "expected_chunk_ids": [1307, 1308], "category_id": 34}
+{"query": "Plan-and-Solve规划阶段的提示词如何设计", "expected_chunk_ids": [1309], "category_id": 34}
+{"query": "Plan-and-Solve的执行器如何管理中间状态", "expected_chunk_ids": [1311, 1312], "category_id": 34}
+{"query": "Reflection范式如何让智能体自我反思和改进", "expected_chunk_ids": [1315, 1318], "category_id": 35}
+{"query": "Reflection智能体的记忆模块如何设计", "expected_chunk_ids": [1316, 1317], "category_id": 35}
+{"query": "Reflection机制的成本和收益如何权衡", "expected_chunk_ids": [1322], "category_id": 35}
+{"query": "如何封装一个兼容OpenAI接口的LLM客户端", "expected_chunk_ids": [1294], "category_id": 47}
+{"query": "智能体项目如何用环境变量配置API密钥", "expected_chunk_ids": [1293], "category_id": 47}

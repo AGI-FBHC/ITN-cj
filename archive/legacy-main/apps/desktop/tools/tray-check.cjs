@@ -1,0 +1,14 @@
+const { _electron }=require('D:/Desktop/ITN/ITN/src/frontend/agent-demo/node_modules/playwright');
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+(async()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lumin-tray-'));let app;let passed=0;const check=(n,b)=>{if(!b)throw Error(n);passed++;console.log('PASS '+n);};
+try{app=await _electron.launch({executablePath:path.resolve('shell/node_modules/electron/dist/electron.exe'),args:[path.resolve('shell/main.js'),'--ui-check'],env:{...process.env,APPDATA:dir,LOCALAPPDATA:dir,TEMP:dir,TMP:dir,LUMIN_TRAY_TEST:'1'},timeout:30000});
+ const page=await app.firstWindow();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.waitForSelector('#view',{timeout:60000});
+ check('tray icon is created on startup',await app.evaluate(()=>!!global.__luminTray));
+ const hidden=await app.evaluate(async({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.close();await new Promise(r=>setTimeout(r,300));return {count:BrowserWindow.getAllWindows().length,visible:w.isVisible(),destroyed:w.isDestroyed()};});
+ check('closing the window hides it instead of quitting',hidden.count===1&&!hidden.visible&&!hidden.destroyed);
+ const shown=await app.evaluate(async({BrowserWindow})=>{global.__luminShowWindow();await new Promise(r=>setTimeout(r,300));const w=BrowserWindow.getAllWindows()[0];const v=w.isVisible();w.hide();return v;});
+ check('tray restores the hidden window',shown===true);
+ check('no JavaScript errors during tray flow',errors.length===0);
+ console.log('RESULT '+passed+' passed; '+dir);
+}finally{if(app)await app.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

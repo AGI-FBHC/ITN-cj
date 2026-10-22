@@ -1,0 +1,211 @@
+=== 01 storage.types ===
+EXEC
+EXEC rows=1
+I:-9007199254740993R:3.5T:hélloN
+T:0001FEFF
+T:integerT:realT:textT:blobT:null
+=== 02 ddl.constraints ===
+EXEC
+I:0T:idT:INTEGERI:0NI:1I:1T:nameT:TEXTI:1NI:0I:2T:scoreT:REALI:0T:1.5I:0I:3T:ageT:INTI:0NI:0
+=== 03 ddl.index ===
+EXEC
+EXEC
+T:indexT:idx_people_ageT:peopleT:indexT:idx_people_scoreT:peopleT:indexT:sqlite_autoindex_people_1T:people
+=== 04 ddl.alter ===
+EXEC
+EXEC rows=1
+EXEC
+EXEC
+EXEC
+I:1T:keptN
+=== 05 ddl.ctas ===
+EXEC
+EXEC rows=3
+EXEC
+I:2I:40I:3I:60
+=== 06 ddl.drop ===
+EXEC
+EXEC
+EXEC
+EXEC
+EMPTY
+=== 07 dml.insert_defaults ===
+EXEC
+EXEC rows=1
+EXEC rows=1
+I:1I:7T:dI:2I:10T:d
+=== 08 dml.ignore_replace ===
+EXEC
+EXEC rows=1
+EXEC rows=1
+EXEC rows=1
+I:1T:newI:2T:second
+=== 09 dml.upsert ===
+EXEC
+EXEC rows=1
+EXEC rows=1
+EXEC rows=1
+I:1T:a-incomingI:99I:2T:freshI:20
+=== 10 dml.update_delete ===
+EXEC
+EXEC rows=4
+EXEC rows=2
+EXEC rows=2
+I:1T:a!I:10I:2T:b!I:20
+=== 11 dml.returning_insert ===
+EXEC
+I:1T:aI:5I:2T:bI:5I:3T:cI:5
+=== 12 dml.returning_update ===
+I:1T:a!I:10I:2T:b!I:10
+=== 13 dml.returning_delete ===
+I:3T:cI:5
+I:1T:a!I:10I:2T:b!I:10
+=== 14 select.expressions ===
+I:7I:2R:2.5I:1I:-3T:abcdI:16I:64I:1I:7I:-1
+=== 15 select.where_logic ===
+T:yesI:1I:1I:1I:1I:1I:1
+=== 16 select.like_glob ===
+I:1I:0I:1I:1I:1I:1
+=== 17 select.order_limit_distinct ===
+EXEC
+EXEC rows=4
+T:bI:20T:bI:20T:aI:30T:aI:10
+T:aI:10T:aI:30T:bI:20
+I:1I:20I:3I:20
+=== 18 select.group_having ===
+T:aI:2I:40R:20T:bI:2I:40R:20
+=== 19 select.string_functions ===
+I:5T:ABCT:abcT:ellI:3T:heLLoT:hiT:hixT:hiT:abT:a-b
+=== 20 select.math_functions ===
+I:5R:2.5699999999999998R:2R:1024R:1R:0R:2R:3R:3R:1R:2R:-1R:3.1415926535897931R:0R:1R:180
+=== 21 select.aggregates ===
+I:4I:4I:80R:80R:20I:10I:30T:20:10:20:30
+=== 22 select.datetime ===
+T:2026-08-01T:2000-03-01T:12:34:56T:2026-08-16 12:34:56R:2451544.5I:86400T:2026-08-14
+=== 23 join.inner_left_cross ===
+EXEC
+EXEC
+EXEC rows=3
+EXEC rows=3
+I:2T:a2T:b2I:3T:a3T:b3
+I:1T:a1NI:2T:a2T:b2I:3T:a3T:b3
+I:9
+=== 24 join.using_natural ===
+I:2T:a2T:b2I:3T:a3T:b3
+I:2T:a2T:b2I:3T:a3T:b3
+=== 25 join.full_right ===
+I:1T:a1NI:2T:a2T:b2I:3T:a3T:b3I:4NT:b4
+I:2T:a2T:b2I:3T:a3T:b3I:4NT:b4
+=== 26 setop ===
+I:1I:2I:3
+I:1I:2I:2
+I:1
+I:1
+I:1I:2
+=== 27 subquery ===
+I:3I:4
+T:a2T:a3
+T:a2T:a3
+T:a1NT:a2T:b2T:a3T:b3
+=== 28 cte.non_recursive ===
+I:2T:a2I:3T:a3
+I:2
+=== 29 cte.recursive ===
+I:1I:2I:3I:4I:5I:6
+I:1I:2I:3I:0
+=== 30 window.ranking ===
+EXEC
+EXEC rows=6
+I:1I:1I:1I:1R:0R:0.66666666666666663I:1I:2I:2I:1I:1R:0R:0.66666666666666663I:1I:3I:3I:3I:2R:1R:1I:2I:4I:1I:1I:1R:0R:0.33333333333333331I:2I:5I:2I:2I:2R:0.5R:1I:3I:6I:3I:2I:2R:0.5R:1I:4
+=== 31 window.value ===
+I:1NI:10I:10I:20NI:2I:10I:20I:10I:20I:10I:3I:10NI:10I:20I:10I:4NI:15I:5I:15NI:5I:5I:15I:5I:15I:15I:6I:15NI:5I:15I:15
+=== 32 window.aggregate ===
+I:1I:20R:10I:5I:3NI:2I:40R:10I:5I:3I:10I:3I:30R:13.333333333333334I:3I:3I:10I:4I:20R:11.25I:3I:1I:15I:5I:35R:12I:5I:4I:15I:6I:30R:12.5I:5I:4I:30
+=== 33 txn.commit ===
+EXEC
+EXEC
+EXEC rows=1
+EXEC rows=1
+EXEC
+I:1T:oneI:2T:two
+=== 34 txn.rollback ===
+EXEC
+EXEC rows=1
+EXEC
+I:1T:oneI:2T:two
+=== 35 txn.savepoint ===
+EXEC
+EXEC rows=1
+EXEC
+EXEC rows=1
+EXEC
+EXEC
+EXEC
+I:1T:oneI:2T:twoI:3T:sp-outer
+=== 36 fk.cascade ===
+EXEC
+EXEC
+EXEC
+EXEC rows=2
+EXEC rows=3
+EXEC rows=1
+EXEC rows=1
+I:12I:20T:c
+I:20T:two
+=== 37 fk.setnull_default ===
+EXEC
+EXEC
+EXEC rows=1
+EXEC rows=1
+EXEC rows=1
+I:1N
+=== 38 trigger.before_after ===
+EXEC
+EXEC
+EXEC
+EXEC
+EXEC rows=1
+T:beforeI:0T:afterI:1
+=== 39 trigger.update_when ===
+EXEC
+EXEC
+EXEC rows=1
+EXEC
+EXEC rows=1
+EXEC rows=1
+T:updateI:10I:11T:hit
+=== 40 view.read ===
+EXEC
+EXEC rows=1
+T:aI:30T:bI:20T:bI:20T:cI:40
+=== 41 view.instead_of ===
+EXEC
+EXEC
+EXEC
+I:1T:a!I:2T:b!I:3T:via-view
+=== 42 pragma.introspection ===
+T:ok
+I:0
+I:0T:idT:INTEGERI:0NI:1I:1T:nameT:TEXTI:1NI:0I:2T:scoreT:REALI:0T:1.5I:0I:3T:ageT:INTI:0NI:0
+I:0I:0T:parentT:pidT:idT:CASCADET:CASCADET:NONE
+=== 43 blob.roundtrip ===
+EXEC
+EXEC rows=3
+I:1I:3T:000000T:blobI:2I:0T:T:blobI:3I:2T:00FFT:blob
+=== 44 wal.mode ===
+T:wal
+EXEC
+EXEC rows=2
+I:1T:wal-oneI:2T:wal-two
+T:ok
+T:delete
+T:delete
+=== 45 vacuum ===
+EXEC
+EXEC
+EXEC
+EXEC rows=350
+EXEC
+T:ok
+I:50
+I:1I:2I:3

@@ -1,0 +1,202 @@
+const path=require('node:path');
+const fs=require('node:fs');
+const os=require('node:os');
+const {execFileSync}=require('node:child_process');
+const {chromium}=require(process.env.ITN_PLAYWRIGHT_DIR ? path.join(process.env.ITN_PLAYWRIGHT_DIR,'playwright') : 'D:/Desktop/ITN/ITN/src/frontend/agent-demo/node_modules/playwright');
+
+module.exports=async function({base,post,check,dir}) {
+  const browser=await chromium.launch({channel:'msedge',headless:true,args:['--no-proxy-server']});
+  const page=await browser.newPage({viewport:{width:1440,height:960}});
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const shots=path.resolve(__dirname,'../tmp/workbench-shots');fs.mkdirSync(shots,{recursive:true});
+  const nav=async name=>{
+    if(name==='memory') { await page.locator('#rail [data-page="settings"]').click(); await page.locator('#panel-body [data-section="memory"]').click(); }
+    else await page.locator('#rail [data-page="'+name+'"]').click();
+    await page.waitForFunction(()=>document.querySelector('#view')?.getAttribute('aria-busy')==='false');
+  };
+  const send=async text=>{
+    const count=await page.evaluate(()=>state.chatTurns.length);
+    await page.locator('#chat-input').fill(text);await page.locator('.composer-send[aria-label="发送"]').click();
+    await page.waitForFunction(n=>state.chatTurns.length>n&&state.chatTurns[state.chatTurns.length-1].ok!==null&&!state.busyTurn,count,{timeout:30000});
+  };
+  try {
+    // 真正的版面预览由 render_ppt.py 生成；浏览器测试通过一个最小 IPC 桥读取它，
+    // 从而同时覆盖“磁盘预览文件 -> 侧栏 iframe -> 学习播放器”这条链路。
+    const previewDeck=path.join(dir,'ui-resource-preview.pptx');
+    const python=path.resolve(__dirname,'../shell/renderer/ppt-renderer/python/python.exe');
+    const renderer=path.resolve(__dirname,'../shell/renderer/ppt-renderer/render_ppt.py');
+    execFileSync(python,[renderer,path.resolve(__dirname,'fixtures/ppt-preview-sample.json'),previewDeck],{encoding:'utf8',windowsHide:true,timeout:90000,env:{...process.env,PYTHONIOENCODING:'utf-8'}});
+    const pptPreviewHtml=fs.readFileSync(previewDeck+'.preview.html','utf8');
+    await page.addInitScript(({html})=>{
+      window.itnWindow=Object.assign(window.itnWindow||{},{
+        readResourceFile:async input=>({ok:true,path:String(input||''),name:'ui-resource-preview.pptx',kind:'pptx',html}),
+        openPath:async()=>({ok:true})
+      });
+    },{html:pptPreviewHtml});
+    await page.goto(base);
+    await page.waitForSelector('#chat-input');
+    await page.waitForSelector('.wb-toolbar');
+    check('default page is Agent workbench',await page.evaluate(()=>current==='chat'));
+    check('four daily destinations plus settings',await page.locator('#rail .nav-item').count()===5);
+    check('workbench toolbar available',await page.locator('.wb-toolbar').count()===1);
+    await page.screenshot({path:path.join(shots,'01-workbench-empty.png')});
+    await send('请生成一份 ppt 在线演示 count:4');
+    await page.waitForSelector('#resource-dock:not([hidden])');
+    check('Agent generation opens artifact dock',await page.locator('#resource-dock .resource-title').count()===1);
+    await page.waitForSelector('.chat-thread [data-resource]');
+    check('conversation has clickable resource card',await page.locator('.chat-thread [data-resource]').count()===1,JSON.stringify(await page.evaluate(()=>({cards:[...document.querySelectorAll('.chat-thread [data-resource]')].map(n=>n.dataset.resource),turns:state.chatTurns.map(t=>({id:t.id,resources:t.resources?.map(r=>r.id)}))}))));
+    check('no horizontal overflow with split panes',await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    await page.waitForSelector('#resource-dock .resource-ppt-frame',{timeout:30000});
+    check('PPT resource dock renders slide pixels instead of Markdown',await page.locator('#resource-dock .resource-content .md').count()===0);
+    check('PPT resource dock exposes page navigation',await page.locator('#resource-dock .resource-ppt-pos').innerText().then(t=>/^1 \/ \d+$/.test(t)));
+    await page.screenshot({path:path.join(shots,'02-workbench-artifact.png')});
+    await page.getByRole('button',{name:'播放',exact:true}).click();
+    await page.waitForSelector('.sp-study-layout');
+    await page.waitForSelector('.sp-ppt-image',{timeout:30000});
+    check('play action opens the guided PPT study page',await page.evaluate(()=>current==='study')&&await page.locator('.sp-ppt-image').count()===1);
+    check('guided PPT page uses the same rendered slide preview',await page.locator('.sp-stage-pos').innerText().then(t=>/^1 \/ \d+$/.test(t)));
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(()=>document.querySelector('.sp-stage-pos')?.textContent.trim().startsWith('2 /'));
+    await page.screenshot({path:path.join(shots,'03-presentation.png')});
+    await page.evaluate(()=>go('chat'));
+    await page.waitForSelector('#resource-dock');
+    await page.locator('#resource-dock').getByRole('button',{name:'关闭',exact:true}).click();
+    await nav('resources');
+    const rows=(await post('/api/learning/resources',{})).resources;
+    const quiz=rows.find(r=>r.kind==='quiz');
+    await page.locator('#view [data-resource="'+quiz.id+'"]').click();
+    await page.waitForSelector('.resource-question');
+    check('outcome opens in its own workspace',await page.evaluate(()=>current==='resources')&&await page.locator('#outcome-reader #resource-dock').count()===1);
+    check('structured quiz has four questions',await page.locator('.resource-question').count()===4);
+    const q=page.locator('.resource-question').nth(1);
+    await q.locator('input[value="0"]').check();
+    await q.getByRole('button',{name:'提交答案',exact:true}).click();
+    await q.getByRole('button',{name:'已记录',exact:true}).waitFor();
+    check('quiz displays server explanation',await q.locator('.quiz-feedback').textContent().then(t=>t.includes('正确答案')||t.includes('回答正确')));
+    await page.screenshot({path:path.join(shots,'04-quiz.png')});
+    await page.reload();await page.waitForSelector('.outcome-toolbar');
+    await page.evaluate(id=>openLearningResource(id,1),quiz.id);
+    await page.waitForSelector('.resource-question');
+    check('quiz answer survives page reload',await page.locator('.resource-question').nth(1).getByRole('button',{name:'已记录',exact:true}).isDisabled());
+    await page.locator('#resource-dock').getByRole('button',{name:'关闭',exact:true}).click();
+    await nav('memory');
+    await page.locator('#memory-text').fill('学习时先给一个可以运行的小例子');
+    await page.getByRole('button',{name:'保存记忆',exact:true}).click();
+    await page.waitForSelector('.memory-entry');
+    check('manual memory stored through backend',await page.locator('.memory-entry').count()===1);
+    await page.locator('.memory-entry').getByRole('button',{name:'编辑',exact:true}).click();
+    await page.locator('#memory-text').fill('偏好简洁解释和具体例子');
+    await page.getByRole('button',{name:'保存记忆',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('.memory-entry')?.textContent.includes('偏好简洁解释'));
+    check('memory edit preserves identity', (await post('/api/learning/memories',{})).memories.length===1);
+    await page.screenshot({path:path.join(shots,'05-memory.png')});
+    await page.locator('.memory-entry').getByRole('button',{name:'忘记',exact:true}).click();
+    await page.waitForFunction(()=>!document.querySelector('.memory-entry'));
+    check('memory forget updates backend',(await post('/api/learning/memories',{})).memories.length===0);
+    const policySaved = page.waitForResponse(r=>r.url().endsWith('/api/learning/memory/policy')&&r.request().method()==='POST');
+    await page.locator('#memory-auto').uncheck();
+    await policySaved;
+    check('automatic memory policy persists',(await post('/api/learning/memory/policy',{})).autoRemember===false);
+    const lecture=(await post('/api/learning/resources',{})).resources.find(r=>r.kind==='lecture');
+    await page.evaluate(id=>openLearningResource(id),lecture.id);
+    await page.getByRole('button',{name:'查看修改差异',exact:true}).click();
+    await page.waitForSelector('.resource-diff-lines');
+    check('resource version comparison is available',await page.locator('.resource-diff').isVisible());
+    await page.locator('[aria-label="资源版本"]').selectOption('1');
+    await page.waitForFunction(()=>workbench.selected.version===1);
+    check('historical resource version can be opened',await page.locator('[aria-label="资源版本"]').inputValue()==='1');
+    await page.screenshot({path:path.join(shots,'05b-resource-versions.png')});
+    await page.locator('#resource-dock').getByRole('button',{name:'关闭',exact:true}).click();
+    await nav('home');
+    await page.waitForSelector('.center-links');
+    check('learning workspace exposes overview, study, and growth',await page.locator('.center-links [data-page]').count()===3);
+    await page.locator('.center-links [data-page="report"]').click();
+    check('growth report remains usable',await page.evaluate(()=>current==='report'));
+    await page.screenshot({path:path.join(shots,'06-learning-center.png')});
+    await nav('resources');
+    check('outcome workspace keeps all five categories',await page.locator('.workspace-tabs [data-page]').count()===5);
+    check('outcomes have one create control',await page.locator('.outcome-create > summary').count()===1);
+    await page.getByLabel('筛选成果类型').selectOption('quiz');
+    check('outcome type filter retains only quizzes',await page.locator('.outcome-grid .resource-entry').count()>0&&await page.locator('.outcome-grid .resource-entry-type').evaluateAll(nodes=>nodes.every(n=>n.textContent.includes('测试'))));
+    await page.getByLabel('筛选成果类型').selectOption('');
+    await page.screenshot({path:path.join(shots,'08-simple-outcomes.png')});
+    await post('/api/study/notes/save',{kbId:'kb',chapter:'输入与输出',title:'阅读第一条笔记',text:'先检查数据，再写结论。'});
+    await post('/api/study/notes/save',{kbId:'kb',chapter:'输入与输出',title:'阅读第二条笔记',text:'保留输入样例与中间状态。'});
+    await page.locator('.workspace-tabs [data-page="notes"]').click();await page.waitForSelector('.object-browser');
+    check('notes use a list and a readable detail pane',await page.locator('.object-list .object-row').count()===2&&await page.locator('.object-reader .note-body').isVisible());
+    await page.locator('.object-list .object-row').last().click();
+    await page.locator('.object-reader').getByRole('button',{name:'编辑',exact:true}).click();await page.locator('#nt-text').fill('编辑后的笔记正文仍保存在数据库。');
+    await page.locator('.dialog').getByRole('button',{name:'保存',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('.object-reader .note-body')?.textContent.includes('编辑后的笔记'));
+    check('inline note selection preserves editing and persistence',(await post('/api/study/notes/list',{})).notes.some(n=>n.text.includes('编辑后的笔记')));
+    for(const key of ['notes','wrong','network']) {
+      await page.locator('.workspace-tabs [data-page="'+key+'"]').click();
+      await page.waitForFunction(k=>current==='notes'&&state.resTab===k,key);
+      check(key+' remains reachable in outcome categories',await page.locator('#rail [data-page="resources"]').getAttribute('aria-current')==='page');
+    }
+    await page.locator('.workspace-tabs [data-page="files"]').click();
+    await page.waitForFunction(()=>current==='resources'&&currentSection==='files');
+    await page.getByRole('button',{name:'打开文档…',exact:true}).waitFor();
+    check('local Office opening controls remain available',await page.getByRole('button',{name:'打开文档…',exact:true}).isVisible()&&await page.getByRole('button',{name:'打开演示文稿…',exact:true}).isVisible());
+    await nav('settings');
+    check('settings keeps five groups while knowledge management moves into its page',await page.locator('.settings-group').count()===5&&await page.locator('.settings-group [data-section]').count()===8);
+    await page.getByLabel('搜索设置').fill('模型');
+    check('settings search narrows categories',await page.locator('.settings-group [data-section]').count()===1);
+    await page.getByLabel('搜索设置').fill('');
+    await page.locator('#panel-body [data-section="memory"]').click();
+    await page.waitForSelector('.memory-workspace');
+    check('memory is reachable inside settings',await page.locator('#memory-text').isVisible()&&await page.locator('#rail [data-page="settings"]').getAttribute('aria-current')==='page');
+    let delayedSettings = false;
+    await page.route('**/api/settings',async route=>{if(!delayedSettings){delayedSettings=true;await new Promise(r=>setTimeout(r,300));}await route.continue();});
+    const settingsRequest = page.waitForRequest(r=>r.url().endsWith('/api/settings'));
+    await page.evaluate(()=>{go('settings');});await settingsRequest;
+    await page.evaluate(()=>go('memory'));await page.waitForTimeout(400);
+    check('late settings response cannot overwrite memory page',await page.locator('#memory-text').isVisible()&&await page.locator('.settings-body').count()===0);
+    await page.unroute('**/api/settings');
+    // The old inline lecture generator was replaced by the approved map/node workflow.
+    // Full generation, confirmation, archive and rebuild UI paths live in course-check.cjs.
+    await page.evaluate(()=>go('learn'));await page.waitForSelector('.course-workspace');
+    check('study is a knowledge-base map workspace with an explicit selector',await page.locator('#course-kb').count()===1&&await page.locator('#course-generate').count()===1);
+    check('old chunk reader and inline generation controls are gone',await page.locator('.chunk-card,.study-mode-tabs,.section-generation').count()===0);
+    const mapState=await post('/api/course/state',{kbId:'kb'});
+    check('existing learning resources do not fabricate a map or auto-bind nodes',mapState.map===null&&mapState.resources.length===0);
+    check('map area stays bounded without page scrollbars',await page.locator('#view').evaluate(e=>e.scrollHeight<=e.clientHeight+1&&e.scrollWidth<=e.clientWidth+1));
+    const learningLayout=[];
+    for(const key of ['home','learn','report']) {
+      await page.evaluate(k=>go(k),key);
+      await page.waitForFunction(k=>current===k&&document.querySelector('#view')?.getAttribute('aria-busy')==='false',key);
+      learningLayout.push(await page.evaluate(()=>({wide:document.body.classList.contains('workspace-wide'),panel:getComputedStyle(document.querySelector('#panel')).display,toggle:getComputedStyle(document.querySelector('#rail-toggle')).visibility,left:Math.round(document.querySelector('.workspace-tabs').getBoundingClientRect().left),top:Math.round(document.querySelector('.workspace-tabs').getBoundingClientRect().top),inHeader:!!document.querySelector('.topbar > .workspace-tabs')})));
+    }
+    check('learning tabs share one wide layout without panel flip-flop',learningLayout.every(x=>x.wide&&x.panel==='none'&&x.toggle==='hidden'));
+    check('title and tabs occupy a stable shared header',learningLayout.every(x=>x.inHeader)&&Math.max(...learningLayout.map(x=>x.left))-Math.min(...learningLayout.map(x=>x.left))<=2&&Math.max(...learningLayout.map(x=>x.top))-Math.min(...learningLayout.map(x=>x.top))<=2);
+    await page.evaluate(()=>go('report'));await page.waitForSelector('.course-growth-activity');
+    const evidence=await post('/api/course/report',{kbId:'kb'});
+    check('new growth page preserves existing real answer evidence in the activity summary',evidence.quizAttempts>0&&evidence.activity.total>=evidence.quizAttempts&&(await page.locator('.course-growth-activity-stats').innerText()).includes(String(evidence.activity.total)));
+    const unlinked=(await post('/api/course/unlinked',{})).resources;
+    check('previously confirmed files remain available for explicit linking',unlinked.length>=1&&unlinked.some(r=>r.learningId));
+    await page.evaluate(({id})=>openLearningResource(id,1),lecture);
+    await page.locator('.resource-provenance > summary').click();
+    await page.locator('.resource-source > summary').first().click();
+    check('resource preview still exposes original citation snapshots',(await page.locator('.resource-source .md').first().innerText()).length>20);
+    await page.evaluate(()=>go('learn'));await page.waitForSelector('.course-stage');
+    const headerBefore=await page.locator('.workspace-tabs').boundingBox();await page.locator('#view').evaluate(e=>e.scrollTop=e.scrollHeight);const headerAfter=await page.locator('.workspace-tabs').boundingBox();
+    check('workspace header stays fixed above the full map',Math.abs(headerBefore.y-headerAfter.y)<=1);
+    await page.setViewportSize({width:760,height:768});
+    check('narrow map toolbar and header wrap without horizontal overflow',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1)&&await page.locator('.topbar').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+    await page.setViewportSize({width:1440,height:960});await page.screenshot({path:path.join(shots,'10-course-map.png')});
+    await page.setViewportSize({width:1024,height:768});await nav('resources');
+    check('compact outcomes do not overflow',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+    await page.screenshot({path:path.join(shots,'09-simple-compact.png')});
+    await page.setViewportSize({width:1440,height:960});
+    await nav('chat');if(await page.locator('#resource-dock').isHidden())await page.evaluate(id=>openLearningResource(id),lecture.id);
+    await page.setViewportSize({width:1024,height:768});
+    await page.screenshot({path:path.join(shots,'07-compact.png')});
+    check('compact preview has reachable close control',await page.locator('#resource-dock').getByRole('button',{name:'关闭',exact:true}).isVisible());
+    check('no JavaScript exceptions',errors.length===0,errors.join('; '));
+    console.log('SCREENSHOTS '+shots);
+  } catch(e) {
+    console.error('BROWSER_ERRORS '+errors.join('; '));
+    await page.screenshot({path:path.join(shots,'failure.png')}).catch(()=>{});
+    throw e;
+  } finally {await browser.close();}
+};

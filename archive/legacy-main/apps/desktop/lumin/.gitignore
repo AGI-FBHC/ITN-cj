@@ -1,0 +1,18 @@
+# 编译产物 / 打包产物
+target/
+dist/
+
+# 密钥（绝不能进仓）
+.env
+.env.local
+
+# 运行时产生的沙箱与配置
+chat-workspace/
+config/
+
+# 编辑器 / 系统杂物
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITN 知识库控制台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>ITN 知识库控制台</h1>
+    <span class="sub">按知识点查切片 · 覆盖报告 · 分类审计 · 写回自愈</span>
+  </div>
+  <div class="api-base">
+    <label for="apiBase">API 地址</label>
+    <input id="apiBase" placeholder="留空 = 同源 /api/v1">
+    <a class="top-link" href="/graph.html">📈 知识图谱（审核/建边/DAG）</a>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="query">🔍 检索测试</button>
+  <button class="tab-btn" data-tab="coverage">📊 覆盖报告</button>
+  <button class="tab-btn" data-tab="tree">🌳 目录树</button>
+  <button class="tab-btn" data-tab="audit">🩺 分类审计</button>
+  <button class="tab-btn" data-tab="backfill">🔄 手动写回</button>
+</nav>
+
+<main>
+  <!-- ── 检索测试 ─────────────────────────────────────────── -->
+  <section id="tab-query" class="tab-panel active">
+    <div class="card">
+      <div class="form-grid">
+        <label>知识点名称 *
+          <input id="q-point" placeholder="如：ReAct范式 / AutoGen / ch4-paradigms" value="ReAct范式">
+        </label>
+        <label>领域
+          <input id="q-domain" value="agent">
+        </label>
+        <label>category_id（可选，直接按 ID 查）
+          <input id="q-category-id" type="number" placeholder="留空 = 按名称匹配">
+        </label>
+        <label>阈值 threshold
+          <input id="q-threshold" type="number" placeholder="留空 = 自动(3)">
+        </label>
+        <label>阈值模式
+          <select id="q-threshold-mode">
+            <option value="fixed">fixed（固定 3）</option>
+            <option value="auto">auto（按章节均值）</option>
+          </select>
+        </label>
+        <label>min_confidence（过滤低置信度分类）
+          <input id="q-min-conf" type="number" step="0.05" placeholder="留空 = 不过滤">
+        </label>
+      </div>
+      <div class="check-row">
+        <label><input type="checkbox" id="q-include-rag" checked> 启用 RAG 兜底</label>
+        <label><input type="checkbox" id="q-backfill"> RAG 结果后台写回（写生产库！）</label>
+      </div>
+      <button id="btn-query" class="primary">检索切片</button>
+    </div>
+
+    <div id="query-result" class="card hidden">
+      <div class="result-meta" id="result-meta"></div>
+      <div class="chunk-list" id="chunk-list"></div>
+    </div>
+  </section>
+
+  <!-- ── 覆盖报告 ─────────────────────────────────────────── -->
+  <section id="tab-coverage" class="tab-panel">
+    <div class="card">
+      <div class="toolbar">
+        <button id="btn-coverage" class="primary">加载覆盖报告</button>
+        <label>阈值模式
+          <select id="c-threshold-mode">
+            <option value="fixed">fixed</option>
+            <option value="auto">auto</option>
+          </select>
+        </label>
+        <span class="filter-chips" id="gap-chips">
+          <button class="chip active" data-gap="all">全部</button>
+          <button class="chip" data-gap="no_chunks">无切片</button>
+          <button class="chip" data-gap="below_threshold">不足阈值</button>
+          <button class="chip" data-gap="ok">充足</button>
+        </span>
+      </div>
+      <div id="coverage-summary" class="summary-cards"></div>
+      <div class="table-wrap">
+        <table id="coverage-table">
+          <thead><tr>
+            <th>节点</th><th>编码</th><th>层级</th><th>切片数</th><th>阈值</th><th>状态</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 目录树 ─────────────────────────────────────────── -->
+  <section id="tab-tree" class="tab-panel">
+    <div class="card">
+      <div class="toolbar">
+        <button id="btn-tree" class="primary">加载目录树</button>
+        <span class="muted" id="tree-count"></span>
+        <span class="filter-chips" id="tree-chips">
+          <button class="chip active" data-gap="all">全部</button>
+          <button class="chip" data-gap="no_chunks">无切片</button>
+          <button class="chip" data-gap="below_threshold">不足</button>
+          <button class="chip" data-gap="ok">充足</button>
+        </span>
+        <span class="muted">💡 章节/顶层节点数字 = 子树切片聚合</span>
+      </div>
+      <div class="tree-wrap" id="tree-container"></div>
+    </div>
+  </section>
+
+  <!-- ── 分类审计 ─────────────────────────────────────────── -->
+  <section id="tab-audit" class="tab-panel">
+    <div class="card">
+      <div class="toolbar">
+        <button id="btn-audit" class="primary">加载低置信度分类</button>
+        <label>confidence ≤
+          <input id="a-max-conf" type="number" step="0.05" value="0.7">
+        </label>
+        <label>来源
+          <select id="a-source">
+            <option value="">全部</option>
+            <option value="llm">llm</option>
+            <option value="manual">manual</option>
+            <option value="rag_backfill">rag_backfill</option>
+          </select>
+        </label>
+        <span id="audit-count" class="muted"></span>
+      </div>
+      <div class="table-wrap">
+        <table id="audit-table">
+          <thead><tr>
+            <th>ID</th><th>切片</th><th>所属知识点</th><th>关系</th><th>置信度</th><th>来源</th><th>操作</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted note">💡 低置信度 = 最可能 LLM 错挂。可「改挂」到正确知识点（输入名称自动解析 ID）或「删除」错挂归属。</p>
+    </div>
+  </section>
+
+  <!-- ── 手动写回 ─────────────────────────────────────────── -->
+  <section id="tab-backfill" class="tab-panel">
+    <div class="card">
+      <div class="form-grid">
+        <label>知识点名称 *
+          <input id="b-point" placeholder="切片不足的知识点">
+        </label>
+        <label>top_k
+          <input id="b-topk" type="number" value="8">
+        </label>
+        <label>相似度阈值
+          <input id="b-sim" type="number" step="0.05" value="0.2">
+        </label>
+      </div>
+      <p class="muted">流程：RAG 检索 → LLM 复判是否属于该知识点 → 写回 knowledge_chunk_category（related/rag_backfill）→ 之后普通查询直接命中 MySQL。</p>
+      <button id="btn-backfill" class="primary warn">执行写回（写生产库！）</button>
+      <div id="backfill-result" class="result-box hidden"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
