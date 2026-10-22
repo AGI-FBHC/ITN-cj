@@ -30,7 +30,9 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
     if(!created){console.error(JSON.stringify(events.filter(e=>['tool/result','assistant/message','turn/end'].includes(e.type)).slice(-6).map(e=>({type:e.type,payload:e.payload})),null,2));throw Error(label+' did not create candidate: '+JSON.stringify(response));}
     const outDir=path.join(root,'tmp/real-ppt-check');fs.mkdirSync(outDir,{recursive:true});const target=path.join(outDir,label+'.pptx'),preview=path.join(outDir,label+'.preview.html');fs.copyFileSync(created.path,target);fs.copyFileSync(created.previewPath,preview);
     const parsed=JSON.parse(execFileSync(path.join(root,'shell/renderer/ppt-renderer/python/python.exe'),['-X','utf8','-c',"import sys,zipfile,json;from pptx import Presentation;from xml.dom import minidom;p=sys.argv[1];z=zipfile.ZipFile(p);assert z.testzip() is None;[minidom.parseString(z.read(n)) for n in z.namelist() if n.endswith('.xml')];r=Presentation(p);print(json.dumps({'slides':len(r.slides),'notes':sum(1 for s in r.slides if s.has_notes_slide and s.notes_slide.notes_text_frame.text.strip()),'text':''.join(s.text for slide in r.slides for s in slide.shapes if s.has_text_frame)},ensure_ascii=False))",created.path],{encoding:'utf8',windowsHide:true}));
-    check(label+' honors the requested outline page count',created.slides===6);check(label+' produced a valid PPTX with content and notes',parsed.slides>=created.slides&&parsed.notes>=6&&parsed.text.length>200);check(label+' preview path matches the desktop reader convention',created.previewPath.endsWith('.pptx.preview.html')&&fs.existsSync(created.previewPath));
+    /* 工具契约写明"章节页可能由渲染器补充，最终页数以 renderedSlides 为准"：
+       6 页是目标页数，允许渲染器补少量章节页，但绝不能跑飞成十几页。 */
+    check(label+' honors the requested outline page count (target 6, section pages allowed, <=10)',created.slides>=6&&created.slides<=10);check(label+' produced a valid PPTX with content and notes',parsed.slides>=created.slides&&parsed.notes>=6&&parsed.text.length>200);check(label+' preview path matches the desktop reader convention',created.previewPath.endsWith('.pptx.preview.html')&&fs.existsSync(created.previewPath));
     check(label+' is a candidate rather than an approved resource',created.path.includes('drafts')&&!fs.existsSync(path.join(dir,'artifacts',path.basename(created.path))));
     console.log('RESULT '+label+' slides='+parsed.slides+' notes='+parsed.notes+' chars='+parsed.text.length+' elapsed='+Math.round((Date.now()-started)/1000)+'s');
     return {created,parsed,target,preview};
@@ -38,5 +40,5 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
   const a=await run('run1','输入与输出的约定'),b=await run('run2','RAG 的最小闭环');
   check('two real generations yielded distinct candidates',a.created.path!==b.created.path&&fs.existsSync(a.target)&&fs.existsSync(b.target));
   console.log('RESULT=OK '+passed+' checks; '+Math.round((Date.now()-started)/1000)+'s; data='+dir+' ; artifacts='+path.join(root,'tmp/real-ppt-check'));
- }finally{core.kill();}
+ }finally{core.kill();/* 隔离目录里是含密钥的数据库副本：结束清零，别把凭据留在 TEMP */try{fs.writeFileSync(path.join(dir,'itn.db'),'');}catch(e){}}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -76,6 +76,8 @@ async function main() {
     console.log(JSON.stringify(report, null, 2));
   } finally {
     core.kill();
+    // 隔离目录里是含密钥的数据库副本：结束清零，别把凭据留在 TEMP
+    try { fs.writeFileSync(path.join(dir, 'itn.db'), ''); } catch (e) { /* ignore */ }
   }
 }
 

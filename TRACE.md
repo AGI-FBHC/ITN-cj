@@ -5237,3 +5237,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 真实附件读取批准（新增 tools/real-attachment-smoke.cjs）：带 `confirmFileAccess:true` 时出现 pending read 批准；用合法决定值 `once` 批准后 read 成功（读到 note.md 93B），最终回答含校验码 LUMIN-ATTACH-7K3P，TURN_OK=true。对照验证：不传 confirmFileAccess、仅用户主动附件时读取不额外要求批准（隐式同意），符合当前设计。
 - 排障记录（均为测试参数，不是产品缺陷）：批准决定值只接受 once/session/always，先前脚本发 `approve` 被判为拒绝；waitForFunction 曾被传成 4 个参数导致 Playwright 报 `.polling`。两处都已修正并写进脚本注释/实现。
 - 新增 tools/real-tool-smoke.cjs（calc 工具回路）与 tools/real-attachment-smoke.cjs；均只从 TEMP 副本读取凭据并清零，不打印密钥。
+
+### 2026-10-22 09:55 · 真实 PPT 两次生成通过与凭据副本清理
+
+- 真实模型 PPT（DeepSeek deepseek-flash，tools/real-ppt-check.cjs）：run1 9 页 / 9 页备注 / 1446 字 / 64s；run2 9 页 / 9 页备注 / 1262 字 / 75s；两次候选路径不同，RESULT=OK 9 checks。
+- 契约核对：请求 6 页是"目标页数"，工具说明明确"章节页可能由渲染器补充，最终页数以 renderedSlides 为准"；实际两次都是 9 页（补了 3 个章节页）。原测试断言"严格等于 6"与契约不符，已改为 6~10 页区间（仍能抓住跑飞成十几页）；这是测试修正，不是产品缺陷。
+- 凭据卫生：real-ppt-check 与 real-learning-team-check 都会把用户库复制到隔离目录，已在这两个脚本的 finally 中把副本 itn.db 清零；同时把此前遗留的 6 个含密钥副本（itn-real-team-*、lumin-real-ppt-*、lumin-real-session-* 共 6 个，最大的 44.9MB）截断为 0。重跑 real-learning-team 后新目录 itn.db 为 0 字节，清理生效。
+- 真实多智能体复跑：5 节点全部完成、35 条 team 事件、958 字回答，RESULT real model PASS。
