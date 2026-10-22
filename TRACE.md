@@ -5263,3 +5263,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 抓到真实问题：会话栏默认每组只显示前 6 条，运行中的会话（seed-26）可能被挤到折叠区，DOM 里根本没有这一行 → spinner=0，用户发了任务却看不到转圈。证据：inList=true、isRunning=true、row=false、ids 里没有 seed-26。
 - 修复：PANELS.chat.render 在前 6 条之外，额外把所有 state.chatRequests 里正在跑的会话补进 shown（去重后 unshift），保证运行中的行始终可见；syncChatBusy 同时就地刷新面板（开始/结束即时生效）。
 - 修复后同一用例 row=true、spinner=1，列表首行就是运行中的 seed-26；侧栏专项 49/49。回归 session-switch 18、chat-ux 18、route-lifecycle 18/18 全部通过。
+
+### 2026-10-22 10:55 · 运行中会话可见性修复后的本地包复验
+
+- 提交 a656b18；build=lumin-0.8.31-a656b18。ZIP dist/Lumin-0.8.31.zip，231329554 bytes，SHA256=5135D7DF544BFE9707BCA8DCFB3FA883BACD5CD478EE4807390481E7E930272E。
+- 包内复验：原生启动/关闭/再次启动 9/9；包内 renderer + 包内内核 sidebar-torture-check 连续 2 次 49/49（含新增"生成中折叠/展开面板仍显示运行中会话"）。文件名仍为 0.8.31，无额外后缀；未发布线上、未推送远端。
+- 真实模型（DeepSeek）已覆盖：问答、A/B 切换、并发会话、calc 工具、附件批准、多智能体事件+界面、PPT 两次生成。MiMo 仍 429 quota exhausted。
