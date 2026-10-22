@@ -1,0 +1,410 @@
+package zhixun_learning
+
+import std.collection.*
+import std.core.*
+import std.env.*
+import std.fs.*
+import std.unittest.*
+import std.unittest.testmacro.*
+import stdx.encoding.json.*
+import stdx.encoding.base64.toBase64String
+
+func kbPrimitiveCheck(condition: Bool, message: String): Unit {
+    if (!condition) { throw Exception(message) }
+}
+
+func kbPrimitiveRejects(action: () -> Unit): Unit {
+    var rejected = false
+    try { action() } catch (_: Exception) { rejected = true }
+    kbPrimitiveCheck(rejected, "Invalid input must be rejected")
+}
+
+func kbPrimitiveRepeated(text: String, count: Int64): String {
+    let out = StringBuilder()
+    var i: Int64 = 0
+    while (i < count) { out.append(text); i += 1 }
+    out.toString()
+}
+
+func cwStructuredSlidesFixture(kinds: Array<String>): JsonObject {
+    let slides = JsonArrWriter()
+    var index: Int64 = 0
+    while (index < kinds.size) {
+        let kind = kinds[index]
+        let slide = JsonWriter()
+        slide.putStr("title", "第 " + (index + 1).toString() + " 页")
+        slide.putStr("kind", kind)
+        let points = JsonArrWriter()
+        var pointIndex: Int64 = 0
+        while (pointIndex < 3) {
+            let point = JsonWriter()
+            point.putStr("heading", "要点 " + (pointIndex + 1).toString())
+            point.putStr("detail", "这是对 " + kind + " 页面的完整说明，学习者可以据此理解概念、方法与应用边界。")
+            points.addRaw(point.toJson())
+            pointIndex += 1
+        }
+        slide.putRaw("points", points.toJson())
+        slide.putStr("speakerNotes", kbPrimitiveRepeated("请结合本章原文理解这一页的核心概念、操作方法和实际应用。", 4))
+        slides.addRaw(slide.toJson())
+        index += 1
+    }
+    let deck = JsonWriter()
+    deck.putStr("title", "结构化演示文稿")
+    deck.putRaw("slides", slides.toJson())
+    cwJsonObjectFrom(deck.toJson()).getOrThrow()
+}
+
+func kbPrimitiveAtomCovered(body: String, pieces: Array<KbPiece>, atom: String): Unit {
+    let start = body.indexOf(atom).getOrThrow()
+    let end = start + atom.size
+    var contained = false
+    for (piece in pieces) {
+        if (piece.startOffset <= start && piece.endOffset >= end) { contained = true }
+        kbPrimitiveCheck(!(start < piece.startOffset && piece.startOffset < end), "Chunk starts inside a protected Markdown atom")
+        kbPrimitiveCheck(!(start < piece.endOffset && piece.endOffset < end), "Chunk ends inside a protected Markdown atom")
+    }
+    kbPrimitiveCheck(contained, "A protected Markdown atom was not preserved whole")
+}
+
+func kbAuditHasBody(text: String): Bool {
+    for (line in kbSourceLines(text.toArray())) {
+        let value = line.text.trimAscii()
+        if (value.size == 0 || kbHeadingLevel(line.text) > 0 || kbSetextLevel(line.text) > 0) { continue }
+        if (value == "***" || value == "---" || value == "___") { continue }
+        return true
+    }
+    false
+}
+
+func kbOptionalCorpusAudit(): Unit {
+    let directory = match (getVariable("ZHIXUN_TEST_CORPUS")) { case Some(value) => value; case None => return }
+    let files = ArrayList<String>()
+    kbWalkFiles(directory.replace("\\", "/"), "", files, 0)
+    var documents: Int64 = 0
+    var chunks: Int64 = 0
+    var shortChunks: Int64 = 0
+    let issues = JsonArrWriter()
+    for (file in files) {
+        if (!kbIsSourceDocument(file)) { continue }
+        let body = String.fromUtf8(File.readFrom(Path(directory + "/" + file)))
+        let pieces = kbChunksFor(file, body, 800, 120)
+        kbValidatePieces(body, pieces)
+        documents += 1; chunks += pieces.size
+        for (piece in pieces) {
+            if (kbAuditHasBody(body) && !kbAuditHasBody(piece.text)) {
+                let issue = JsonWriter(); issue.putStr("file", file); issue.putInt("start", piece.sourceStart)
+                issue.putInt("end", piece.sourceEnd); issue.putStr("kind", "heading-only")
+                issues.addRaw(issue.toJson())
+            }
+            if (piece.charCount() < 120 && pieces.size > 1) { shortChunks += 1 }
+        }
+        let original = body.toArray()
+        for (block in kbBlocks(file, original)) {
+            if (!block.indivisible || block.isHeading) { continue }
+            var contained = false
+            for (piece in pieces) {
+                if (piece.sourceStart <= block.start && piece.sourceEnd >= block.end) { contained = true }
+                kbPrimitiveCheck(!(block.start < piece.sourceStart && piece.sourceStart < block.end), "Protected source block split: " + file)
+                kbPrimitiveCheck(!(block.start < piece.sourceEnd && piece.sourceEnd < block.end), "Protected source block split: " + file)
+            }
+            kbPrimitiveCheck(contained, "Protected block lost: " + file)
+        }
+    }
+    let report = JsonWriter()
+    report.putInt("documents", documents); report.putInt("chunks", chunks); report.putInt("shortChunks", shortChunks)
+    report.putRaw("issues", issues.toJson())
+    File.writeTo(Path(directory + "/report.json"), report.toJson().toArray())
+    println("CORPUS_AUDIT " + documents.toString() + " documents, " + chunks.toString() + " chunks; see report.json")
+    kbPrimitiveCheck(issues.toJson() == "[]", "Whole-corpus heading-only chunks found; see corpus audit report")
+}
+
+@Test
+class KbPrimitiveTests {
+    @TestCase
+    func defaultAvatarAndResourceKindsAreStable(): Unit {
+        let first = defaultAvatarUrl("user-a")
+        kbPrimitiveCheck(first == defaultAvatarUrl("user-a"), "Default avatar must be stable per account")
+        kbPrimitiveCheck(first.startsWith("/login-characters/") && first.endsWith(".webp"), "Default avatar must use a bundled character")
+        kbPrimitiveCheck(defaultAvatarBackground("user-a").startsWith("#"), "Default avatar background must be a color")
+        let profile = defaultAvatarProfile("{\"name\":\"测试学员\"}", "user-a")
+        kbPrimitiveCheck(profile.contains("\"avatar\":\"/login-characters/"), "Profiles without avatars must receive a default avatar")
+        kbPrimitiveCheck(profile.contains("\"avatarBackground\":\"#"), "Default avatars must receive a Morandi background")
+        kbPrimitiveCheck(cwBookmarkKind(cwJsonObjectFrom("{\"id\":\"quiz-course-1\"}").getOrThrow()) == "bank",
+            "Quiz bookmarks must be tied to the bank resource")
+    }
+    @TestCase
+    func passwordResetCodesAndMailStaySeparateFromLogin(): Unit {
+        kbPrimitiveCheck(validVerificationCode("012345"), "Numeric verification codes must preserve leading zeros")
+        kbPrimitiveCheck(!validVerificationCode("12345a") && !validVerificationCode("12345"), "Verification codes must contain six digits")
+        kbPrimitiveCheck(!validEmail("person\r\n@example.com") && !validEmail("a@b@example.com"), "Unsafe email addresses must be rejected")
+        let cfg = Config("localhost", 3306, "", "", "itn_learning_v2_dev", "", "test-secret", "", 465, "", "", "sender@example.test", "Test", "[TEST]")
+        kbPrimitiveCheck(codeDigest(cfg, "reader@example.test", "LOGIN", "123456") !=
+            codeDigest(cfg, "reader@example.test", PASSWORD_RESET_PURPOSE, "123456"), "Login and reset digests must differ")
+        let message = emailMessage(cfg, "reader@example.test", "123456", 300, PASSWORD_RESET_PURPOSE)
+        kbPrimitiveCheck(message.contains(toBase64String("[TEST] 密码重置验证码".toArray())), "Reset messages must identify the password reset purpose")
+    }
+    @TestCase
+    func coursewareEvidenceStaysInsideTheSourceChapter(): Unit {
+        let evidence = cwEvidence("第一章 示例", "# 本章正文\n只允许使用这段原文。")
+        kbPrimitiveCheck(evidence.contains("本章原文"), "Chapter evidence must identify the source chapter")
+        kbPrimitiveCheck(evidence.contains("只允许使用这段原文"), "Chapter evidence lost the source text")
+        kbPrimitiveCheck(!evidence.contains("跨章节"), "Courseware generation must not include cross-chapter retrieval")
+    }
+    @TestCase
+    func presentationOutlineRequiresARealNarrativeDeck(): Unit {
+        let kinds = ["title", "agenda", "overview", "concept", "code", "comparison", "process", "table", "timeline", "case", "practice", "conclusion"]
+        let valid = cwStructuredSlidesFixture(kinds)
+        kbPrimitiveCheck(cwSlidesIssues(valid, CW_PRESENTATION_SLIDE_COUNT).size == 0, "A complete structured deck must pass validation")
+        let repetitive = cwStructuredSlidesFixture(Array<String>(CW_PRESENTATION_SLIDE_COUNT, repeat: "overview"))
+        kbPrimitiveCheck(cwSlidesIssues(repetitive, CW_PRESENTATION_SLIDE_COUNT).size > 0, "A repetitive Markdown-like deck must be rejected")
+    }
+    @TestCase
+    func queueFeedUsesOnlyTheLatestStepMessage(): Unit {
+        let steps = "[{\"role\":\"规划\",\"status\":\"done\",\"summary\":\"已锁定结构\",\"error\":\"\"}," +
+            "{\"role\":\"撰写\",\"status\":\"running\",\"summary\":\"\",\"error\":\"\"}]"
+        kbPrimitiveCheck(cwLatestQueueMessage(steps) == "撰写 · 正在执行", "Queue feed must use only the latest step")
+        kbPrimitiveCheck(cwLatestQueueMessage("[]") == "", "Queue feed must stay empty for a new task")
+    }
+    @TestCase
+    func coursewareOptionsNormalizeAndReachPrompts(): Unit {
+        let input = cwJsonObjectFrom("{\"lectureDetailLevel\":\"detailed\",\"questionCount\":10," +
+            "\"slideCount\":14,\"backgroundStyle\":\"watercolor\",\"includeSpeakerNotes\":false," +
+            "\"note\":\"面向零基础学生，侧重本章讲解。\"}").getOrThrow()
+        let options = cwNormalizeGenerationOptions(Some(input))
+        kbPrimitiveCheck(options.lectureDetailLevel == "detailed", "Lecture detail level was not preserved")
+        kbPrimitiveCheck(options.questionCount == 10, "Question count was not preserved")
+        kbPrimitiveCheck(options.slideCount == 14, "Slide count was not preserved")
+        kbPrimitiveCheck(options.backgroundStyle == "watercolor", "Background style was not preserved")
+        kbPrimitiveCheck(!options.includeSpeakerNotes, "Speaker note preference was not preserved")
+        let roundTrip = cwGenerationOptionsFrom(options.toJson())
+        kbPrimitiveCheck(roundTrip.questionCount == 10 && roundTrip.slideCount == 14, "Options JSON did not round-trip")
+        let prompt = cwWritePrompt("bank", "测试章节", "[]", "", "原文", options)
+        kbPrimitiveCheck(prompt.contains("正好 10 题"), "Question count did not reach the writer prompt")
+        let plan = cwPlanPrompt("lecture", "测试章节", "原文", options)
+        kbPrimitiveCheck(plan.contains("面向零基础学生"), "Administrator note did not reach the planner prompt")
+        let rendererRequest = presentationRequestJson("测试章节", "原文", options.slideCount,
+            options.backgroundStyle, options.lectureDetailLevel, options.includeSpeakerNotes)
+        kbPrimitiveCheck(rendererRequest.contains("\"detailLevel\":\"detailed\""),
+            "Renderer detail levels must use the legacy vocabulary")
+        let standardRequest = presentationRequestJson("测试章节", "原文", 12,
+            "clean-minimal", "standard", true)
+        kbPrimitiveCheck(standardRequest.contains("\"detailLevel\":\"balanced\""),
+            "The UI standard level must map to the legacy balanced renderer level")
+        let legacy = cwNormalizeGenerationOptions(cwJsonObjectFrom(
+            "{\"detailLevel\":\"concise\",\"questionCount\":8,\"slideCount\":12}").getOrThrow())
+        kbPrimitiveCheck(legacy.lectureDetailLevel == "concise",
+            "Legacy shared detail level must still load for lecture resources")
+        let clamped = cwNormalizeGenerationOptions(cwJsonObjectFrom(
+            "{\"detailLevel\":\"unknown\",\"questionCount\":99,\"slideCount\":1," +
+            "\"backgroundStyle\":\"not-a-style\"}").getOrThrow())
+        kbPrimitiveCheck(clamped.lectureDetailLevel == "standard", "Unknown detail level must use the default")
+        kbPrimitiveCheck(clamped.questionCount == CW_MAX_BANK_COUNT, "Question count must be clamped")
+        kbPrimitiveCheck(clamped.slideCount == CW_MIN_SLIDE_COUNT, "Slide count must be clamped")
+        kbPrimitiveCheck(clamped.backgroundStyle == "clean-minimal", "Unknown background must use the default")
+        let invalid = cwGenerationOptionsFrom("not-json")
+        kbPrimitiveCheck(invalid.questionCount == CW_DEFAULT_BANK_COUNT && invalid.slideCount == CW_PRESENTATION_SLIDE_COUNT,
+            "Invalid persisted options must fall back to defaults")
+    }
+    @TestCase
+    func learnerResourceContainersPreserveQuotedCode(): Unit {
+        let text = "{\"lecture\":{\"sections\":[{\"text\":\"print(\\\"[中文]\\\")\\n{a: 1}\"}]}}"
+        let lecture = lrObject(text, "lecture")
+        let sections = lrArray(lecture, "sections")
+        let parsed = jsonArrayFromText(sections)
+        kbPrimitiveCheck(parsed.size() == 1, "Escaped brackets must not cut a published resource")
+        kbPrimitiveCheck((jsonGetString(parsed[0].asObject(), "text") ?? "") == "print(\"[中文]\")\n{a: 1}", "Resource text lost quoting or Unicode")
+        kbPrimitiveCheck(lrObject(text, "missing").size == 0, "Missing resources must stay unavailable")
+    }
+    @TestCase
+    func coursewareIdentityIgnoresDisplayOrder(): Unit {
+        let refs = HashMap<String, String>()
+        refs["source-document"] = "stable-chapter"
+        refs["stable-chapter"] = "stable-chapter"
+        kbPrimitiveCheck(cwLessonSourceId("", "[{\"id\":\"source-document\"}]", refs) == "stable-chapter", "Legacy source must bind to the chapter identity")
+        kbPrimitiveCheck(cwLessonSourceId("", "[{\"id\":\"stable-chapter\"}]", refs) == "stable-chapter", "Current source identity must survive reordering")
+        kbPrimitiveCheck(cwLessonSourceId("bound-chapter", "[{\"id\":\"other\"}]", refs) == "bound-chapter", "A bound lesson must not be reassigned")
+        kbPrimitiveCheck(cwLessonSourceId("", "[]", refs) == "", "Unknown legacy lessons must be retained without guessing a chapter")
+    }
+    @TestCase
+    func sourceCoverageAndProtectedBlocks(): Unit {
+        let code = "```python\n# code is not a heading\n" + kbPrimitiveRepeated("print('中文🐱')\n", 60) + "```\n"
+        let tex = "$$\n" + kbPrimitiveRepeated("x_{i+1}=x_i+1\\\\\n", 40) + "$$\n"
+        let table = "| 名称 | Value |\n| --- | --- |\n" + kbPrimitiveRepeated("| 数据 | 73.25% |\n", 40)
+        let image = "![原图](../images/中文%20图片.png)\n\n图 1：完整图注，不能与图片分开。\n"
+        let body = String.fromUtf8([239, 187, 191]) + "# 多语言标题\r\n\r\n" +
+            kbPrimitiveRepeated("中文和 English と日本語🐱，原文必须完整保留。\n", 25) +
+            code + "\n" + tex + "\n" + table + "\n" + image + "\n## 后续章节\n末尾空白也保留。  \n\n"
+        let pieces = kbChunksFor("通用资源", body, 200, 40)
+        kbValidatePieces(body, pieces)
+        kbPrimitiveCheck(pieces.size > 3, "Expected multiple semantic chunks")
+        kbPrimitiveCheck(pieces[0].startOffset == 0 && pieces[pieces.size - 1].endOffset == body.size, "Source edges must be covered")
+        for (piece in pieces) {
+            kbPrimitiveCheck(piece.startOffset == piece.sourceStart && piece.endOffset == piece.sourceEnd, "Offset aliases differ")
+            kbPrimitiveCheck(!piece.headingPath.contains("code is not a heading"), "A fenced comment became a heading")
+        }
+        kbPrimitiveAtomCovered(body, pieces, code)
+        kbPrimitiveAtomCovered(body, pieces, tex)
+        kbPrimitiveAtomCovered(body, pieces, table)
+        kbPrimitiveAtomCovered(body, pieces, image)
+        kbOptionalCorpusAudit()
+    }
+
+    @TestCase
+    func plainTextOverlapAndValidationFailures(): Unit {
+        let body = "  " + kbPrimitiveRepeated("Mixed 中文🐱 sentence。", 90) + "\n\n  "
+        let pieces = kbChunksFor("No headings", body, 200, 40)
+        kbValidatePieces(body, pieces)
+        kbPrimitiveCheck(pieces.size > 1 && pieces[1].startOffset < pieces[0].endOffset, "Ordinary text should overlap")
+        kbPrimitiveRejects({ => kbValidatePieces("abc", [KbPiece("", "a", 0, 1), KbPiece("", "c", 2, 3)]) })
+        kbPrimitiveRejects({ => kbValidatePieces("abc", [KbPiece("", "abd", 0, 3)]) })
+        kbPrimitiveRejects({ => kbValidatePieces("中文", [KbPiece("", "中", 0, 2), KbPiece("", "文", 2, 6)]) })
+        kbPrimitiveRejects({ => kbValidatePieces("abc", Array<KbPiece>(0, repeat: KbPiece("", ""))) })
+        kbValidatePieces("", Array<KbPiece>(0, repeat: KbPiece("", "")))
+    }
+
+    @TestCase
+    func strictEmbeddingParsingAndCosineDimensions(): Unit {
+        let vectors = parseEmbeddingArray("{\"data\":[{\"index\":1,\"embedding\":[3,4]},{\"index\":0,\"embedding\":[1,2]}]}", 2)
+        kbPrimitiveCheck(vectors.size == 2 && vectors[0][0] == 1.0 && vectors[1][1] == 4.0, "Embedding index reordering failed")
+        for (invalid in [
+            "{\"data\":[{\"index\":0,\"embedding\":[1]}]}",
+            "{\"data\":[{\"index\":0,\"embedding\":[1]},{\"index\":0,\"embedding\":[2]}]}",
+            "{\"data\":[{\"index\":0,\"embedding\":[1]},{\"index\":1,\"embedding\":[2,3]}]}",
+            "{\"data\":[{\"index\":0,\"embedding\":[0]},{\"index\":1,\"embedding\":[2]}]}",
+            "{\"data\":[{\"index\":0,\"embedding\":[\"1\"]},{\"index\":1,\"embedding\":[2]}]}",
+            "{\"data\":[{\"embedding\":[1]},{\"index\":1,\"embedding\":[2]}]}",
+            "{\"data\":[{\"index\":0,\"embedding\":[1e9999]},{\"index\":1,\"embedding\":[2]}]}"
+        ]) { kbPrimitiveRejects({ => let _value = parseEmbeddingArray(invalid, 2) }) }
+        kbPrimitiveRejects({ => let _value = kbQuantizedCosine([1.0, 0.0], [255]) })
+    }
+
+    @TestCase
+    func nestedHeadingsStayWithTheirContent(): Unit {
+        let body = "# 功能清单\n\n## 已实现功能\n\n### 工作流功能\n\n#### 完整工作流\n- 搜索论文\n- 分析内容\n- 生成引用\n\n#### 简化工作流\n- 搜索加分析\n- 展示结果\n\n### 前端功能\n\n#### 界面\n- 响应式设计\n- 参数配置\n"
+        let pieces = kbChunksFor("通用资源", body, 800, 120)
+        kbPrimitiveCheck(pieces.size == 1, "Small nested sections must be packed, not indexed as headings only")
+        kbPrimitiveCheck(pieces[0].text == body, "Packing changed the original source")
+        let large = body + "\n" + kbPrimitiveRepeated("另一段完整正文，包含独立的解释和例子。\n", 150)
+        for (piece in kbChunksFor("通用资源", large, 200, 40)) {
+            kbPrimitiveCheck(kbHasChunkBody(piece.text), "A heading-only retrieval chunk was emitted")
+        }
+        let code = "```text\n" + kbPrimitiveRepeated("这是必须保持完整的保护块。\n", 80) + "```\n"
+        let separators = "# 开始\n\n正文说明。\n" + code + "\n---\n\n" + code + "\n\n## 结束标题\n\n"
+        let guarded = kbChunksFor("通用资源", separators, 800, 120)
+        for (piece in guarded) {
+            kbPrimitiveCheck(kbHasChunkBody(piece.text), "Separator, blank or trailing heading became a retrieval slice")
+        }
+        kbValidatePieces(separators, guarded)
+        let item = "- 一条较长的列表项，" + kbPrimitiveRepeated("同一条内容及补充说明不能在中间切开。", 12) + "\n  这仍然是该条内容的补充。\n"
+        let list = "# 连贯列表\n\n" + kbPrimitiveRepeated(item, 12)
+        let listPieces = kbChunksFor("通用资源", list, 800, 120)
+        for (piece in listPieces) {
+            kbPrimitiveCheck(!piece.text.startsWith("同一条") && !piece.text.startsWith("  这仍然"), "A list item was split in the middle")
+        }
+        for (block in kbBlocks("通用资源", list.toArray())) {
+            if (!block.indivisible || block.isHeading) { continue }
+            for (piece in listPieces) {
+                kbPrimitiveCheck(!(block.start < piece.sourceStart && piece.sourceStart < block.end), "List item start was split")
+                kbPrimitiveCheck(!(block.start < piece.sourceEnd && piece.sourceEnd < block.end), "List item end was split")
+            }
+        }
+    }
+
+    @TestCase
+    func unicodeSourceNormalization(): Unit {
+        kbPrimitiveCheck(kbDecodeSourceText([255,254,45,78,61,216,49,220,13,0,10,0]) == "中🐱\r\n", "UTF-16LE lost characters")
+        kbPrimitiveCheck(kbDecodeSourceText([254,255,78,45,216,61,220,49]) == "中🐱", "UTF-16BE lost characters")
+        kbPrimitiveCheck(kbDecodeSourceText("原文 UTF-8".toArray()) == "原文 UTF-8", "UTF-8 source changed")
+        kbPrimitiveRejects({ => let _value = kbDecodeSourceText([255,254,0]) })
+        kbPrimitiveRejects({ => let _value = kbDecodeSourceText([255,254,0,216,65,0]) })
+    }
+
+    @TestCase
+    func strictJsonAndSvgValidation(): Unit {
+        let object = kbParseChatJson("```json\n{\"title\":\"多语言中文🐱\"}\n```")
+        kbPrimitiveCheck((jsonGetString(object, "title") ?? "") == "多语言中文🐱", "JSON fence parsing lost Unicode")
+        kbPrimitiveRejects({ => let _value = kbParseChatJson("说明\n{\"ok\":true}") })
+        kbPrimitiveRejects({ => let _value = kbParseChatJson("[]") })
+        kbPrimitiveCheck(briefBody(kbPrimitiveRepeated("中🐱", 200)).size <= 303, "Error truncation exceeds its byte budget")
+        let root = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 128 128\">"
+        let safe = kbValidateLogoSvg(root + "<circle cx=\"64\" cy=\"64\" r=\"24\" fill=\"#7c3aed\"/></svg>")
+        kbPrimitiveCheck(safe.contains("#7c3aed"), "Safe shape rejected")
+        for (invalidSvg in [
+            root + "<script>alert(1)</script></svg>",
+            root + "<circle r=\"1\" onclick=\"alert(1)\"/></svg>",
+            root + "<image href=\"https://example.org/a.png\"/></svg>",
+            root + "<foreignObject><div>bad</div></foreignObject></svg>",
+            root + "<circle fill=\"url(https://example.org/a)\" r=\"1\"/></svg>",
+            root + "<title>&entity;</title><circle r=\"1\"/></svg>",
+            root + "<g><circle r=\"1\"/></svg>",
+            root + "<circle r=\"1\" style=\"fill:red\"/></svg>"
+        ]) { kbPrimitiveRejects({ => let _value = kbValidateLogoSvg(invalidSvg) }) }
+    }
+
+    @TestCase
+    func bundleRenameTitleIsSafeAndBounded(): Unit {
+        kbPrimitiveCheck(kbBundleTitleValid("计算机网络资料包说明"), "A normal Chinese course title was rejected")
+        kbPrimitiveCheck(kbBundleTitleValid("Hello-Agents《从零开始构建智能体》"), "A mixed course title was rejected")
+        kbPrimitiveCheck(!kbBundleTitleValid(""), "Empty bundle title must be rejected")
+        kbPrimitiveCheck(!kbBundleTitleValid("   "), "Whitespace-only bundle title must be rejected")
+        kbPrimitiveCheck(!kbBundleTitleValid("bad\nname"), "Control characters must be rejected")
+        kbPrimitiveCheck(!kbBundleTitleValid(kbPrimitiveRepeated("长", 161)), "Bundle title must be bounded")
+    }
+
+    @TestCase
+    func slidePlannerParsingSurvivesProseAndProvidesFallback(): Unit {
+        let parsed = cwPlanObjectFrom(
+            "以下是规划：\n```json\n{\"title\":\"含 } 的标题\",\"slides\":[{\"title\":\"第一页\",\"kind\":\"title\"}]}\n```\n完成。",
+            "slides")
+        kbPrimitiveCheck(parsed.isSome(), "A valid balanced object after prose was not extracted")
+        match (parsed) {
+            case Some(value) => kbPrimitiveCheck((jsonGetString(value, "title") ?? "") == "含 } 的标题",
+                "Quoted braces must not end JSON extraction")
+            case None => ()
+        }
+        let multiple = cwPlanObjectFrom(
+            "调试信息 {\"foo\":1}\n首次坏对象 {\"slides\":[}]\n" +
+            "最终规划 {\"title\":\"有效\",\"slides\":[{\"title\":\"首页\",\"kind\":\"title\"},{\"title\":\"尾页\",\"kind\":\"conclusion\"}]}",
+            "slides")
+        kbPrimitiveCheck(multiple.isSome(), "A later valid plan must be selected after unrelated or invalid objects")
+        match (multiple) {
+            case Some(value) => kbPrimitiveCheck((jsonGetString(value, "title") ?? "") == "有效",
+                "Planner extraction selected an unrelated object")
+            case None => ()
+        }
+        let fallbackJson = cwFallbackSlidePlanJson("计算机网络资料包说明", 12)
+        let fallback = cwPlanObjectFrom(fallbackJson, "slides")
+        kbPrimitiveCheck(fallback.isSome(), "Fallback JSON must parse as a valid slide plan")
+        let slides = cwObjectList(fallback.getOrThrow(), "slides")
+        kbPrimitiveCheck(slides.size == 12, "Fallback slide plan must use the configured page count")
+        kbPrimitiveCheck((jsonGetString(slides[0], "kind") ?? "") == "title",
+            "Fallback plan must start with a title slide")
+        kbPrimitiveCheck((jsonGetString(slides[slides.size - 1], "kind") ?? "") == "conclusion",
+            "Fallback plan must end with a conclusion slide")
+    }
+
+    @TestCase
+    func slideDeckNormalizationPreservesCountAndChinese(): Unit {
+        let shortDeck = "{\"title\":\"网络分层\",\"slides\":[" +
+            "{\"title\":\"封面\",\"kind\":\"title\",\"points\":[]}," +
+            "{\"title\":\"目录\",\"kind\":\"agenda\",\"points\":[{\"heading\":\"甲\",\"detail\":\"目录一\"}," +
+            "{\"heading\":\"乙\",\"detail\":\"目录二\"},{\"heading\":\"丙\",\"detail\":\"目录三\"}]}," +
+            "{\"title\":\"正文\",\"kind\":\"overview\",\"points\":[{\"heading\":\"定义\",\"detail\":\"定义说明\"}," +
+            "{\"heading\":\"过程\",\"detail\":\"过程说明\"},{\"heading\":\"例子\",\"detail\":\"例子说明\"}]," +
+            "\"speakerNotes\":\"这一页用于说明网络分层的关键概念与判断依据，讲者可以结合真实抓包结果展开。" +
+            "先说明每层解决的问题，再沿着数据路径复述封装与解封装过程，最后请听众用证据判断故障边界。\"}," +
+            "{\"title\":\"总结\",\"kind\":\"conclusion\",\"points\":[{\"heading\":\"回顾\",\"detail\":\"回顾说明\"}," +
+            "{\"heading\":\"下一步\",\"detail\":\"下一步说明\"},{\"heading\":\"练习\",\"detail\":\"练习说明\"}]," +
+            "\"speakerNotes\":\"总结页应带着听众回看分层分析工具，并说明课后练习如何验证理解，避免只复述名词。" +
+            "讲者可以提出一个故障场景，要求听众先说出证据，再决定要检查的层级和最小验证动作。\"}]}"
+        let normalized = cwNormalizeSlideDeckText(shortDeck, 5, true)
+        let parsed = cwJsonObjectFrom(normalized).getOrThrow()
+        let slides = cwObjectList(parsed, "slides")
+        kbPrimitiveCheck(slides.size == 5, "Normalization must fill a missing slide")
+        kbPrimitiveCheck((jsonGetString(parsed, "title") ?? "") == "网络分层", "Chinese title was corrupted")
+        kbPrimitiveCheck((jsonGetString(slides[slides.size - 1], "kind") ?? "") == "conclusion",
+            "Normalization must keep the conclusion last")
+        kbPrimitiveCheck((jsonGetString(slides[slides.size - 2], "title") ?? "") == "本章重点回顾",
+            "Missing slide must be inserted before the conclusion")
+    }
+}

@@ -1,0 +1,12 @@
+.zx-courseware-references { margin: 2rem 0; padding: 1.5rem; border: 1px solid #dfe2e8; border-radius: 16px; background: #fafbfc; color: #30333a; overflow-wrap: anywhere; }
+.zx-courseware-references h2 { margin: 0 0 .75rem; font-size: 1.2rem; font-weight: 800; }
+.zx-courseware-reference-note, .zx-courseware-reference-path { margin: .5rem 0; color: #626976; font-size: .875rem; line-height: 1.7; }
+.zx-courseware-references ol { padding: 0; list-style: none; }
+.zx-courseware-references li { margin-top: 1.25rem; scroll-margin-block: 5rem; }
+.zx-courseware-references li > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; }
+.zx-courseware-references li > div > span { color: #626976; font-size: .875rem; }
+.zx-courseware-references summary { display: list-item; width: fit-content; padding: .65rem .25rem; cursor: pointer; font-weight: 600; }
+.zx-courseware-references pre { max-height: 28rem; margin: .5rem 0; padding: 1rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: white; border: 1px solid #dfe2e8; border-radius: 8px; font: inherit; line-height: 1.8; }
+.zx-courseware-references :focus-visible, .zx-courseware-references li:target { outline: 2px solid #6038ef; outline-offset: 4px; }
+.zx-courseware-references a { color: #4e35ab; text-decoration: underline; }
+@media (max-width: 640px) { .zx-courseware-references { padding: 1rem; } }
