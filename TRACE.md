@@ -5412,3 +5412,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 生成 `dist/Lumin-Setup-0.8.33.exe`，155,713,666 bytes，SHA256=29294D1B7F9F1CD648FCEC2329033E6F9CE0E00C9984CE5BCFD1F5918F4805C4，payloadCommit=0d023e38133eaf1bb992577053f9ef298a72652b，payloadFiles=2738。便携包 `dist/Lumin-0.8.33.zip` 为 231,337,089 bytes，SHA256=BA83F12112B4E52149167F3EAC59A878D3868EFB7E25B386C897FDB22EEA1F1D。
 - 有意义的验收：本地发布服务 23/23，覆盖无后缀安装包 HEAD/完整下载/Range/416、历史 x64 直链、同版本 ZIP 第二入口、无 ZIP 时不自造入口；真实 Edge 页面 21/21，覆盖四个安装版入口、两个便携版入口、真实 HEAD、三档响应式与无脚本/资源错误。安装器完整验收 24/24，覆盖中文和空格路径安装、2738 文件逐项哈希、锁定文件拒绝升级、重复安装与额外文件/学习库保留、安装版启动、PPT/DOCX/PDF/随包运行时、卸载和重装。
 - 测试排障：首次安装器静默安装退出 2 是 C 盘仅剩约 289 MB，完整解压需要约 550 MB；把 TEMP/TMP 指向 D 盘后继续。随后测试夹具路径过长，使随包 Python 的一条 153 字符相对路径超过旧版 260 字符限制，缩短临时根目录后安装器 24/24 全过，同时保留中文和空格安装目录。`check-installer` 清理开始菜单时会在卸载已删除父目录后写回快照而报错，已改为先重建父目录；修正后完整重跑并以退出码 0 输出 24/24。以上均为测试夹具问题，不将失败阶段包装成产品通过。
+
+### 2026-10-22 · 0.8.33 天翼云双下载发布与后续快速部署链路
+
+- 已部署至天翼云 `113.249.102.41:6025`，systemd 服务 `lumin-release.service` active。海报页：`http://113.249.102.41:6025/`；安装版：`http://113.249.102.41:6025/Lumin-Setup-0.8.33.exe`；便携版：`http://113.249.102.41:6025/Lumin-0.8.33.zip`。公网页面 200，同时显示两个入口；两个 HEAD 均为 200，大小与本地一致，支持 Range。
+- 上传先进入 `/opt/lumin-release/incoming/*.uploading`，远端 SHA256 分别与本地逐项一致后才原子移动；旧服务代码和海报页备份在 `/opt/lumin-release/backups/`，部署序号 `20261022-140321`。服务器文件哈希：安装器 29294D1B…、ZIP BA83F121…、serve-release.cjs 8B176C12…、index.html EC5494FE…。
+- 海报页新增高识别度金色 `Powered by Cangjie` 技术徽标，并在页脚重复展示；真实 Edge 本地回归 22/22。公网复核 v0.8.33、两种下载入口和两处 Cangjie 文案均为 200/存在。完整公网安装器分段下载得到 155,713,666 bytes、SHA256 与发布文件一致；ZIP 的服务器哈希、公网 HEAD、Range 和页面入口已核验，未继续等待整包重复下载，因为用户明确要求此类迭代不要做深度耗时测试。
+- 为后续快速迭代新增 `tools/deploy-release.ps1`：校验安装器 manifest/24 项验收与本地哈希，运行发布服务及下载页检查，并行 scp 上传安装器/ZIP/服务代码/海报页，远端逐文件哈希，原子切换并重启 systemd，再跑公网页面检查。命令为 `.\tools\deploy-release.ps1 -Version <x.y.z>`；只有需要完整双包公网哈希时才加 `-FullPublicDownload`。`tools/verify-public-release.cjs` 用并行 HTTP Range 下载并重算 SHA256，避免单连接慢速等待。scripts/README 已写入同一流程。

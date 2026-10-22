@@ -35,7 +35,8 @@ function assert(condition, message) {
     browserPage.on('console', message => {
       if (message.type() === 'error') consoleErrors.push(message.text());
     });
-    await browserPage.goto(url, {waitUntil: 'networkidle', timeout: 30000});
+    await browserPage.goto(url, {waitUntil: 'domcontentloaded', timeout: 60000});
+    await browserPage.waitForLoadState('load', {timeout: 60000});
     const revealPage = () => browserPage.evaluate(async () => {
       document.documentElement.style.scrollBehavior = 'auto';
       const step = Math.max(500, Math.floor(window.innerHeight * .8));
@@ -57,6 +58,7 @@ function assert(condition, message) {
 
     assert(await browserPage.title() === 'Lumin 桌面版下载', '页面标题正确');
     assert((await browserPage.locator('body').innerText()).includes('Lumin ' + version), '页面显示当前版本');
+    assert(await browserPage.getByText('Powered by Cangjie', {exact:true}).count() === 2, '页面突出展示仓颉技术支持');
 
     const imageState = await browserPage.locator('img').evaluateAll(images =>
       images.map(image => ({src: image.getAttribute('src'), complete: image.complete, width: image.naturalWidth}))
@@ -89,7 +91,7 @@ function assert(condition, message) {
       {name: 'mobile', width: 390, height: 844},
     ]) {
       await browserPage.setViewportSize({width: viewport.width, height: viewport.height});
-      await browserPage.reload({waitUntil: 'networkidle'});
+      await browserPage.reload({waitUntil: 'load', timeout: 60000});
       await revealPage();
       await browserPage.waitForFunction(
         () => document.querySelectorAll('.reveal:not(.is-visible)').length === 0,

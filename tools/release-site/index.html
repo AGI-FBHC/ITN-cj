@@ -149,6 +149,33 @@
       padding-bottom: 32px;
     }
 
+    .cangjie-powered {
+      width: fit-content;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0 0 24px;
+      padding: 7px 12px;
+      border: 1px solid rgba(189, 145, 64, .48);
+      border-radius: 999px;
+      color: #73551f;
+      background: rgba(212, 173, 97, .12);
+      font-family: var(--display);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .cangjie-powered::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--gold-strong);
+      box-shadow: 0 0 0 4px rgba(189, 145, 64, .13);
+    }
+
     h1,
     h2,
     h3,
@@ -657,6 +684,15 @@
       height: 25px;
     }
 
+    .footer-cangjie {
+      padding-left: 12px;
+      border-left: 1px solid var(--surface-strong);
+      color: #73551f;
+      font-family: var(--display);
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+
     .motion-ready .reveal {
       opacity: 0;
       transform: translateY(20px);
@@ -884,6 +920,11 @@
         font-size: 17px;
       }
 
+      .cangjie-powered {
+        margin-bottom: 20px;
+        font-size: 12px;
+      }
+
       .download-primary {
         min-height: 60px;
         padding: 0 17px;
@@ -911,6 +952,16 @@
 
       .file-details dd {
         text-align: left;
+      }
+
+      .footer-brand {
+        flex-wrap: wrap;
+      }
+
+      .footer-cangjie {
+        flex-basis: 100%;
+        padding: 5px 0 0;
+        border-left: 0;
       }
 
       .faq-item summary {
@@ -955,6 +1006,7 @@
   <main>
     <section class="shell hero" aria-labelledby="hero-title">
       <div class="hero-copy">
+        <p class="cangjie-powered">Powered by Cangjie</p>
         <h1 id="hero-title">桌面学习<br>以资料为本</h1>
         <p class="lead">Lumin 把个人知识库、课件、随页问答和知识网络放进同一个桌面工作台。资料、笔记与学习记录保存在本机。</p>
         <a class="download-primary" href="{{DOWNLOAD_URL}}" download>
@@ -1124,6 +1176,7 @@
     <div class="footer-brand">
       <img src="/assets/lumin-logo.png" width="25" height="25" alt="">
       <span>Lumin · 智训云枢</span>
+      <span class="footer-cangjie">Powered by Cangjie</span>
     </div>
     <span>© 2026 ITN</span>
   </footer>
