@@ -538,9 +538,12 @@ func tutorHistoryBody(cfg: Config, userId: String, conversationId: String, cours
             filter = " AND course_id=" + sqlQuote(courseId) + " AND lesson_index=" + index.toString()
         }
     }
+    // 注意：别名不能叫 created_at，否则 ORDER BY 会按“秒精度”的格式化文本排序，
+    // 同一秒内的问答会退化成按随机 UUID 排序，导致前端出现“回答在提问之前”的错序。
     let rows = queryIndependent(cfg, "SELECT id,role,content,citations_json,course_id,lesson_index,conversation_id," +
-        "COALESCE(DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s'),'') created_at FROM tutor_messages WHERE user_id=" +
-        sqlQuote(userId) + filter + " ORDER BY created_at DESC,id DESC LIMIT 20")
+        "COALESCE(DATE_FORMAT(tutor_messages.created_at,'%Y-%m-%d %H:%i:%s.%f'),'') created_at_text FROM tutor_messages " +
+        "WHERE user_id=" + sqlQuote(userId) + filter +
+        " ORDER BY tutor_messages.created_at DESC,tutor_messages.id DESC LIMIT 20")
     let items = JsonArrWriter()
     var i = rows.size
     while (i > 0) {
@@ -550,7 +553,7 @@ func tutorHistoryBody(cfg: Config, userId: String, conversationId: String, cours
         item.putStr("courseId", row.text("course_id")); item.putInt("lessonIndex", row.int("lesson_index"))
         item.putStr("conversationId", row.text("conversation_id"))
         item.putRaw("citations", if (row.isNull("citations_json")) { "null" } else { row.text("citations_json") })
-        item.putStr("createdAt", row.text("created_at")); items.addRaw(item.toJson())
+        item.putStr("createdAt", row.text("created_at_text")); items.addRaw(item.toJson())
     }
     let result = JsonWriter(); result.putRaw("messages", items.toJson()); result.putRaw("items", items.toJson())
     if (conversationId.size > 0) { result.putStr("conversationId", conversationId) }

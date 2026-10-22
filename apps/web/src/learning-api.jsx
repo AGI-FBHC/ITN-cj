@@ -49,11 +49,12 @@ export function useLearning() {
 }
 async function request(path, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), options.timeout ?? 20000);
   try {
     const token = localStorage.getItem(TOKEN_KEY);
+    const { timeout: _ignoredTimeout, ...fetchOptions } = options;
     const response = await fetch(`/api${path}`, {
-      ...options,
+      ...fetchOptions,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
       signal: controller.signal,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -148,6 +149,9 @@ export async function loginWithEmailCode(email, verificationCode, inviteCode = '
 export const api = (path, method = 'GET', body) => request(path, { method, body });
 export const getLearnerMemory = () => api('/learner/memory');
 export const updateLearnerCustomMemory = (text) => api('/learner/memory/custom', 'PUT', { text });
+/** 让 Lumin 依据注册问卷与当前已上架课程真实生成学习计划（服务端调用大模型并落库）。 */
+export const generateLearningPlan = () => request('/learner/plan', { method: 'POST', body: {}, timeout: 180000 });
+export const readLearningPlan = () => api('/learner/plan');
 export function clearLearningSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem('zhixun-display-name');

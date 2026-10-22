@@ -15,6 +15,7 @@ import {
   api,
   bootstrap,
   clearLearningSession,
+  generateLearningPlan,
   getLearnerMemory,
   LoadPanel,
   persistState,
@@ -35,6 +36,7 @@ import PresentationArtifact from "./PresentationArtifact.jsx";
 import TutorChat from "./TutorChat.jsx";
 import { askTutor } from "./tutor.js";
 import SystemLogo from "./SystemLogo.jsx";
+import { LearningPlanPanel } from "./learning-plan.jsx";
 import { LearningActivityGrid, PopularLearningResources, useDashboardInsights } from "./HomeLearningWidgets.jsx";
 import { RESOURCE_OPTIONS, resourceTypes, lessonSections, lessonSlides, ChapterCompletion } from "./LearnerResources.jsx";
 import "./lesson-start-modal.css";
@@ -1101,6 +1103,9 @@ function t2() {
 function GeneratingPlan({ answers: n, onClose: r, onComplete: u }) {
   const [i, d] = React.useState(0),
     [p, m] = React.useState(!1);
+  const [plan, setPlan] = React.useState(null);
+  const [planError, setPlanError] = React.useState("");
+  const [attempt, setAttempt] = React.useState(0);
   React.useEffect(() => {
     if (p) return;
     const y = setTimeout(() => {
@@ -1108,6 +1113,33 @@ function GeneratingPlan({ answers: n, onClose: r, onComplete: u }) {
     }, Fb);
     return () => clearTimeout(y);
   }, [i, p]);
+  React.useEffect(() => {
+    let alive = true;
+    setPlanError("");
+    const byTitle = (needle) => Object.values(n).find((entry) => (entry.title || "").includes(needle))?.items || [];
+    const profilePayload = {
+      roleLabel: (n.role?.items || byTitle("身份"))[0] || "",
+      goalLabel: (n.goal?.items || byTitle("目标"))[0] || "",
+      subjectValues: n.subjects?.items || byTitle("科目"),
+      onboardingAnswers: n,
+    };
+    (async () => {
+      try {
+        await saveProfile(profilePayload);
+      } catch (_) {
+        // 资料保存失败不阻断计划生成：后端会读取已保存的画像。
+      }
+      try {
+        const result = await generateLearningPlan();
+        if (alive) setPlan(result?.plan || null);
+      } catch (reason) {
+        if (alive) setPlanError(reason?.message || "学习计划生成失败，请稍后重试");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [attempt]);
   const b = Bi[i],
     h = React.useMemo(
       () => Object.values(n).find((y) => y.key === "subjects" || y.title.includes("科目"))?.items ?? [],
@@ -1165,8 +1197,51 @@ function GeneratingPlan({ answers: n, onClose: r, onComplete: u }) {
                   ),
                 ),
               }),
-              p
-                ? jsxRuntime.jsxs("div", {
+              p && (plan || planError)
+                ? planError
+                  ? jsxRuntime.jsxs("div", {
+                      "code-path": "src\\components\\GeneratingPlan.tsx:175:13",
+                      className: "gen-card-in mt-10 flex flex-col items-center",
+                      children: [
+                        jsxRuntime.jsx(ProductLogo, {
+                          "code-path": "src\\components\\GeneratingPlan.tsx:176:15",
+                          className: "h-20 w-20",
+                        }),
+                        jsxRuntime.jsx("h2", {
+                          "code-path": "src\\components\\GeneratingPlan.tsx:177:15",
+                          className:
+                            "mt-6 text-2xl font-black tracking-tight text-[#111318] md:text-3xl",
+                          children: "学习计划生成失败",
+                        }),
+                        jsxRuntime.jsx("p", {
+                          "code-path": "src\\components\\GeneratingPlan.tsx:180:15",
+                          className:
+                            "mt-2 max-w-md text-sm font-semibold leading-relaxed text-[#8a8e9c]",
+                          children: planError,
+                        }),
+                        jsxRuntime.jsxs("div", {
+                          "code-path": "src\\components\\GeneratingPlan.tsx:182:15",
+                          className: "mt-8 flex flex-wrap items-center justify-center gap-3",
+                          children: [
+                            jsxRuntime.jsx("button", {
+                              "code-path": "src\\components\\GeneratingPlan.tsx:183:17",
+                              onClick: () => setAttempt((value) => value + 1),
+                              className:
+                                "rounded-full bg-[#6c0ef2] px-8 py-3.5 text-base font-extrabold text-white shadow-[0_8px_24px_rgba(108,14,242,0.35)] transition-all hover:-translate-y-1 hover:bg-[#5a0bd2]",
+                              children: "重新生成",
+                            }),
+                            jsxRuntime.jsx("button", {
+                              "code-path": "src\\components\\GeneratingPlan.tsx:184:17",
+                              onClick: u,
+                              className:
+                                "rounded-full border border-black/10 bg-white px-8 py-3.5 text-base font-extrabold text-[#111318] transition-colors hover:bg-black/5",
+                              children: "先进入系统",
+                            }),
+                          ],
+                        }),
+                      ],
+                    })
+                  : jsxRuntime.jsxs("div", {
                     "code-path": "src\\components\\GeneratingPlan.tsx:175:13",
                     className: "gen-card-in mt-10 flex flex-col items-center",
                     children: [
@@ -1183,16 +1258,31 @@ function GeneratingPlan({ answers: n, onClose: r, onComplete: u }) {
                           "mt-6 text-2xl font-black tracking-tight text-[#111318] md:text-3xl",
                         children: "学习计划已生成！",
                       }),
-                      jsxRuntime.jsxs("p", {
+                      jsxRuntime.jsx("p", {
                         "code-path":
                           "src\\components\\GeneratingPlan.tsx:180:15",
                         className:
-                          "mt-2 max-w-sm text-sm font-semibold leading-relaxed text-[#8a8e9c]",
-                        children: [
-                          "已为你规划 ",
-                          h.length > 0 ? `${h.length} 门课程` : "专属课程",
-                          "的个性化学习路径，智能体将在每次练习后持续修正下一步。",
-                        ],
+                          "mt-2 max-w-md text-sm font-semibold leading-relaxed text-[#8a8e9c]",
+                        children: `已为你规划 ${plan?.stages?.length || 0} 个阶段、${plan?.horizonWeeks || 0} 周安排，每周约 ${plan?.weeklyHours || 0} 小时；学习画像与计划已保存到“我的画像”。`,
+                      }),
+                      jsxRuntime.jsx("div", {
+                        "code-path":
+                          "src\\components\\GeneratingPlan.tsx:182:15",
+                        className:
+                          "mt-5 flex max-w-md flex-wrap items-center justify-center gap-2",
+                        children: (plan?.focusAreas || [])
+                          .slice(0, 5)
+                          .map((item) =>
+                            jsxRuntime.jsx(
+                              "span",
+                              {
+                                className:
+                                  "rounded-lg bg-[#f4effe] px-3 py-1 text-xs font-bold text-[#6c0ef2]",
+                                children: item,
+                              },
+                              item,
+                            ),
+                          ),
                       }),
                       jsxRuntime.jsx("button", {
                         "code-path":
@@ -1247,7 +1337,7 @@ function GeneratingPlan({ answers: n, onClose: r, onComplete: u }) {
                   ),
             ],
           }),
-          !p &&
+          !(p && (plan || planError)) &&
             jsxRuntime.jsxs("p", {
               "code-path": "src\\components\\GeneratingPlan.tsx:195:11",
               className:
@@ -9019,9 +9109,24 @@ function LearnerMemoryCard({ memory, onSaved }) {
   const [saving, setSaving] = React.useState(false);
   const [status, setStatus] = React.useState("");
   const [statusError, setStatusError] = React.useState(false);
+  const [planBusy, setPlanBusy] = React.useState(false);
+  const [planError, setPlanError] = React.useState("");
   React.useEffect(() => {
     setCustomMemory(memory?.userCustomMemory || "");
   }, [memory?.userCustomMemory]);
+  const regeneratePlan = async () => {
+    if (planBusy) return;
+    setPlanBusy(true);
+    setPlanError("");
+    try {
+      const result = await generateLearningPlan();
+      onSaved?.(result?.memory || (await getLearnerMemory()));
+    } catch (error) {
+      setPlanError(error.message || "学习计划生成失败，请稍后重试");
+    } finally {
+      setPlanBusy(false);
+    }
+  };
   const saveCustomMemory = async (event) => {
     event.preventDefault();
     if (saving) return;
@@ -9061,6 +9166,14 @@ function LearnerMemoryCard({ memory, onSaved }) {
             jsxRuntime.jsx("h3", { children: "学习概况" }),
             jsxRuntime.jsx("p", { className: "zx-memory-summary", children: memory?.profileSummary || "尚未形成画像摘要。完成资料填写并开始学习后，Lumin 会逐步补充。" }),
           ] }),
+          jsxRuntime.jsx(LearningPlanPanel, {
+            plan: memory?.learningPlan || null,
+            generatedAt: memory?.planGeneratedAt || "",
+            model: memory?.planModel || "",
+            busy: planBusy,
+            error: planError,
+            onRegenerate: regeneratePlan,
+          }),
           jsxRuntime.jsxs("div", { className: "zx-memory-panel-grid", children: [
             jsxRuntime.jsxs("section", { className: "zx-memory-panel", children: [
               jsxRuntime.jsx("h3", { children: "学习目标" }),

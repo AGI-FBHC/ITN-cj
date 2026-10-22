@@ -22,13 +22,17 @@ class LearnerMemory {
     let activeTopicsJson: String
     let tutorNotesJson: String
     let recentSignalsJson: String
+    let learningPlanJson: String
+    let planGeneratedAt: String
+    let planModel: String
     let createdAt: String
     let updatedAt: String
 
     init(userId: String, memoryVersion: Int64, profileSummary: String, learningGoalsJson: String,
          knowledgeLevelJson: String, preferencesJson: String, strengthsJson: String,
          weaknessesJson: String, activeTopicsJson: String, tutorNotesJson: String,
-         recentSignalsJson: String, createdAt: String, updatedAt: String) {
+         recentSignalsJson: String, learningPlanJson: String, planGeneratedAt: String,
+         planModel: String, createdAt: String, updatedAt: String) {
         this.userId = userId
         this.memoryVersion = if (memoryVersion > 0) { memoryVersion } else { 1 }
         this.profileSummary = learnerMemoryLimitOneLine(profileSummary, LEARNER_MEMORY_SUMMARY_BYTES)
@@ -40,6 +44,10 @@ class LearnerMemory {
         this.activeTopicsJson = learnerMemoryArrayJson(activeTopicsJson)
         this.tutorNotesJson = learnerMemoryObjectJson(tutorNotesJson)
         this.recentSignalsJson = learnerMemoryArrayJson(recentSignalsJson)
+        let planText = learningPlanJson.trimAscii()
+        this.learningPlanJson = if (planText.size == 0) { "" } else { learnerMemoryObjectJson(planText) }
+        this.planGeneratedAt = planGeneratedAt
+        this.planModel = planModel
         this.createdAt = createdAt
         this.updatedAt = updatedAt
     }
@@ -167,7 +175,8 @@ func learnerMemoryDefault(userId: String, profileJson: String): LearnerMemory {
     notes.putStr("userCustomMemory", "")
 
     LearnerMemory(userId, 1, summary, learnerStringArrayJson(goals), knowledge.toJson(),
-        preferences.toJson(), "[]", "[]", learnerStringArrayJson(topics), notes.toJson(), "[]", "", "")
+        preferences.toJson(), "[]", "[]", learnerStringArrayJson(topics), notes.toJson(), "[]",
+        "", "", "", "", "")
 }
 
 func learnerMemoryJoin(values: ArrayList<String>, separator: String): String {
@@ -185,7 +194,10 @@ func learnerMemorySelectSql(userId: String): String {
     "SELECT memory_version,profile_summary,learning_goals_json,knowledge_level_json," +
     "preferences_json,strengths_json,weaknesses_json,active_topics_json,tutor_notes_json," +
     "recent_signals_json,COALESCE(DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s.%f'),'') created_at," +
-    "COALESCE(DATE_FORMAT(updated_at,'%Y-%m-%d %H:%i:%s.%f'),'') updated_at " +
+    "COALESCE(DATE_FORMAT(updated_at,'%Y-%m-%d %H:%i:%s.%f'),'') updated_at," +
+    "IF(learning_plan_json IS NULL,'',CAST(learning_plan_json AS CHAR)) learning_plan_json," +
+    "COALESCE(DATE_FORMAT(plan_generated_at,'%Y-%m-%d %H:%i:%s'),'') plan_generated_at," +
+    "COALESCE(plan_model,'') plan_model " +
     "FROM user_learning_memory WHERE user_id=" + sqlQuote(userId) + " LIMIT 1"
 }
 
@@ -193,7 +205,8 @@ func learnerMemoryFromRow(userId: String, row: Row): LearnerMemory {
     LearnerMemory(userId, row.int("memory_version"), row.text("profile_summary"),
         row.text("learning_goals_json"), row.text("knowledge_level_json"), row.text("preferences_json"),
         row.text("strengths_json"), row.text("weaknesses_json"), row.text("active_topics_json"),
-        row.text("tutor_notes_json"), row.text("recent_signals_json"), row.text("created_at"), row.text("updated_at"))
+        row.text("tutor_notes_json"), row.text("recent_signals_json"), row.text("learning_plan_json"),
+        row.text("plan_generated_at"), row.text("plan_model"), row.text("created_at"), row.text("updated_at"))
 }
 
 /** The userId must already come from authenticate(); never accept it from request data. */
@@ -249,6 +262,39 @@ func learnerMemoryUpdateCustom(cfg: Config, authenticatedUserId: String, text: S
     learnerMemoryLoadOrCreate(cfg, memory.userId)
 }
 
+/** 写入 Agent 生成的学习计划，并用它产出的画像字段刷新记忆（空字段不覆盖既有内容）。 */
+func learnerMemorySavePlan(cfg: Config, authenticatedUserId: String, planJson: String,
+                           planModel: String, profile: LearnerPlanProfile): LearnerMemory {
+    let memory = learnerMemoryLoadOrCreate(cfg, authenticatedUserId)
+    var sql = "UPDATE user_learning_memory SET memory_version=memory_version+1," +
+        "learning_plan_json=" + sqlQuote(learnerMemoryLimit(planJson, LEARNER_PLAN_JSON_BYTES)) + "," +
+        "plan_generated_at=NOW(6),plan_model=" + sqlQuote(learnerMemoryLimitOneLine(planModel, 160))
+    if (profile.summary.size > 0) {
+        sql = sql + ",profile_summary=" + sqlQuote(learnerMemoryLimitOneLine(profile.summary, LEARNER_MEMORY_SUMMARY_BYTES))
+    }
+    if (learnerMemoryArrayJson(profile.goalsJson) != "[]") {
+        sql = sql + ",learning_goals_json=" + sqlQuote(learnerMemoryArrayJson(profile.goalsJson))
+    }
+    if (learnerMemoryObjectJson(profile.knowledgeJson) != "{}") {
+        sql = sql + ",knowledge_level_json=" + sqlQuote(learnerMemoryObjectJson(profile.knowledgeJson))
+    }
+    if (learnerMemoryObjectJson(profile.preferencesJson) != "{}") {
+        sql = sql + ",preferences_json=" + sqlQuote(learnerMemoryObjectJson(profile.preferencesJson))
+    }
+    if (learnerMemoryArrayJson(profile.strengthsJson) != "[]") {
+        sql = sql + ",strengths_json=" + sqlQuote(learnerMemoryArrayJson(profile.strengthsJson))
+    }
+    if (learnerMemoryArrayJson(profile.weaknessesJson) != "[]") {
+        sql = sql + ",weaknesses_json=" + sqlQuote(learnerMemoryArrayJson(profile.weaknessesJson))
+    }
+    if (learnerMemoryArrayJson(profile.activeTopicsJson) != "[]") {
+        sql = sql + ",active_topics_json=" + sqlQuote(learnerMemoryArrayJson(profile.activeTopicsJson))
+    }
+    sql = sql + ",updated_at=NOW(6) WHERE user_id=" + sqlQuote(memory.userId)
+    execute(cfg, sql)
+    learnerMemoryLoadOrCreate(cfg, memory.userId)
+}
+
 /** Compact, explicitly labelled data block for the model system prompt. */
 func learnerMemoryPromptSnapshot(memory: LearnerMemory): String {
     let text = "画像摘要：" + learnerMemoryLimitOneLine(memory.profileSummary, 700) + "\n" +
@@ -281,6 +327,9 @@ func learnerMemoryResponseBody(memory: LearnerMemory): String {
     out.putRaw("tutorNotes", memory.tutorNotesJson)
     out.putStr("userCustomMemory", learnerMemoryCustomText(memory.tutorNotesJson))
     out.putRaw("recentSignals", memory.recentSignalsJson)
+    out.putRaw("learningPlan", if (memory.learningPlanJson.size == 0) { "null" } else { memory.learningPlanJson })
+    out.putStr("planGeneratedAt", memory.planGeneratedAt)
+    out.putStr("planModel", memory.planModel)
     out.putStr("createdAt", memory.createdAt)
     out.putStr("updatedAt", memory.updatedAt)
     out.toJson()

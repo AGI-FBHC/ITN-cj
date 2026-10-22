@@ -1900,6 +1900,34 @@ main(): Int64 {
         }
     }
 
+    app.mapPost("api/learner/plan") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                try {
+                    let plan = learnerPlanGenerate(cfg, userId)
+                    let out = JsonWriter()
+                    out.putRaw("plan", plan)
+                    out.putRaw("memory", learnerMemoryResponseBody(learnerMemoryLoadOrCreate(cfg, userId)))
+                    writeJson(ctx.response, 200, out.toJson())
+                } catch (error: Exception) {
+                    writeError(ctx.response, 502, "学习计划生成失败：" + error.message)
+                }
+        }
+    }
+
+    app.mapGet("api/learner/plan") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                try {
+                    writeJson(ctx.response, 200, learnerPlanCurrentBody(learnerMemoryLoadOrCreate(cfg, userId)))
+                } catch (_: Exception) {
+                    writeError(ctx.response, 503, "学习计划暂时无法加载，请稍后重试")
+                }
+        }
+    }
+
     app.mapGet("api/learner/dashboard") { ctx =>
         match (authenticate(ctx, cfg)) {
             case None => ()
