@@ -467,6 +467,52 @@ async function main() {
     const afterTurn = await page.evaluate(() => ({hidden: document.body.classList.contains('panel-hidden'), busy: state.busyTurn}));
     check('生成结束后面板保持展开且任务已收尾', afterTurn.hidden === false && afterTurn.busy === false, JSON.stringify(afterTurn));
 
+    // M) 生成中搜索会话内容：不能中断任务，清空搜索后运行中的行要立刻回来
+    await nav('chat');
+    await page.fill('#chat-input', '慢速任务测试：搜索时不中断');
+    await page.locator('.composer-send').click();
+    await page.waitForFunction(() => state.busyTurn === true, null, {timeout: 15000}).catch(() => {});
+    const runningSid = await page.evaluate(() => state.chatSessionId);
+    await page.fill('#rail-search', '慢速任务');
+    await page.waitForSelector('.rail-search-results:not([hidden])', {timeout: 15000});
+    const duringSearch = await page.evaluate(() => ({
+      running: state.chatRequests.size,
+      results: !document.querySelector('.rail-search-results')?.hidden,
+    }));
+    check('搜索会话内容时生成任务不中断', duringSearch.running >= 1 && duringSearch.results === true, JSON.stringify(duringSearch));
+    await page.fill('#rail-search', '');
+    await page.waitForFunction(() => document.querySelector('.rail-search-results')?.hidden === true, null, {timeout: 15000});
+    const afterClear = await page.evaluate((sid) => ({
+      row: !!document.querySelector('#panel-body .panel-item[data-id="' + sid + '"]'),
+      spinner: document.querySelectorAll('#panel-body .panel-item-spin').length,
+      running: state.chatRequests.size,
+    }), runningSid);
+    check('清空搜索后运行中的会话立刻回到列表并带转圈', afterClear.row === true && afterClear.spinner >= 1 && afterClear.running >= 1, JSON.stringify({sid: runningSid, ...afterClear}));
+    await page.waitForFunction(() => state.busyTurn === false, null, {timeout: 60000}).catch(() => {});
+
+    // N) 拖动侧边栏分隔条：宽度要变、要落库，重载后保持
+    await nav('chat');
+    await page.waitForSelector('.splitter-panel', {timeout: 15000});
+    const widthBefore = await page.evaluate(() => document.querySelector('.panel').getBoundingClientRect().width);
+    const splitter = await page.locator('.splitter-panel').boundingBox();
+    await page.mouse.move(splitter.x + splitter.width / 2, splitter.y + splitter.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(splitter.x + splitter.width / 2 + 70, splitter.y + splitter.height / 2, {steps: 8});
+    await page.mouse.up();
+    await sleep(700);
+    const widthAfter = await page.evaluate(() => document.querySelector('.panel').getBoundingClientRect().width);
+    const widthPref = await post('prefs/get', {});
+    check('拖动分隔条后侧边栏变宽并写入偏好', widthAfter > widthBefore + 30 && Number(widthPref.uiPanelW) > 0,
+      JSON.stringify({before: Math.round(widthBefore), after: Math.round(widthAfter), uiPanelW: widthPref.uiPanelW}));
+    await page.reload({waitUntil: 'load'});
+    await page.waitForFunction(() => !document.getElementById('boot'));
+    await ready();
+    const widthRestored = await page.evaluate(() => document.querySelector('.panel').getBoundingClientRect().width);
+    check('重载后侧边栏宽度保持不变', Math.abs(widthRestored - widthAfter) <= 3,
+      JSON.stringify({after: Math.round(widthAfter), restored: Math.round(widthRestored)}));
+    // 复原宽度，避免影响后续
+    await page.evaluate(() => savePrefs({uiPanelW: ''}));
+
     check('全程没有前端或内核异常', errors.length === 0, errors.join('; '));
     const failed = checks.filter((c) => !c.ok);
     console.log('RESULT ' + (checks.length - failed.length) + '/' + checks.length + '; artifacts ' + dir);
