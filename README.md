@@ -1,9 +1,10 @@
 # 智训云枢 · 专业版
 
-> 面向个性化学习的在线学习平台。前端 React 19，后端核心服务全部使用 **仓颉（Cangjie）** 编写：API 网关、账号与学习业务、资源与游客逻辑都在仓颉服务中完成；内容生成与多智能体编排由 Python Agent 服务补充。
+> 面向个性化学习的在线学习平台。前端 React 19；后端核心由 **仓颉（Cangjie）** 编写，其中 **API 网关是基于仓颉 Spire 框架实现的**——路由、鉴权、学习数据接口与上游转发都在 Spire 服务里完成，内容生成与多智能体编排由 Python Agent 服务补充。
 
 <p>
 <img alt="Cangjie" src="https://img.shields.io/badge/Backend-Cangjie%201.1.3-1F6F4A">
+<img alt="Spire" src="https://img.shields.io/badge/Gateway-Spire%20Framework-2E7D5B">
 <img alt="React" src="https://img.shields.io/badge/Frontend-React%2019-149ECA">
 <img alt="Vite" src="https://img.shields.io/badge/Build-Vite%207-646CFF">
 <img alt="Nginx" src="https://img.shields.io/badge/Deploy-Nginx%20%2B%20Compose-009639">
@@ -14,7 +15,7 @@
 ## 目录
 
 - [整体架构](#整体架构)
-- [仓颉后端](#仓颉后端)
+- [仓颉后端 · Spire](#仓颉后端--spire)
 - [接口约定](#接口约定)
 - [目录结构](#目录结构)
 - [本地开发](#本地开发)
@@ -33,8 +34,8 @@
   ▼
 Nginx（静态站点 + 同源代理）
   ├─ /               → apps/web 构建产物（dist）
-  ├─ /api/**         → services/api       （仓颉 · API 网关）
-  ├─ /v1/**          → services/api       （仓颉 · 转发到业务/智能体）
+  ├─ /api/**         → services/api       （仓颉 Spire · API 网关）
+  ├─ /v1/**          → services/api       （仓颉 Spire · 转发业务 / 智能体）
   └─ /internal/**    → services/api       （仅服务间，禁止对外暴露）
         │
         ├─ services/business   （仓颉 · 账号 / 组织 / 学习者 / 游客）
@@ -48,21 +49,77 @@ Nginx（静态站点 + 同源代理）
 - **仓颉服务是唯一业务入口**，鉴权、归属校验、写库都在这一层完成；
 - **Python Agent 只做生成与编排**，不承担账号与权限判断。
 
-## 仓颉后端
+## 仓颉后端 · Spire
+
+平台的 **API 网关就是仓颉 Spire 服务**（`services/api`，包名 `itn_spire`）：用 Spire 的 `WebHost` 直接注册路由，把已迁移的读写接口就地实现，其余请求转发给业务服务或 Agent 服务——同一套 JWT、同一份错误信封，前端无需感知后端是哪种语言。
 
 两个仓颉服务均为 `cjpm` 工程，`cjc-version = "1.1.3"`，统一依赖 `soulsoft_web_http / routing / hosting / extensions_injection`：
 
 | 服务 | 工程 | 职责 | 默认端口 | 健康检查 |
 | --- | --- | --- | --- | --- |
-| API 网关 | `services/api` | 路由分发、鉴权、学习资源、讲义/实操/分阶题、转发业务与 Agent | `8100` | `GET /health` |
+| **Spire API 网关** | `services/api` | Spire 路由、鉴权、学习资源、讲义/实操/分阶题、转发业务与 Agent | `8100` | `GET /health` |
 | 业务服务 | `services/business` | 登录与 JWT 签发、组织、学习者画像、游客体验、邮件验证码 | `5000` | `GET /hello` |
 
-仓颉侧的工程化约束：
+### Spire 入口与分层
+
+```cangjie
+// services/api/src/main.cj
+main(): Int64 {
+    let cfg = AppConfig()
+    let builder = WebHost.createBuilder(getCommandLine())
+    builder.services.addRouting()
+    let app = builder.build()
+
+    app.mapGet("health") { ctx =>
+        ctx.response.contentType = "text/plain; charset=utf-8"
+        ctx.response.write("ok")
+    }
+
+    registerNotesRoutes(app, cfg)          // 笔记 / 分类
+    registerWrongAnswerRoutes(app, cfg)    // 错题本
+    registerResourceRoutes(app, cfg)       // 学习资源
+    registerLearnerCourseRoutes(app, cfg)  // 我的课程 + 热学榜
+    registerCourseRoutes(app, cfg)
+    registerAgentSessionRoutes(app, cfg)   // 伴学助手会话
+    // …共 30+ 个 registerXxxRoutes 模块
+}
+```
+
+按「路由 / 数据 / 转发」三件事分文件，新增能力时照此扩展：
+
+| 文件后缀 | 职责 | 示例 |
+| --- | --- | --- |
+| `*_api.cj` | Spire 路由注册、参数解析、鉴权、统一响应 | `courses_api.cj`、`learner_courses_api.cj` |
+| `*_store.cj` | 纯 SQL 访问层（MySQL），不做 HTTP 判断 | `courses_store.cj`、`chat_store.cj` |
+| `*_proxy.cj` | 转发到业务服务 / Agent，超时与签名在这里处理 | `admin_knowledge_proxy.cj` |
+| `gateway.cj` | 兜底转发与路由优先级 | — |
+
+### 新增一个 Spire 接口
+
+```cangjie
+public func registerDemoRoutes(app: WebHost, cfg: AppConfig): Unit {
+    app.mapGet("v1/demo/health") { ctx =>
+        writeJson(ctx.response, 200, "{\"ok\":true}")
+    }
+    app.mapPost("v1/demo/items") { ctx =>
+        /* 鉴权复用 http_util 的 requireUserApi：失败时它已写好 401 响应 */
+        if (let Some(userId) <- requireUserApi(ctx.request, ctx.response, cfg)) {
+            writeJson(ctx.response, 200, DemoStore(cfg).list(userId))
+        }
+    }
+}
+```
+
+约定：路由挂在 `v1/**` 或 `api/v1/**` 下；响应统一 `{ code, message, data, timestamp }`（`writeJson` / `writeJsonEtag`）；异常走同一处 `BusinessException` 转信封，不在 handler 里拼字符串。
+
+### Spire 侧的工程约束
 
 - 编译必须显式指定 STDX 与动态库路径（见下方构建命令），否则 `soulsoft_*` 依赖链接失败；
-- 两个服务与 Agent 服务**共用同一 `JWT_SECRET`**，否则令牌互不认可；
-- 服务之间调用带 HMAC 签名（`X-*-Signature`），密钥只从环境变量注入，不落仓库；
-- 所有业务表按 `utf8mb4_unicode_ci` 统一排序规则，避免跨表 `UNION` 时的 collation 冲突。
+- 监听地址由 `SPIRE_HTTP_URL` 决定（默认 `http://127.0.0.1:8100`），健康检查固定为 `GET /health`；
+- 网关、业务服务与 Agent 服务**共用同一 `JWT_SECRET`**，否则令牌互不认可；
+- 转发类接口带 HMAC 签名（`X-*-Signature`），密钥只从环境变量注入，不落仓库；
+- 所有业务表按 `utf8mb4_unicode_ci` 统一排序规则，避免跨表 `UNION` 时的 collation 冲突；
+- 二进制产物固定为 `target/release/bin/main`，部署脚本按此路径取包。
 
 ## 接口约定
 
@@ -86,7 +143,7 @@ Nginx（静态站点 + 同源代理）
 │  ├─ src/context           # 登录、画像、智能体、笔记、成长
 │  ├─ src/hooks             # 数据加载与缓存
 │  └─ src/lib               # 接口封装与工具
-├─ services/api             # 仓颉 · API 网关（itn_spire）
+├─ services/api             # 仓颉 · Spire API 网关（包名 itn_spire）
 ├─ services/business        # 仓颉 · 账号与业务服务
 ├─ services/python          # Python Agent 服务（FastAPI）
 ├─ deploy/web               # 构建脚本、Compose、Nginx、环境变量示例
