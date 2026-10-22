@@ -5352,3 +5352,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 将 SIDEBAR_UI_DIR / SIDEBAR_CORE_EXE 指向安装器实际安装出的 resources/app/renderer 与 resources/kernel/lumin-core.exe（中文+空格路径），跑 55 项侧边栏专项。
 - 结果：RESULT 55/55（含运行中会话可见性、删除保护、改名、搜索、分隔条、资源栏跨会话清理、协作树/任务浮层切页清理）。
 - 至此同一套 55 项侧栏回归已在三种运行形态通过：源码工作树、便携包 dist/portable、安装器安装目录。
+
+### 2026-10-22 14:00 · 安装版会话深链验收
+
+- 取用户库副本里最近的一条会话 id，用安装目录的 Lumin.exe 以 `--ui-check lumin://thread/<sid>` 启动（TEMP 数据副本）。
+- 结果：界面自动打开该会话，state.chatSessionId 与 #chat-thread.dataset.session 都等于目标 id，DEEPLINK_OPENED=true。数据副本结束清零。
+- 这验证了"复制会话链接"生成的 lumin 深链在安装版里可实际打开对应会话。
