@@ -43,7 +43,7 @@ import itn_desktop_core.runtime.deltaToolCallDelta
  *  - **失败不抛**：填 `stopReason="error"` + `errorMessage`，由主循环转成一轮失败；
  *  - 工具参数是半截 JSON 流式到达，边到边解析，最后塞进 `ToolCallBlock.argsJson`。
  *
- * 重试：只在"一个事件都还没推出去"时重试 429/5xx（推过一半再重试会让正文重复）。
+ * 重试：只在尚无实际内容时有限重试；角色/用量帧不是可见增量。
  */
 /** 用户按了停止：只在本文件内部用，用来把"读流"这件事干净地掐掉。 */
 class AbortedByUser <: Exception {
@@ -199,6 +199,11 @@ public class OpenAiChatProvider <: ChatProvider {
         match (onAudit) { case Some(f) => f("model/response", responseAudit); case None => () }
 
         let reply = ModelReply()
+        // Failure still checkpoints the partial answer; it must remain in the next context.
+        reply.text = acc.text.toString()
+        reply.thinking = acc.reasoning.toString()
+        reply.usageIn = acc.promptTokens
+        reply.usageOut = acc.completionTokens
         if (abortRequested()) {
             reply.stopReason = "aborted"
             reply.errorMessage = "已取消"
@@ -222,10 +227,6 @@ public class OpenAiChatProvider <: ChatProvider {
             reply.errorMessage = "模型输出达到上限，工具参数被截断，未执行任何工具。请缩小文件内容或分段生成后重试。"
             return reply
         }
-        reply.text = acc.text.toString()
-        reply.thinking = acc.reasoning.toString()
-        reply.usageIn = acc.promptTokens
-        reply.usageOut = acc.completionTokens
         for (call in acc.calls) {
             if (call.name.size > 0) {
                 let args = trimStr(call.args.toString())
@@ -268,10 +269,19 @@ public class OpenAiChatProvider <: ChatProvider {
                 break
             }
             // 套餐限流会回 429：退避重试，但只在还没推过事件时
+            let audit = JsonObject()
+            audit.put("reason", JsonString("network_retry"))
+            audit.put("attempt", JsonInt(attempt + 1))
+            audit.put("maxAttempts", JsonInt(maxAttempts))
+            audit.put("delayMs", JsonInt(attempt * 2000))
+            match (onAudit) { case Some(f) => f("model/retry", audit); case None => () }
             for (_ in 0..(attempt * 20)) {
                 if (abortRequested()) { return "" }
                 sleep(Duration.millisecond * 100)
             }
+        }
+        if (lastMsg.contains("模型连接中断") && state.emitted == 0 && attempt > 1) {
+            return "模型连接中断，尝试 " + attempt.toString() + " 次后仍未恢复，请稍后重试。详情：" + lastMsg
         }
         return lastMsg
     }
@@ -307,6 +317,7 @@ public class OpenAiChatProvider <: ChatProvider {
             }
         }
         var stage = "构造请求"
+        let completion = [false]
         try {
             let req = HttpRequestBuilder()
                 .method("POST")
@@ -326,7 +337,7 @@ public class OpenAiChatProvider <: ChatProvider {
                 return AttemptResult(false, retryable, "模型接口返回 " + st.toString() + "：" + body)
             }
             stage = "读取响应体"
-            readSseChunks(resp.body, { obj: JsonObject =>
+            let done = readSseChunks(resp.body, { obj: JsonObject =>
                 watch.touch()
                 match (shouldAbort) {
                     case Some(f) =>
@@ -335,17 +346,20 @@ public class OpenAiChatProvider <: ChatProvider {
                         }
                     case None => ()
                 }
-                state.emitted = state.emitted + 1
+                if (hasAssistantContent(obj)) { state.emitted += 1 }
+                if (pickStr(obj, ["choices", "0", "finish_reason"]).size > 0) { completion[0] = true }
                 onChunk(obj)
             })
             if (watch.timedOut()) { return AttemptResult(false, false, "模型长时间未返回数据，请重试或检查模型服务") }
+            if (!done && !completion[0]) { return AttemptResult(false, true, "模型连接中断：响应在完成前结束，已收到的内容已保留。") }
             return AttemptResult(true, false, "")
         } catch (e: AbortedByUser) {
             return AttemptResult(true, false, "")
         } catch (e: Exception) {
             if (watch.wasAborted()) { return AttemptResult(true, false, "") }
             if (watch.timedOut()) { return AttemptResult(false, false, "模型长时间未返回数据，请重试或检查模型服务") }
-            return AttemptResult(false, true, "网络层失败（" + stage + "）：" + e.message)
+            if (completion[0]) { return AttemptResult(true, false, "") }
+            return AttemptResult(false, true, "模型连接中断（" + stage + "），已收到的内容已保留。详情：" + e.message)
         } finally {
             watch.finish()
             client.close()
@@ -545,7 +559,28 @@ func pickInt(o: JsonObject, path: Array<String>, fallback: Int64): Int64 {
 
 /* ---------- SSE ---------- */
 
-func readSseChunks(input: InputStream, onChunk: (JsonObject) -> Unit): Unit {
+func hasAssistantContent(obj: JsonObject): Bool {
+    for (field in ["content", "reasoning_content"]) {
+        if (pickStr(obj, ["choices", "0", "delta", field]).size > 0 ||
+            pickStr(obj, ["choices", "0", "message", field]).size > 0) { return true }
+    }
+    match (pick(obj, ["choices", "0", "delta", "tool_calls"])) {
+        case Some(a: JsonArray) =>
+            var i: Int64 = 0
+            while (i < a.size()) {
+                match (objOf(a[i])) {
+                    case Some(call) =>
+                        if (pickStr(call, ["function", "name"]).size > 0 || pickStr(call, ["function", "arguments"]).size > 0) { return true }
+                    case None => ()
+                }
+                i += 1
+            }
+        case _ => ()
+    }
+    return false
+}
+
+func readSseChunks(input: InputStream, onChunk: (JsonObject) -> Unit): Bool {
     let buf = Array<UInt8>(4096, repeat: 0)
     var pending = ArrayList<UInt8>()
     while (true) {
@@ -556,7 +591,7 @@ func readSseChunks(input: InputStream, onChunk: (JsonObject) -> Unit): Unit {
         var i = 0
         while (i < n) {
             if (buf[i] == 10) {
-                dispatchSseLine(pending, onChunk)
+                if (dispatchSseLine(pending, onChunk)) { return true }
                 pending = ArrayList<UInt8>()
             } else {
                 pending.add(buf[i])
@@ -565,24 +600,25 @@ func readSseChunks(input: InputStream, onChunk: (JsonObject) -> Unit): Unit {
         }
     }
     if (pending.size > 0) {
-        dispatchSseLine(pending, onChunk)
+        return dispatchSseLine(pending, onChunk)
     }
+    return false
 }
 
-func dispatchSseLine(line: ArrayList<UInt8>, onChunk: (JsonObject) -> Unit): Unit {
+func dispatchSseLine(line: ArrayList<UInt8>, onChunk: (JsonObject) -> Unit): Bool {
     let text = trimStr(safeUtf8Prefix(line.toArray()))
     if (!hasPrefix(text, "data:")) {
-        return
+        return false
     }
     let b = text.toArray()
     let data = trimStr(safeUtf8Prefix(b[5..b.size]))
-    if (data.size == 0 || data == "[DONE]") {
-        return
-    }
+    if (data == "[DONE]") { return true }
+    if (data.size == 0) { return false }
     var decoded: ?JsonObject = None
-    try { decoded = objOf(JsonValue.fromStr(data)) } catch(e: Exception) { return }
+    try { decoded = objOf(JsonValue.fromStr(data)) } catch(e: Exception) { return false }
     // Callback cancellation/recovery must reach the request owner, never the JSON parse catch.
     match (decoded) { case Some(o) => onChunk(o); case None => () }
+    return false
 }
 
 /**

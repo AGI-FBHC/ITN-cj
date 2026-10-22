@@ -1,7 +1,9 @@
 package itn_desktop_core.unittests
 
 import std.collection.*
+import std.convert.*
 import std.sync.*
+import std.net.*
 import std.time.*
 import stdx.net.http.*
 import stdx.encoding.json.*
@@ -24,6 +26,127 @@ import std.unittest.testmacro.*
  */
 @Test
 class ProviderTest {
+    // A real Cangjie TCP peer sends frames, then closes before the terminal HTTP chunk.
+    // Leaving the request body unread produces a TCP reset on Windows (10054).
+    func resetPeer(frames: Array<String>, truncated!: Bool = true, lingerMs!: Int64 = 180): (TcpServerSocket, ArrayList<Int64>) {
+        let server = TcpServerSocket(bindAt: IPSocketAddress("127.0.0.1", 0))
+        server.bind()
+        let count = ArrayList<Int64>(); count.add(0)
+        spawn {
+            for (body in frames) {
+                try {
+                    let socket = server.accept()
+                    let header = StringBuilder()
+                    let byte = Array<UInt8>(1, repeat: 0)
+                    while (header.size < 32768 && !header.toString().contains("\r\n\r\n")) {
+                        if (socket.read(byte) <= 0) { break }
+                        header.append(String.fromUtf8(byte))
+                    }
+                    count[0] += 1
+                    if (truncated) {
+                        // A complete HTTP chunk followed by a missing terminal chunk models a reset.
+                        let bytes = Array<UInt8>(8192, repeat: 32)
+                        let text = body.toArray()
+                        for (i in 0..text.size) { bytes[i] = text[i] }
+                        socket.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2000\r\n".toArray())
+                        socket.write(bytes)
+                        socket.write("\r\n".toArray())
+                    } else {
+                        socket.write(("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: " + body.size.toString() + "\r\nConnection: close\r\n\r\n" + body).toArray())
+                    }
+                    sleep(Duration.millisecond * lingerMs)
+                    socket.close()
+                } catch (e: Exception) { println("RESET_FIXTURE error: " + e.message); break }
+            }
+        }
+        return (server, count)
+    }
+
+    func resetConfig(server: TcpServerSocket): ModelConfig {
+        return modelCfg(Int64.parse(server.localAddress.toString().split(":")[1]))
+    }
+
+    func roleFrame(): String { return line("{\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}") }
+    func textFrame(): String { return line("{\"choices\":[{\"delta\":{\"content\":\"已收到的回答\"}}]}") }
+    func endFrame(): String { return line("{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}") }
+
+    @TestCase
+    func resetAfterRoleFrameRetriesBeforeVisibleOutput(): Unit {
+        let (server, count) = resetPeer([roleFrame(), textFrame() + endFrame() + "data: [DONE]\n\n"])
+        try {
+            let provider = OpenAiChatProvider(resetConfig(server))
+            let audits = ArrayList<JsonObject>()
+            provider.onAudit = Some({ name, p => if (name == "model/retry") { audits.add(p) } })
+            let reply = provider.respond(StepContext(), EventStream())
+            @Expect(count[0], 2); @Expect(reply.stopReason, "stop"); @Expect(reply.text, "已收到的回答")
+            @Expect(audits.size, 1); @Expect(strOf(audits[0], "reason"), "network_retry"); @Expect(intOf(audits[0], "attempt"), 2)
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func resetDuringAnswerPreservesPartialWithoutRetrying(): Unit {
+        let (server, count) = resetPeer([roleFrame() + textFrame()])
+        try {
+            let provider = OpenAiChatProvider(resetConfig(server))
+            let reply = provider.respond(StepContext(), EventStream())
+            @Expect(count[0], 1); @Expect(reply.stopReason, "error"); @Expect(reply.text, "已收到的回答")
+            @Expect(reply.errorMessage.contains("模型连接中断"), true); @Expect(reply.toolCalls.size, 0)
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func completedStreamDoesNotWaitForPeerClose(): Unit {
+        let (server, count) = resetPeer([textFrame() + endFrame() + "data: [DONE]\n\n"], truncated: true, lingerMs: 2500)
+        try {
+            let started = DateTime.now()
+            let reply = OpenAiChatProvider(resetConfig(server)).respond(StepContext(), EventStream())
+            @Expect(reply.stopReason, "stop"); @Expect(reply.text, "已收到的回答"); @Expect(count[0], 1)
+            @Expect((DateTime.now() - started).toMilliseconds() < 1800, true)
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func resetAfterFinishReasonKeepsSuccessfulAnswer(): Unit {
+        let (server, count) = resetPeer([textFrame() + endFrame()])
+        try {
+            let reply = OpenAiChatProvider(resetConfig(server)).respond(StepContext(), EventStream())
+            @Expect(reply.stopReason, "stop"); @Expect(reply.text, "已收到的回答"); @Expect(count[0], 1)
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func eofWithoutFinishCannotExecuteCompleteLookingToolArgs(): Unit {
+        let body = line("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"incomplete-request\",\"function\":{\"name\":\"write\",\"arguments\":\"{}\"}}]}}]}")
+        let (server, count) = resetPeer([body], truncated: false)
+        try {
+            let reply = OpenAiChatProvider(resetConfig(server)).respond(StepContext(), EventStream())
+            @Expect(reply.stopReason, "error"); @Expect(reply.toolCalls.size, 0); @Expect(count[0], 1)
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func failedAnswerContextRetainsCompletedToolAndPartialText(): Unit {
+        let calc = line("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"calc-before-reset\",\"function\":{\"name\":\"calc\",\"arguments\":\"{\\\"expr\\\":\\\"7*8\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}") + "data: [DONE]\n\n"
+        let (server, count) = resetPeer([calc, textFrame()])
+        try {
+            let dir = freshDir("reset-preserved-context")
+            let host = LuminAgent(Store(dir))
+            let result = host.askWithProvider(OpenAiChatProvider(resetConfig(server)), "", "算出结果再解释", "reset-context", "off", "")
+            @Expect(boolOf(result, "ok", true), false); @Expect(count[0], 2)
+            let capture = CaptureContext()
+            host.askWithProvider(capture, "", "继续剩余回答，沿用已有结果", "reset-context", "off", "")
+            var partial = 0; var tools = 0
+            for (m in capture.seen) {
+                if (m.role == AssistantMsg && m.text == "已收到的回答") { partial += 1 }
+                if (m.role == ToolResultMsg && m.text.contains("56")) { tools += 1 }
+            }
+            @Expect(partial, 1); @Expect(tools, 1)
+            var calls = 0
+            for (e in SessionStore(dir).events("reset-context")) { if (strOf(e, "type") == "tool/call") { calls += 1 } }
+            @Expect(calls, 1)
+        } finally { server.close() }
+    }
+
     @TestCase
     func mimoReasoningByteBudgetStopsBeforeExhaustingOutput(): Unit {
         let requests=ArrayList<JsonObject>()

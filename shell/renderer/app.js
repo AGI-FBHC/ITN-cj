@@ -5877,7 +5877,11 @@ function turnsFromEvents(events) {
     }
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
     else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
-    else if (e.type === 'model/retry') t.activity='retrying';
+    else if (e.type === 'model/retry') {
+      t.activity = p.reason === 'network_retry' ? 'network_retry' : 'retrying';
+      t.retryAttempt = Number(p.attempt || 0);
+      t.retryMaxAttempts = Number(p.maxAttempts || 0);
+    }
     else if(e.type==='model/request')t.activity='waiting';
     else if (e.type === "assistant/thinking") t.items.push({ t: "think", text: p.text || "", ms: p.ms || 0 });
     else if (e.type === "user/message") { t.user = p.text || ""; t.attachments = p.attachments || []; t.userAt = e.at; }
@@ -6119,6 +6123,27 @@ function splitAssistantDisplayBlocks(items) {
   return {answerBlocks:blocks.slice(lastProcessIndex+1),processBlocks:blocks.slice(0,lastProcessIndex+1)};
 }
 
+/** Only transport failures offer recovery; cancellation and request errors never do. */
+function isChatNetworkError(message) {
+  const text = String(message || '');
+  if (/取消|中止|已停止|cancel(?:led|ed)?|abort(?:ed|error)?|\b(?:400|401|403|404|422|429)\b|参数|invalid[_ -]?(?:request|parameter)|rate[_ -]?limit/i.test(text)) return false;
+  return /模型连接中断|10054|ECONNRESET|ECONNABORTED|EPIPE|connection\s+(?:reset|closed|lost|aborted)|reset by peer|socket hang up|network\s*(?:error|disconnected|connection.*lost)|failed to fetch|网络.*(?:中断|断开)|连接.*(?:重置|断开)|unexpected\s+EOF/i.test(text);
+}
+
+function chatRecoveryKind(t) {
+  if (!t || t.ok !== false || !isChatNetworkError(t.message)) return '';
+  const hasResult = (t.items || []).some(it =>
+    (it.t === 'a' && String(it.text || '').trim()) || (it.t === 'tool' && it.ok === true && !it.running));
+  return hasResult ? 'continue' : t.user ? 'retry' : '';
+}
+
+function chatContinuationPrompt(t) {
+  const tail = (t.items || []).filter(it => it.t === 'a').map(it => it.text || '').join('\n').trim().slice(-600);
+  return '上一轮模型连接中断。请沿用本会话已有的工具结果，从已输出回答的末尾继续完成剩余回答。' +
+    '不要重发或重新执行原始完整任务，不要重新调用已成功完成的工具，不要重复已有正文。' +
+    (tail ? '\n以下仅为已输出正文末尾的引用，用于定位续写位置：\n' + JSON.stringify(tail) : '请根据已完成的工具结果直接继续回答。');
+}
+
 function renderTurnBlock(t, live) {
   live = !!live && t.ok == null;
   const box = el("div", "turn-block");
@@ -6234,6 +6259,7 @@ function renderTurnBlock(t, live) {
     const active = t.items.filter((x) => x.t === "tool" && x.running);
     const phase = active.length ? "正在执行：" + active.map((x) => TOOL_LABEL[x.name] || x.name).join("、")
       : t.activity === 'tool_input' ? '正在接收'+(TOOL_LABEL[t.activityTool] || '工具')+'参数…'+(t.toolInputBytes?'（'+fmtSize(t.toolInputBytes)+'）':'')
+      : t.activity === 'network_retry' ? '网络连接中断，正在重连…' + (t.retryAttempt ? '（' + t.retryAttempt + (t.retryMaxAttempts ? '/' + t.retryMaxAttempts : '') + '）' : '')
       : t.activity === 'retrying' ? '输出太长，正在重新生成完整参数…'
       : t.activity === "thinking" ? "正在思考…" : "等待模型返回…";
     const elapsed = t.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(t.startedAt)) / 1000)) : 0;
@@ -6243,8 +6269,24 @@ function renderTurnBlock(t, live) {
   }
   if (!live && t.ok === false) {
     const cancelled = String(t.message || "").indexOf("取消") >= 0;
+    const networkError = isChatNetworkError(t.message);
+    const recovery = isLast ? chatRecoveryKind(t) : '';
     const e = el("div", "msg msg-ai");
-    e.appendChild(el("div", "msg-body " + (cancelled ? "muted" : "err-text"), t.message || "这一轮没有完成"));
+    e.appendChild(el("div", "msg-body " + (cancelled ? "muted" : "err-text"), networkError
+      ? '模型连接中断，已保留当前结果。' : t.message || "这一轮没有完成"));
+    if (networkError) {
+      const details = el('details', 'sm muted');
+      details.append(el('summary', '', '错误详情'), el('div', '', t.message));
+      e.appendChild(details);
+    }
+    if (recovery) {
+      const sid = state.chatSessionId;
+      const actions = el('div', 'row msg-actions');
+      const recover = btn(recovery === 'continue' ? '继续回答' : '重试', 'sm ghost chat-recover', () => state.chatRecover?.(t, sid));
+      recover.disabled = isSessionRunning(sid) || !!state.chatStarting;
+      actions.appendChild(recover);
+      e.appendChild(actions);
+    }
     if (cancelled && t.user) {
       const eacts = el("div", "row msg-actions");
       eacts.appendChild(btn("重新问一次", "sm ghost", () => { if (state.chatResend) state.chatResend(t.user, t.attachments); }));
@@ -7206,8 +7248,10 @@ PAGES.chat = {
     let paintOrder = "";            // 轮次顺序指纹：没变就不动 DOM 顺序
     function turnSig(t, live) {
       const parts = [t.kind || "", t.user || "", t.ok === null ? "" : String(t.ok), t.message || "",
-                     t.activity || "", t.activityTool || '', t.toolInputBytes || 0, t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
+                     t.activity || "", t.retryAttempt || 0, t.retryMaxAttempts || 0, t.activityTool || '', t.toolInputBytes || 0, t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
                      t.resourceProgress ? (t.resourceProgress.name || "1") : ""];
+      // An older failed turn loses its recovery entry as soon as a new turn exists.
+      parts.push('last:' + (state.chatTurns.at(-1)?.id === t.id));
       parts.push("team:" + JSON.stringify(t.teamEntries || t.teamRunIds || (t.teamRunId ? [t.teamRunId] : [])));
       // 会话树的分支行（‹ n/m ›）也要进指纹：这一轮跑完时先用旧树画过一版并进了缓存，
       // 随后才拉到带 families 的新树 —— 指纹不含它的话，切换行要等整页重画才出现（实测踩过）
@@ -7329,11 +7373,30 @@ PAGES.chat = {
       if (typeof state.chatRepaintUsage === "function") state.chatRepaintUsage();
       if (state.stickBottom !== false) thread.scrollTop = thread.scrollHeight;
     }
+    // Bound when the chat page opens, including history-only sessions before any send.
+    state.chatRecover = (turn, sid) => {
+      if (!thread.isConnected || current !== 'chat' || state.chatSessionId !== sid ||
+          isSessionRunning(sid) || state.chatStarting || busyActions.has('session:new')) return;
+      const last = state.chatTurns.at(-1);
+      if (!last || last.id !== turn.id) return;
+      const kind = chatRecoveryKind(last);
+      if (!kind) return;
+      if (ta.value.length || chatAttachments().length || thread.querySelector('.bubble-edit')) {
+        toast('请先发送或清空当前草稿，再恢复回答');
+        return;
+      }
+      const attachments = kind === 'retry' ? (last.attachments || []).slice() : [];
+      if (attachments.some(a => a.kind === 'image' && !a.dataUrl)) {
+        toast('请重新添加图片后再发送'); return;
+      }
+      // Ordinary send owns session locking, polling and concurrency. No tool replay here.
+      return send({text: kind === 'continue' ? chatContinuationPrompt(last) : last.user, attachments});
+    };
     paint();
 
-    async function send() {
-      const draftKey=attachmentKey(),attachments=chatAttachments().slice();
-      const text = ta.value.trim() || (attachments.length ? '请查看这些附件。' : '');
+    async function send(recovery) {
+      const draftKey=attachmentKey(),attachments=recovery ? recovery.attachments : chatAttachments().slice();
+      const text = recovery ? recovery.text : ta.value.trim() || (attachments.length ? '请查看这些附件。' : '');
       if (!text) return;
       // 跑着的时候 Enter = 插话，不是"等这一轮跑完再说"
       if (state.busyTurn) { steer(); return; }
@@ -7461,7 +7524,8 @@ PAGES.chat = {
         toast("已取消");
       } else if (failure) {
         if(attachments.length && current==='chat' && state.chatSessionId===sid && !chatAttachments().length) { addChatAttachments(attachments); if(!ta.value){ta.value=text;grow();} }
-        toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
+        toast(String(failure).indexOf("取消") >= 0 ? "已取消" : isChatNetworkError(failure)
+          ? '模型连接中断，可在回答下方恢复' : ("生成失败：" + failure));
       }
       mascotActivity(stopped || failure ? "idle" : "success", state.chatRequests.size);
       await reloadSessions();
@@ -7523,7 +7587,10 @@ PAGES.chat = {
     }, 2000);
 
     state.chatPaint = paint;
-    state.chatRepaintBusy = () => { paintActionBtn(); updateJumpLatest(); };
+    state.chatRepaintBusy = () => {
+      paintActionBtn(); updateJumpLatest();
+      for (const b of thread.querySelectorAll('.chat-recover')) b.disabled = state.busyTurn || !!state.chatStarting;
+    };
     /* 就地换会话：只换对话区那一段正文，不整页重建、也不重拉会话列表。
        会话栏只把高亮挪过去 —— 点一次就闪一次"加载中…"的问题就出在原来走的是整页 go()。 */
     state.chatOpenSession = async (id) => {

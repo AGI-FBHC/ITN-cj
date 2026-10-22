@@ -51,6 +51,10 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
    process.exitCode=(result.ok===true&&end?.payload?.ok===true&&answer.length>0)?0:1;
  }finally{
    try{core.kill();}catch{}
+   await pause(300);
    fs.writeFileSync(cred,'');
+   for(const name of ['itn.db','itn.db-wal','itn.db-shm']){
+    const file=path.join(dir,name);if(fs.existsSync(file))fs.writeFileSync(file,'');
+   }
  }
 })().catch(e=>{console.error('SMOKE_ERROR '+String(e.message).slice(0,200));process.exitCode=1;});
