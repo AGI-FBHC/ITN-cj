@@ -14,7 +14,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  db.close();
  if(!model?.api_key)throw new Error('no deepseek key in copy');
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lumin-real-ui-')),pf=path.join(dir,'port');
- const core=spawn(path.join(root,'dist/core/itn-desktop-core.exe'),['--data-dir='+dir,'--port-file='+pf,'--ui-dir='+path.join(root,'shell/renderer')],{windowsHide:true,stdio:'ignore',env:{...process.env,cjHeapSize:'2GB'}});
+ const core=spawn(process.env.REAL_SMOKE_CORE||path.join(root,'dist/core/itn-desktop-core.exe'),['--data-dir='+dir,'--port-file='+pf,'--ui-dir='+(process.env.REAL_SMOKE_UI||path.join(root,'shell/renderer'))],{windowsHide:true,stdio:'ignore',env:{...process.env,cjHeapSize:'2GB'}});
  let browser;
  try{
   for(let i=0;i<200&&!fs.existsSync(pf);i++)await pause(100);

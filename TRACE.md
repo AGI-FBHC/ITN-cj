@@ -5315,3 +5315,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 用 DeepSeek 配置生成临时 env（不打印密钥），运行 tools/real-longgen-check.ps1：请求 1500 字以上《提示词工程》讲义。
 - 结果：耗时 23.9 秒，响应 5198 字节，完整包含学习目标、核心概念、常见问题等章节，返回 code=0，无超时/断连。凭据 DB 与临时 env 结束均截断为 0 字节。
 - 说明：长请求走 /api/chat 非流式路径，本次验证单次长输出的完整性与稳定性。
+
+### 2026-10-22 12:45 · 打包后的应用真实模型复验
+
+- 给 tools/real-chat-ui-smoke.cjs 增加 REAL_SMOKE_CORE / REAL_SMOKE_UI 覆盖，指向 dist/portable/Lumin-0.8.31/resources 内的包内核与包渲染器（不是源码目录）。
+- 结果（DeepSeek deepseek-flash）：A 59 字（含"变量"）、B 37 字（含"循环"）；切回 A 后打开会话与面板高亮正确、A 正文恢复且不含 B 内容；0 页面异常，RESULT=PASS。
+- 说明：这是对实际交付包的端到端验证，而不只是源码工作树。凭据仍只从 TEMP 副本读取并清零。
