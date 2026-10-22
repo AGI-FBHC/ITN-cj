@@ -1,5 +1,5 @@
 {
-  "version": "0.8.18",
-  "build": "lumin-audit-20261018",
+  "version": "0.8.32",
+  "build": "development",
   "sourceCommit": "development"
 }

@@ -5383,3 +5383,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 安装器：dist/Lumin-Setup-0.8.31.exe，155720123 bytes，SHA256=2191FA7E30ED49A1E0BFE47AD688F7842FB4FE43864D33EE0F541796ECF67FA3；payload 2738 文件，提交与便携包相同。沿用已验收的安装脚本，构建时校验 payload 关键资产；本轮未重跑安装/卸载三轮（此次未改安装逻辑）。压缩过程中仅临时把本次 makensis 子进程优先级调为 AboveNormal，进程结束即消失，没有系统持久配置改动。
 - 包内 renderer 再跑 team-panel-check 44/44（含运行中/规划期重开、同层不换行、窄窗边界）；实际 Lumin.exe 在全新 TEMP/LOCALAPPDATA/APPDATA 环境 --smoke 启动，PRELOAD=ok、TITLEBAR=ok、NAV=5、RESULT=OK。可执行文件嵌入项目图标 16/32/48/64/128/256 验证通过，产品名 Lumin、版本 0.8.31。
 - 本轮完成的是协作面板与同类耗时请求缺陷修复；未声称所有页面不存在任何剩余问题。最终真实模型协作链路两次、真实内核持久化/传输延迟回归、分支/新建请求重放、路由/侧栏回归与源码/包内布局验收均已通过。截图证据为真实模型事件回放，保留于 tmp/team-dock-review/。
+
+### 2026-10-22 · 按顺序递增版本并使用 dist 根版本目录
+
+- 用户列出 dist/Lumin-0.8.21 至 dist/Lumin-0.8.31，要求以后接在现有版本后命名。按该顺序本次最新交付使用 Lumin-0.8.32，直接与这些文件夹并列；不再把最新展开包放在 portable 子目录，不重用或覆盖既有版本目录，不追加 final、release 等后缀。
+- 将 shell/package.json 与 package-lock.json 的三处应用版本同步到 0.8.32；开发用 renderer/release.json 同步版本并标记 development，发行包仍由脚本生成真实 sourceCommit/资产哈希。README 的过时 ITN-Desktop/x64 路径改成实际 Lumin-<版本号> 规则。
+- scripts/package-app.ps1 的默认输出本来就是 dist/Lumin-<版本号>，本次恢复使用默认路径，不再传 portable 的 OutDir。只调整交付版本和目录，不改本轮已验收的业务功能；验证只检查版本、包内资产一致性和隔离环境原生启动，不重复模型测试。

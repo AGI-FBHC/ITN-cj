@@ -50,6 +50,7 @@ npx electron .
 
 # 打包成绿色压缩包（目标机器无需安装仓颉或 Node）
 .\scripts\package-app.ps1
+
 ```
 
-产物在 `dist/ITN-Desktop/` 与 `dist/ITN-Desktop-win-x64.zip`，约 162 MB。界面由仓颉内核托管，Electron 只负责窗口。技术验证结论见 [docs/04-技术验证.md](docs/04-技术验证.md)。
+产物为 `dist/Lumin-<版本号>/Lumin.exe` 与 `dist/Lumin-<版本号>.zip`，版本目录直接与历版并列。每次交付递增 `shell/package.json` 与 `shell/package-lock.json` 的补丁版本，保留旧版本目录，不追加其他后缀。界面由仓颉内核托管，Electron 只负责窗口。技术验证结论见 [docs/04-技术验证.md](docs/04-技术验证.md)。
