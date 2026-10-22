@@ -1,0 +1,13 @@
+[package]
+cjc-version = "1.2.0"
+name = "itn_desktop_core"
+version = "0.1.0"
+description = "ITN-Desktop local agent kernel"
+output-type = "executable"
+compile-option = "-Woff unused --diagnostic-format=noColor -lssl -lcrypto -lcangjie-dynamicLoader-opensslFFI -lcrypt32"
+
+[dependencies]
+"sqlite_driver" = { path = "../third_party/sqlite-driver" }
+
+[target.x86_64-w64-mingw32.bin-dependencies]
+path-option = ["${CANGJIE_STDX_PATH}"]

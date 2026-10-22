@@ -1,0 +1,10 @@
+/target/
+/examples/*/target/
+/.cache/
+/.bin-cache/
+/.cjpm-history/
+/env/.env
+
+*.a
+*.cjo
+*.cjp

@@ -1,0 +1,104 @@
+# 把 lumin 打成"双击就能跑"的绿色目录（目标机器无需装仓颉）。
+$ErrorActionPreference = 'Stop'
+
+. "$PSScriptRoot\env.ps1"
+
+$proj = Resolve-Path "$PSScriptRoot\.."
+$dist = Join-Path $proj "dist\lumin-demo"
+
+$built = Join-Path $proj "target\release\bin\main.exe"
+if (-not (Test-Path -LiteralPath $built)) {
+    throw "找不到构建产物 $built，请先运行 scripts/demo.ps1 或 cjpm build"
+}
+# 打包前确认产物比源码新，否则会把"上一次的二进制"当成这次的结果发出去
+$builtTime = (Get-Item -LiteralPath $built).LastWriteTimeUtc
+$newest = Get-ChildItem -Path (Join-Path $proj "src") -Recurse -File -Include *.cj |
+    Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+if ($newest -and $newest.LastWriteTimeUtc -gt $builtTime) {
+    throw "构建产物比源码旧（$($newest.FullName)），请先 cjpm build"
+}
+
+New-Item -ItemType Directory -Force -Path $dist | Out-Null
+
+$runtimeLib = "$SdkRoot\cangjie\runtime\lib\windows_x86_64_cjnative"
+$opensslBin = "$SdkRoot\openssl\mingw64\bin"
+$artifacts = @(
+    @{ from = $built; to = "lumin-demo.exe" },
+    @{ from = "$runtimeLib\libcangjie-runtime.dll"; to = "libcangjie-runtime.dll" },
+    @{ from = "$runtimeLib\libboundscheck.dll"; to = "libboundscheck.dll" },
+    # 真实模型走 HTTPS：TLS 来自 stdx.net.tls，缺这两个 DLL 起不来
+    @{ from = "$opensslBin\libssl-3-x64.dll"; to = "libssl-3-x64.dll" },
+    @{ from = "$opensslBin\libcrypto-3-x64.dll"; to = "libcrypto-3-x64.dll" }
+)
+
+foreach ($a in $artifacts) {
+    if (-not (Test-Path -LiteralPath $a.from)) { throw "missing artifact: $($a.from)" }
+    $dest = Join-Path $dist $a.to
+    Copy-Item -LiteralPath $a.from -Destination $dest -Force
+    $srcHash = (Get-FileHash -LiteralPath $a.from -Algorithm SHA256).Hash
+    $dstHash = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash
+    if ($srcHash -ne $dstHash) { throw "拷贝后哈希不一致：$dest" }
+}
+
+# 批处理启动器：内容必须**纯 ASCII + CRLF**。
+# 为什么（真机撞过，排查了半天）：`.cmd` 里只要有非 ASCII 字节，或者行尾只有 LF，
+# cmd.exe 就可能把自己在文件里的位置读错 —— 于是它把某一行的**中段**当成命令去执行，
+# 报出 \"'m' 不是内部或外部命令\" 这种莫名其妙的片段错误。文件名用中文没关系（那是文件系统的事），
+# **内容**必须是 ASCII。中文字幕交给 exe 自己打（它走 console API，不受这条影响）。
+function Write-BatchFile([string]$path, [string]$text) {
+    $normalized = ($text -replace "`r`n", "`n") -replace "`n", "`r`n"
+    $bad = @()
+    for ($i = 0; $i -lt $normalized.Length; $i++) {
+        if ([int]$normalized[$i] -gt 127) { $bad += ("0x{0:X4}@{1}" -f [int]$normalized[$i], $i) }
+    }
+    if ($bad.Count -gt 0) {
+        throw ("批处理内容里有非 ASCII 字符（会把 cmd.exe 搞乱）：" + ($bad[0..([Math]::Min(4, $bad.Count - 1))] -join ', '))
+    }
+    [IO.File]::WriteAllText($path, $normalized, [Text.UTF8Encoding]::new($false))
+}
+
+# 演示输出很长，双击 exe 后窗口会立刻关掉 —— 附一个"双击就能看清"的启动器
+$launcher = @'
+@echo off
+chcp 65001 > nul
+cd /d "%~dp0"
+lumin-demo.exe demo
+echo.
+echo (press any key to close)
+pause > nul
+'@
+Write-BatchFile (Join-Path $dist "运行演示.cmd") $launcher
+
+# 对话启动器：回到工程目录再跑，这样能自动读到 lumin\.env.local 里的 Key（Key 不进 dist）。
+# 默认工作区是 chat-workspace 而不是工程根目录 —— 免得模型把 .env.local 里的 Key 读出来。
+$chat = @'
+@echo off
+chcp 65001 > nul
+cd /d "%~dp0..\.."
+if not exist "chat-workspace" mkdir "chat-workspace"
+"%~dp0lumin-demo.exe" chat --workspace chat-workspace %*
+echo.
+echo (press any key to close)
+pause > nul
+'@
+Write-BatchFile (Join-Path $dist "对话.cmd") $chat
+
+$readme = @'
+Lumin —— Pi-Agent 风格的仓颉 Agent 运行时
+
+【运行演示.cmd】离线走路演示，不联网、不读写文件：
+  1. 流式解析：工具参数边到边解析（半截 JSON 也能实时读出工具名和已到齐的参数）
+  2. 标准模式一轮：turn/step 事件流、工具执行、结果回灌、最终回答
+  3. 研究模式：联网工具出现，回答里的 [W9] 会被引用自检抓出来
+  4. 护栏：模式白名单、最大模型轮数、可中止
+
+【对话.cmd】连真实模型聊天（需要 lumin\.env.local 里有 LUMIN_KEY）。
+  能用真工具：读/写/改/搜/找文件（都关在工作区里）；加 --allow-exec 后还能跑 PowerShell 命令。
+  对话里用斜杠命令：/mode research 换工具集、/tools 看工具、/permissions 换权限档位、/help 看全部。
+
+源码与单元测试在仓库根目录（cjpm test，62 个用例）。
+'@
+Set-Content -LiteralPath (Join-Path $dist "说明.txt") -Value $readme -Encoding UTF8
+
+Write-Output "packaged to $dist"
+Get-ChildItem $dist -File | Select-Object Name, @{n='KB';e={[math]::Round($_.Length/1KB,1)}}
