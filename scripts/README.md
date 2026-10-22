@@ -17,7 +17,7 @@
 
 ## Windows 安装版
 
-先运行 `package-app.ps1` 得到当前版本的完整目录和 ZIP，再运行 `package-installer.ps1`，生成 `dist/Lumin-Setup-<版本>-x64.exe`。后者校验发布清单，使用 NSIS 压缩完整程序目录，不重新组装业务代码。
+先运行 `package-app.ps1` 得到当前版本的完整目录和 ZIP，再运行 `package-installer.ps1`，生成 `dist/Lumin-Setup-<版本>.exe`。后者校验发布清单，使用 NSIS 压缩完整程序目录，不重新组装业务代码。
 
 构建机需要 NSIS 与 Windows SDK 的 Manifest Tool (`mt.exe`)；目标电脑不需要这些工具。可通过 `package-installer.ps1 -Compiler <makensis.exe路径>` 指定 NSIS。安装器、快捷方式和卸载图标由 Lumin logo 生成。
 

@@ -4,7 +4,7 @@ $repo=(Resolve-Path "$PSScriptRoot\..").Path
 $version=(Get-Content "$repo\shell\package.json" -Raw|ConvertFrom-Json).version
 if(!$AppDir){$AppDir=Join-Path $repo "dist\Lumin-$version"}
 $AppDir=(Resolve-Path -LiteralPath $AppDir).Path
-if(!$Output){$Output=Join-Path $repo "dist\Lumin-Setup-$version-x64.exe"}
+if(!$Output){$Output=Join-Path $repo "dist\Lumin-Setup-$version.exe"}
 $Output=[IO.Path]::GetFullPath($Output)
 if(Test-Path -LiteralPath $Output){throw "Installer already exists; choose a new output path: $Output"}
 if(!$Compiler){

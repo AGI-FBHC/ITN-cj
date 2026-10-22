@@ -70,7 +70,9 @@ function releaseFiles() {
 }
 
 function releaseIdentity(name) {
-  const installer = name.match(/^Lumin-Setup-(\d+\.\d+\.\d+)-x64\.exe$/i);
+  // Current Windows builds omit the architecture suffix in the product name.
+  // Keep accepting -x64 so already published direct links remain valid.
+  const installer = name.match(/^Lumin-Setup-(\d+\.\d+\.\d+)(?:-x64)?\.exe$/i);
   if (installer) return {version: installer[1], kind: 'installer'};
   const portable = name.match(/^Lumin-(\d+\.\d+\.\d+)\.zip$/i);
   return portable ? {version: portable[1], kind: 'portable'} : null;

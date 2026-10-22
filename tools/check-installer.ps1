@@ -2,11 +2,11 @@ param([string]$Installer, [string]$SourceDir='')
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path "$PSScriptRoot\..").Path
 $version=(Get-Content "$repo\shell\package.json" -Raw|ConvertFrom-Json).version
-if(!$Installer){$Installer=Join-Path $repo "dist\Lumin-Setup-$version-x64.exe"}
+if(!$Installer){$Installer=Join-Path $repo "dist\Lumin-Setup-$version.exe"}
 if(!$SourceDir){$SourceDir=Join-Path $repo "dist\Lumin-$version"}
 $Installer=(Resolve-Path -LiteralPath $Installer).Path
 $SourceDir=(Resolve-Path -LiteralPath $SourceDir).Path
-$root=Join-Path $env:TEMP ('lumin-install-check-'+[guid]::NewGuid().ToString('N')+'-学员')
+$root=Join-Path $env:TEMP ('Lumin检查-'+[guid]::NewGuid().ToString('N').Substring(0,8)+'-学员')
 $installed=Join-Path $root '应用安装 验收'
 New-Item -ItemType Directory -Path $root | Out-Null
 $desktop=Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lumin.lnk'
@@ -103,7 +103,10 @@ try {
     if($registry[$key]){& reg.exe import $registry[$key] | Out-Null}
   }
   foreach($file in $links){
-    if($null -ne $snapshots[$file]){[IO.File]::WriteAllBytes($file,$snapshots[$file])}
+    if($null -ne $snapshots[$file]){
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+      [IO.File]::WriteAllBytes($file,$snapshots[$file])
+    }
     elseif(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force}
   }
   if((Test-Path -LiteralPath $menu) -and @(Get-ChildItem -LiteralPath $menu -Force).Count -eq 0){Remove-Item -LiteralPath $menu}
