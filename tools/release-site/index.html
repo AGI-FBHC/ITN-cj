@@ -489,6 +489,19 @@
       font-size: 13px;
     }
 
+    .portable-help {
+      margin: 16px 0 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--surface);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .portable-help a {
+      font-weight: 700;
+      text-underline-offset: 3px;
+    }
+
     .requirements {
       padding: 84px 0;
       background: var(--surface);
@@ -1114,6 +1127,7 @@
             <div><dt>版本</dt><dd>v{{VERSION}}</dd></div>
           </dl>
           <p class="install-note">{{INSTALL_INSTRUCTIONS}}</p>
+          {{PORTABLE_HELP}}
         </div>
       </div>
     </section>
@@ -1146,6 +1160,10 @@
             <details class="faq-item" name="download-faq">
               <summary>安装版和便携版有什么区别？</summary>
               <div class="faq-answer"><p>安装版运行 EXE 后按提示安装，提供开始菜单入口和卸载功能；便携版解压后运行 Lumin.exe。两种版本功能相同。</p></div>
+            </details>
+            <details class="faq-item" name="download-faq">
+              <summary>安装版无法安装或启动怎么办？</summary>
+              <div class="faq-answer"><p>如果出现“内核启动超时，未收到端口文件”等启动错误，可尝试本页的 ZIP 便携版。将压缩包完整解压到独立文件夹，再运行 Lumin.exe。</p></div>
             </details>
             <details class="faq-item" name="download-faq">
               <summary>需要单独安装仓颉吗？</summary>

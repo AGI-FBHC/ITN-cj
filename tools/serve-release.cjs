@@ -115,6 +115,7 @@ function renderIndex() {
     FILE_FORMAT: installer ? 'EXE 安装程序' : 'ZIP 便携包',
     INSTALL_INSTRUCTIONS: installer ? '运行安装程序，按提示完成安装。首次启动请在“模型与接口”中配置自己的模型服务。' : '解压后运行 Lumin.exe。首次启动请在“模型与接口”中配置自己的模型服务。',
     PORTABLE_LINK: installer && portable ? '<a class="portable-download" href="' + esc(downloadHref(portable.name)) + '" download>ZIP 便携版 · ' + esc(fileSize(portable.size)) + '</a>' : '',
+    PORTABLE_HELP: installer && portable ? '<p class="portable-help">安装或启动失败时，可尝试 <a href="' + esc(downloadHref(portable.name)) + '">ZIP 便携版</a>。解压到独立文件夹后运行 Lumin.exe。</p>' : '',
     RELEASE_DATE: esc(releaseDate),
     ARCHIVE_SECTION: archiveSection(archived),
   };
