@@ -602,7 +602,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
         <div className={`max-w-[88%] ${item.role === 'user' ? 'text-right' : ''}`}>
           <p className={`mb-1.5 flex items-center gap-2 text-xs font-extrabold ${item.role === 'user' ? 'justify-end text-[#6038ef]' : 'text-[#4d83d1]'}`}>
             {item.role === 'assistant' && <span className="zx-tutor-speaker-dot" aria-hidden="true" />}
-            {item.role === 'user' ? '你' : '学习助手'}
+            {item.role === 'user' ? '你' : 'Lumin学习助手'}
           </p>
           {item.quote && <div className="mb-2 rounded-xl border-l-[3px] border-[#6038ef] bg-[#f2effc] px-3 py-2 text-left text-xs font-semibold leading-5 text-[#686c77]"><strong className="block text-[#454852]">引用：</strong>{quoteText(item.quote).slice(0, 80)}…</div>}
           {!!item.attachments?.length && <div className="zx-tutor-sent-images">{item.attachments.map((image, index) => image.dataUrl
@@ -628,7 +628,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
       {copyError && <p className="zx-tutor-image-error" role="alert">{copyError}</p>}
       <div ref={bottom} />
     </div>
-    <div className="shrink-0 p-5 pt-2">
+    <div className="shrink-0 px-5 pb-2 pt-2">
       {archived && <p className="zx-tutor-archived-note">此会话已归档，恢复后可继续提问。</p>}
       {hasContext && <div className="zx-tutor-context">
         <div><strong>{contextEnabled ? '使用当前课程上下文' : '当前课程上下文已关闭'}</strong><span>{[courseName, lessonTitle || quote?.heading].filter(Boolean).join(' · ') || (quoteText(quote) ? '已引用内容' : '当前课程内容')}</span></div>
@@ -648,7 +648,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
         <button type="button" onClick={speech.toggle} disabled={!speech.supported || !canCompose || preparing} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${speech.listening ? 'animate-pulse bg-[#6038ef] text-white' : 'text-[#666b76] hover:bg-[#f0ebff] hover:text-[#6038ef]'} disabled:cursor-not-allowed disabled:opacity-30`} aria-label={speech.listening ? '停止语音输入' : '开始语音输入'} title={speech.supported ? '语音提问' : '当前浏览器不支持语音识别'}><MicIcon className="h-5 w-5" /></button>
         {sending ? <button type="button" className="zx-tutor-stop" onClick={() => request.current?.stop()} aria-label="停止输出" title="停止接收输出，保留已收到的回答"><ActionIcon kind="stop" /></button> : <button type="button" onClick={() => send()} disabled={!canSend} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#6038ef] text-white shadow-[0_6px_16px_rgba(96,56,239,0.28)] transition hover:bg-[#512bdc] disabled:cursor-not-allowed disabled:opacity-35" aria-label="发送消息" title="发送消息"><SendIcon className="h-5 w-5" /></button>}
       </div>
-      <p id={`zx-tutor-input-help-${conversationId}`} className="mt-2 text-center text-[10px] font-semibold text-[#a1a4ad]">{images.length ? `${images.length}/3 张图片 · ` : ''}Enter 发送 · Shift+Enter 换行</p>
+      <p id={`zx-tutor-input-help-${conversationId}`} className="mt-1 text-center text-[10px] font-semibold text-[#b7b9bf]">{images.length ? `${images.length}/3 张图片 · ` : ''}Enter 发送 · Shift+Enter 换行</p>
     </div>
     {previewImage && <ImagePreview image={previewImage} onClose={() => setPreviewImage(null)} />}
   </aside>;
