@@ -5327,3 +5327,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 构建 dist/Lumin-Setup-0.8.31-x64.exe：155,694,318 bytes，SHA256=FE72CAAAD61C0102191D3F45AE06D3131F226F9197E2EB9B96D99EF95E7A7D7F，payloadCommit=a656b180…（即运行中会话可见性修复后的构建），payloadFiles=2738。
 - tools/check-installer.ps1 24/24 PASS（中文与空格安装路径）：2738 文件逐项哈希一致；卸载注册/深链/开始菜单快捷方式正确；运行中文件锁定拒绝升级；重复安装、升级保留用户数据与安装目录额外文件；安装版 PRELOAD/TITLEBAR OK、5 个导航项、空模型提示正常；PPT/DOCX 导出读取、PDF 读取 10069 字符、随包 PPT 运行时与隔离 SQLite 全部 OK；卸载删除自有文件、保留无关文件与学习数据、移除注册；重装后数据保留。
 - 升级/卸载/重装三次后实际学习数据库字节完全一致（byte-identical），证明安装器不会破坏用户数据。证据目录：C:/Users/GeJie/AppData/Local/Temp/lumin-install-check-936ef75dc6564cf8aa0ad13d7f76ff6c-学员。
+
+### 2026-10-22 13:05 · 安装版 + 真实模型闭环验收
+
+- 将 0.8.31 安装器静默安装到中文与空格路径的临时目录，使用安装目录里的 Lumin.exe 与 TEMP 数据副本（chat=deepseek）启动，真实提问"说明变量在程序里的作用"。
+- 结果：安装版正常启动，真实模型返回 50 字回答（含"变量"），INSTALLED_REAL=PASS。数据副本结束清零。
+- 结合此前 check-installer 24/24（升级/卸载/重装学习库字节不变），安装器 → 安装版启动 → 真实模型对话整条链路已闭环。
