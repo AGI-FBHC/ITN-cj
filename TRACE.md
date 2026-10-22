@@ -5244,3 +5244,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 契约核对：请求 6 页是"目标页数"，工具说明明确"章节页可能由渲染器补充，最终页数以 renderedSlides 为准"；实际两次都是 9 页（补了 3 个章节页）。原测试断言"严格等于 6"与契约不符，已改为 6~10 页区间（仍能抓住跑飞成十几页）；这是测试修正，不是产品缺陷。
 - 凭据卫生：real-ppt-check 与 real-learning-team-check 都会把用户库复制到隔离目录，已在这两个脚本的 finally 中把副本 itn.db 清零；同时把此前遗留的 6 个含密钥副本（itn-real-team-*、lumin-real-ppt-*、lumin-real-session-* 共 6 个，最大的 44.9MB）截断为 0。重跑 real-learning-team 后新目录 itn.db 为 0 字节，清理生效。
 - 真实多智能体复跑：5 节点全部完成、35 条 team 事件、958 字回答，RESULT real model PASS。
+
+### 2026-10-22 10:10 · 真实模型并发会话验收（A 生成中新建 B）
+
+- 新增 tools/real-concurrent-sessions.cjs（DeepSeek deepseek-flash）：A 发起约 300 字长回答 → 确认 state.chatRequests 中 A 仍在跑 → 新建 B → B 提问并正常作答 → 切回 A 等收尾。
+- 结果：aStillRunning=true；A 536 字、turn/end ok；B 50 字；A 正文不含 B 的「循环」、B 事件不含 A 的「函数式编程」；切回 A 后打开会话与面板高亮都正确；0 页面异常，RESULT=PASS。这直接复核了用户最初报告"一个会话生成中新建会话导致插话/卡住"的场景。
+- 脚本与账面 pin 一致：凭据只从 TEMP 副本读取，finally 清零副本与隔离数据目录 itn.db，不打印密钥。
