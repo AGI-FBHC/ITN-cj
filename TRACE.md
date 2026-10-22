@@ -5456,3 +5456,8 @@ read_chunk 读得到原文并带回库标识与正文。
 - 先更新本地 docs/02 契约（docs 不上传 Git），业务路由、工具权限和数据库格式无变更。版本按既有规则递增为 0.8.34，旧版本目录保留。
 - 回归结果：ToolContextTest 最终 6/6（新增合法并行结果乱序但不改变内容、重复结果保留的边界），ProviderTest 19/19（含前轮 10054、部分正文上下文、取消、截断、限流），AgentLoopTest 13/13（含自动压缩与并行执行）。本轮针对性共 38 项，不声称运行全部 188 项。期间 Provider 审计测试发现 toolResultCount 被规范化后的角色改变，已保持其原有输入上下文统计语义后重跑通过。
 - 真实模型：新构建的 dist/core，deepseek-flash 真正返回两条 calc 调用、两条成功结果和最终“(12+8)*3/4 = 15，7*8 = 56。”；ASK_OK/TURN_OK=true。real-tool-smoke 新增 REAL_TOOL_PARALLEL=1，且 finally 清零 TEMP 凭据副本和隔离模型数据库/WAL/SHM。不重做昂贵课程/PPT生成。
+
+- 0.8.34 交付：功能提交 eb1ff04a5cb344afc569b38efe4912f7c319cffe；38 个 release 关键资产哈希通过，便携版实际 EXE 在全新临时用户目录启动 RESULT=OK。安装器使用同一 payload，installer acceptance 一次 24/24（中文空格路径、2738 文件哈希、升级锁、数据保留、安装版启动、随包文件运行时、卸载与重装），隔离测试目录 D:/lit/Lumin检查-10c19abb-学员。
+- 按既定双下载发布流程，将 ZIP 在安装器压缩时提前上传暂存，安装器构建/验收与上传并行；两个文件上传前后 SHA256 一致才从 incoming 原子移入 releases。发布页/服务代码未改，无需重启下载服务或重新上传大包；公网页面 v0.8.34、安装器和 ZIP 两条 HEAD 均 200。不做整包公网重复下载，也不重做模型/课程/PPT昂贵测试。
+- 下载页仍为 http://113.249.102.41:6025/；安装器 Lumin-Setup-0.8.34.exe、便携包 Lumin-0.8.34.zip，均不加额外命名后缀。更新后需退出旧版再启动新版，原 400 会话可直接输入“继续”使用，无须清空聊天记录。
+- 文件校验：安装器 155778160 bytes，SHA256=5D152D65DFFBCD5DE4EEDE5938AFC3558AB1EBB8D86956F1920AF85832CC6F4C；ZIP 231333302 bytes，SHA256=2BF9D11CC771D2A68A170D11E62C9FBA0CEB50BFED6D9A0A66EA5425FE17FAF3。
