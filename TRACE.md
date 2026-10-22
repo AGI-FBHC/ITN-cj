@@ -5375,3 +5375,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - 新建会话专项：subagent 补充 session/new 的延迟响应、菜单真实连点、/new、发送与切页竞态；旧版复现 10 次创建，修复后一次。分支+新建完整回归 8/8，追加专项两次通过。
 - 交付前最小桌面尺寸复查发现真实边界缺陷：900×600 时 dock 右界 958、关闭按钮右界 935，超过 900px，可能无法收起。放宽窄窗 dock 的 flex 收缩下限后右界为 892、关闭按钮 869；保留对话 280px。同脚本在 1024、900 增加实际矩形断言，team-panel-check 最终 44/44。此次发现后重做最终包，避免把已发现的窄窗问题交付。
 - 全页面请求回归补测索引/整理入口：锁定原 DOM（避免文案变化后定位到下一知识库），disabled 与 HTTP 单次请求均通过；request-feedback-check --audit-app 最终 failures=0。功能主提交 e48bdf0；本条之后的提交包含窄窗修正与本轮完整记录。
+
+### 2026-10-22 · 0.8.31 本地交付核验
+
+- 最终功能提交：e48bdf0（协作面板/请求防重）+ 0ec0ec8（最小窗口边界）。package release.sourceCommit=0ec0ec83626d757ddece2724fd6904b91a191fe7；38 个 release 关键资产逐项哈希一致。文件名仅使用 0.8.31，没有临时修订后缀；未上传、未发布、未推送远程。
+- 便携包：dist/Lumin-0.8.31.zip，231332255 bytes，SHA256=634510FA2DA0832EDF8166EF85B76FB10DE3D5F2E5CFE2F6A50ADE204A2277A6。展开目录 dist/portable/Lumin-0.8.31。
+- 安装器：dist/Lumin-Setup-0.8.31.exe，155720123 bytes，SHA256=2191FA7E30ED49A1E0BFE47AD688F7842FB4FE43864D33EE0F541796ECF67FA3；payload 2738 文件，提交与便携包相同。沿用已验收的安装脚本，构建时校验 payload 关键资产；本轮未重跑安装/卸载三轮（此次未改安装逻辑）。压缩过程中仅临时把本次 makensis 子进程优先级调为 AboveNormal，进程结束即消失，没有系统持久配置改动。
+- 包内 renderer 再跑 team-panel-check 44/44（含运行中/规划期重开、同层不换行、窄窗边界）；实际 Lumin.exe 在全新 TEMP/LOCALAPPDATA/APPDATA 环境 --smoke 启动，PRELOAD=ok、TITLEBAR=ok、NAV=5、RESULT=OK。可执行文件嵌入项目图标 16/32/48/64/128/256 验证通过，产品名 Lumin、版本 0.8.31。
+- 本轮完成的是协作面板与同类耗时请求缺陷修复；未声称所有页面不存在任何剩余问题。最终真实模型协作链路两次、真实内核持久化/传输延迟回归、分支/新建请求重放、路由/侧栏回归与源码/包内布局验收均已通过。截图证据为真实模型事件回放，保留于 tmp/team-dock-review/。
