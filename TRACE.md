@@ -5283,3 +5283,13 @@ read_chunk 读得到原文并带回库标识与正文。
 - 结果：A 首答 219 字、B 答 117 字；B 不含 A 的内容（B_HAS_A=false）；切回后下拉值与正文都回到 A（BACK_TEXT_CHARS=219）；PPT 预览仍在（SLIDE_VISIBLE=true）；0 页面异常，RESULT=PASS。
 - 排障：先前用页面全局 state.entries 判断导学会话 busy 无效（导学状态在 studyplayer 闭包里），改用 .sp-chat-send.stop 的 DOM 状态；会话下拉在切回瞬间可能更新中，改为先读选项再按 id 切换。均为测试写法问题，不是产品缺陷。
 - 脚本凭据只从 TEMP 副本读取，finally 清零副本与隔离 itn.db。
+
+### 2026-10-22 11:45 · 真实模型学习记忆与个性化验收
+
+- 用 TEMP 只读凭据副本 + LUMIN_TEST_MODEL_ID=deepseek 跑 tools/real-memory-check.cjs，7 项真实检查全部通过：
+  - 模型真实调用 remember_learning_fact，保存"喜欢用图书馆借书类比"（preference）与"刚学会函数、还没学类"（status），都带来源；
+  - 新会话只问"解释函数"，回答自动使用"图书馆/借书"类比，说明结构化记忆注入了上下文；
+  - 模型真实调用 forget_learning_fact，只删偏好、保留学习状态；
+  - 再开新会话不会恢复已忘记的偏好；
+  - 多轮真实对话后 SQLite 完整性检查通过。
+- 凭据副本结束已截断为 0 字节。real-memory-check 只读取外部传入的凭据库，不自己复制，所以由调用方负责清理。
