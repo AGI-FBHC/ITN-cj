@@ -1135,3 +1135,9 @@
 - 端到端真实链路：从本机对 `http://113.249.102.41:6024` 执行匿名 `POST /api/session` → `GET /api/bootstrap`（返回 2 门已发布课程与 4 个课时）→ `POST /api/tutor/chat`（关闭课程上下文问“用一句话说明你是什么助手”），返回 200、`mode=Agent`、`model=deepseek-v4.1-flash`、真实中文回答并新建会话 `agent-2594a141-…`；证明 nginx→仓颉→MySQL→AUTH_SECRET 解密库内密钥→模型网关全链路可用。
 - 测试数据清理：验证过程共产生 5 个匿名游客用户与 1 个测试会话，已按 id 精确删除其 `tutor_messages/tutor_conversations/user_sessions/user_state/learner_activity_days/lesson_progress/lesson_resource_progress/quiz_attempts/user_learning_memory/users` 记录；复核 users 由 209 回到 204、tutor_conversations 由 20 回到 19、12:58 之后无新增用户，服务 health 正常。
 - 浏览器复核：`http://113.249.102.41:6024/` 落地页与 `/login` 登录页均正常渲染（登录页保留“邮箱登录 / 管理员登录 / Powered by Cangjie”等既有设计），静态资源 `/assets/index-BFYtsP2Q.js`（1.0MB）与 CSS（310KB）均 200。
+
+## 2026-10-22 会话失效自愈修复（前端）
+
+- 迁移验收时发现：数据库清理/令牌失效后，前端只用 `localStorage` 里的旧令牌反复请求 `/api/bootstrap`，界面停在“暂时无法加载 · 学习会话已失效，请重试”，点“重试”也不会重建会话。属既有缺陷，非迁移引入，但会直接卡住用户。
+- 修复 `apps/web/src/learning-api.jsx` 的 `bootstrap()`：`/bootstrap` 抛 401 时先 `localStorage.removeItem(TOKEN_KEY)`，再 `ensureSession()` 重建匿名会话并重试一次；其它错误照旧抛出。重新 `npm run build --prefix apps/web` 后把 dist 重新打包上传到服务器 `/opt/zhixun-yunshu/web/dist`（新入口 `index-YYZ3EA51.js`）。
+- 验证：浏览器在持有失效令牌的标签页刷新后，自动丢弃旧令牌、重建会话并正常渲染登录页（不再停留在“学习会话已失效”）；服务器 6024 首页 200。本批改动与 TRACE 本地提交，不推送。

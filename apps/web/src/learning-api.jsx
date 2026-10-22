@@ -86,7 +86,16 @@ export async function bootstrap() {
   bootstrapPromise = (async () => {
     try {
       await ensureSession();
-      const [data] = await Promise.all([request('/bootstrap'), loadOrgBrand()]);
+      let data;
+      try {
+        [data] = await Promise.all([request('/bootstrap'), loadOrgBrand()]);
+      } catch (error) {
+        // 令牌失效（数据库重置、账号被清理或过期）时丢弃旧令牌，重建匿名会话后重试一次
+        if (error.status !== 401) throw error;
+        localStorage.removeItem(TOKEN_KEY);
+        await ensureSession();
+        [data] = await Promise.all([request('/bootstrap'), loadOrgBrand()]);
+      }
       if (!Array.isArray(data.courses)) throw new Error('课程目录读取失败，请重试');
       localStorage.setItem('zhixun-course-favorites', JSON.stringify(data.favorites || []));
       localStorage.setItem('zhixun-lecture-bookmarks', JSON.stringify(data.bookmarks || []));
