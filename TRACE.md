@@ -5333,3 +5333,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 将 0.8.31 安装器静默安装到中文与空格路径的临时目录，使用安装目录里的 Lumin.exe 与 TEMP 数据副本（chat=deepseek）启动，真实提问"说明变量在程序里的作用"。
 - 结果：安装版正常启动，真实模型返回 50 字回答（含"变量"），INSTALLED_REAL=PASS。数据副本结束清零。
 - 结合此前 check-installer 24/24（升级/卸载/重装学习库字节不变），安装器 → 安装版启动 → 真实模型对话整条链路已闭环。
+
+### 2026-10-22 13:15 · 交付目录命名与启动页审计
+
+- 交付目录 dist/portable/Lumin-0.8.31 递归检查：没有 pi / pi-studio 命名的文件；根目录第三方许可是 workspace-LICENSE.txt（安装器使用同一 payload）。
+- 包内 splash.html 含 powered by cangjie，且不含"正在启动内核"文案。
+- 说明：仓库里的 illumin/ 历史文档（如 vs-pi.md）不属于桌面交付包，是早期对照资料，未改动。
