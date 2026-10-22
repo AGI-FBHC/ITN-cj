@@ -189,57 +189,31 @@
 }
 .zx-agent-chat-head {
   display: flex;
-  min-height: 82px;
+  min-height: 46px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid rgb(51 38 76 / 8%);
   background: rgb(255 255 255 / 82%);
-  padding: 14px 24px;
+  padding: 8px 24px;
   backdrop-filter: blur(12px);
 }
-.zx-agent-chat-identity { display: flex; min-width: 0; align-items: center; gap: 12px; }
-.zx-agent-chat-mark {
-  display: grid;
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 13px;
-  background: #eee8ff;
-  color: #6038ef;
-}
-.zx-agent-chat-identity > div { display: grid; min-width: 0; gap: 3px; }
-.zx-agent-chat-identity span {
-  color: #918899;
-  font: 750 9px/1.3 "Courier New", monospace;
-  letter-spacing: .11em;
-}
-.zx-agent-chat-identity strong {
+.zx-agent-chat-title {
+  min-width: 0;
   overflow: hidden;
   color: #211c2a;
-  font-size: 15px;
-  font-weight: 900;
-  line-height: 1.4;
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.zx-agent-chat-status {
-  display: inline-flex;
+.zx-agent-chat-source {
   flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  color: #777082;
+  color: #8b8794;
   font-size: 11px;
   font-weight: 700;
-}
-.zx-agent-chat-status i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #18a67a;
-  box-shadow: 0 0 0 3px rgb(24 166 122 / 10%);
 }
 @media (max-width: 900px) {
   .zx-agent-workspace { grid-template-columns: 210px minmax(0, 1fr); }
@@ -340,7 +314,7 @@
 [aria-label="Lumin 学习助手对话"] :is(button, summary):focus-visible { outline: 2px solid #6038ef; outline-offset: 3px; }
 @media (max-width: 420px) {
   .zx-tutor-composer { gap: 7px; padding-inline: 10px; }
-  .zx-agent-chat-head { min-height: 62px; gap: 8px; padding: 10px 14px; }
+  .zx-agent-chat-head { min-height: 42px; gap: 8px; padding: 8px 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .zx-tutor-dot, .zx-tutor-caret, [aria-label="Lumin 学习助手对话"] .animate-pulse { animation: none; }
@@ -412,17 +386,14 @@
 .zx-agent-conversation-filters { border-radius: 8px; background: #e6e5e0; }
 .zx-agent-conversation-filters button[aria-pressed="true"] { border-radius: 6px; color: #26242a; box-shadow: none; }
 .zx-agent-chat-head {
-  min-height: 64px;
+  min-height: 44px;
   border-bottom-color: #e5e4df;
   background: #fff;
-  padding: 12px 20px;
+  padding: 7px 20px;
   backdrop-filter: none;
 }
-.zx-agent-chat-mark { width: 34px; height: 34px; border-radius: 9px; background: #efeee9; color: #56515d; }
-.zx-agent-chat-identity span { color: #77736c; font: 650 10px/1.3 inherit; letter-spacing: .02em; }
-.zx-agent-chat-identity strong { color: #26242a; font-size: 14px; font-weight: 800; }
-.zx-agent-chat-status { color: #6e6a72; font-size: 10.5px; }
-.zx-agent-chat-status i { width: 6px; height: 6px; box-shadow: none; }
+.zx-agent-chat-title { color: #26242a; font-size: 13.5px; font-weight: 800; }
+.zx-agent-chat-source { color: #8a8780; font-size: 11px; }
 .zx-tutor-message.is-assistant {
   border: 1px solid #e3e2dd;
   border-radius: 9px !important;

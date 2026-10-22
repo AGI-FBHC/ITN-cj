@@ -583,17 +583,13 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
   ];
   const canCompose = !loading && !sending && !historyError && !archived;
   const canSend = canCompose && !preparing && (draft.trim() || images.length);
+  const chatTitle = conversationTitle || lessonTitle || '学习对话';
+  const chatSource = archived ? '已归档' : (lessonTitle || courseName ? '课程对话' : '');
 
   return <aside className={`flex h-full flex-col bg-[#fcfcfd]${fullPage ? ' zx-tutor-full' : ''}`} aria-label="Lumin 学习助手对话">
     <div className="zx-agent-chat-head">
-      <div className="zx-agent-chat-identity">
-        <span className="zx-agent-chat-mark"><ConversationIcon className="h-5 w-5" /></span>
-        <div>
-          <span>{lessonTitle ? '课程对话' : '通用对话'}</span>
-          <strong>{conversationTitle || lessonTitle || '学习对话'}</strong>
-        </div>
-      </div>
-      <span className="zx-agent-chat-status">{archived ? '已归档' : <><i />在线</>}</span>
+      <strong className="zx-agent-chat-title" title={chatTitle}>{chatTitle}</strong>
+      {chatSource && <span className="zx-agent-chat-source">{chatSource}</span>}
     </div>
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 sm:px-7" role="log" aria-label="对话记录" aria-live="polite" aria-busy={sending || loading}>
       {loading && <p className="text-xs font-bold text-[#9297a3]">正在读取对话记录…</p>}

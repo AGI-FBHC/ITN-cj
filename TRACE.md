@@ -1106,3 +1106,11 @@
 - 修改 apps/web/src/TutorChat.jsx：助手发言标签改为“Lumin学习助手”；输入区外层容器由 `shrink-0 p-5 pt-2` 改为 `shrink-0 px-5 pb-2 pt-2`，去掉底部多余 12px 内边距；提示行 `mt-2` 改为 `mt-1`，文字颜色 `#a1a4ad` 改为 `#b7b9bf`。发送、停止、引用、语音、图片、上下文开关等功能逻辑均未改动。
 - 验证：`npm run build --prefix apps/web` 构建通过（仅既有 chunk 体积警告，无新增错误）；浏览器截图确认助手标识为“Lumin学习助手”、提示行更贴近输入框且颜色更浅。
 - 本批仅改前端与 TRACE，不重启后端、不调用模型、不改任何配置；用户未跟踪的 tools/build_course_resource_packs.py 继续保持不动。本地提交，不推送。
+
+## 2026-10-22 Agent 会话头部扁平化与来源右置
+
+- 用户反馈会话头部“课程对话 / 会话名 / 在线”这一块过高过重：要求去掉“在线”，来源放右侧、会话名称放左侧，整体扁一点；并追加说明“之前若没有来源处就算了，后续补充这项功能”。
+- 修改 apps/web/src/TutorChat.jsx：删除头部左侧的图标块与两行身份区（`zx-agent-chat-identity` / `zx-agent-chat-mark`），删除绿色圆点“在线”状态（`zx-agent-chat-status`）；头部改为单行结构——左侧 `zx-agent-chat-title` 显示会话名称（`conversationTitle || lessonTitle || 学习对话`，带 title 提示与省略号），右侧 `zx-agent-chat-source` 显示来源。新增 `chatSource`：已归档会话显示“已归档”，有课程上下文（lessonTitle 或 courseName）显示“课程对话”，其余无来源信息时不渲染任何来源文本（按用户要求先留空，真正的持久化“来源”字段后续再补）。
+- 修改 apps/web/src/tutor-chat.css：头部最小高度 82px → 46px、内边距 14px 24px → 8px 24px、间距 16px → 12px；删除 identity/mark/status 相关规则，新增 title（14px/850，单行省略）与 source（11px/700，`#8b8794`）规则；去 AI 化覆盖段同步收紧为 44px 高、7px 20px 内边距，标题 13.5px/800、来源 `#8a8780`；≤420px 媒体查询从 62px 改为 42px。功能逻辑（会话选择、归档、重命名、删除、引用、工具轨迹、语音、图片）未改动。
+- 验证：`npm run build --prefix apps/web` 构建通过（仅既有 chunk 体积警告）；仓库内已无 `zx-agent-chat-identity` / `zx-agent-chat-mark` / `zx-agent-chat-status` / “在线” 残留引用。浏览器截图确认：头部为单行扁平条，左“为什么这道题选这个答案？”、右“课程对话”，无在线状态，原图标块与两行身份区已移除。
+- 本批仅改前端与 TRACE，不重启后端、不调用模型、不改配置；用户未跟踪的 tools/build_course_resource_packs.py 保持不动。本地提交，不推送。
