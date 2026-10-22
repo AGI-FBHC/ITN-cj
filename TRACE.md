@@ -5389,3 +5389,5 @@ read_chunk 读得到原文并带回库标识与正文。
 - 用户列出 dist/Lumin-0.8.21 至 dist/Lumin-0.8.31，要求以后接在现有版本后命名。按该顺序本次最新交付使用 Lumin-0.8.32，直接与这些文件夹并列；不再把最新展开包放在 portable 子目录，不重用或覆盖既有版本目录，不追加 final、release 等后缀。
 - 将 shell/package.json 与 package-lock.json 的三处应用版本同步到 0.8.32；开发用 renderer/release.json 同步版本并标记 development，发行包仍由脚本生成真实 sourceCommit/资产哈希。README 的过时 ITN-Desktop/x64 路径改成实际 Lumin-<版本号> 规则。
 - scripts/package-app.ps1 的默认输出本来就是 dist/Lumin-<版本号>，本次恢复使用默认路径，不再传 portable 的 OutDir。只调整交付版本和目录，不改本轮已验收的业务功能；验证只检查版本、包内资产一致性和隔离环境原生启动，不重复模型测试。
+
+- 交付完成：dist/Lumin-0.8.32/Lumin.exe；压缩包 dist/Lumin-0.8.32.zip，231332255 bytes，SHA256=5BE3709DE4FABD174CA50B3CB0A214DC54B121B9CC65234530797F9512CD6C10。release 与包内应用版本均为 0.8.32，38 项关键资产哈希一致；与上一已验收包比较，仅 Lumin.exe 的版本资源变化，业务资产逐项一致。新目录实际 EXE 在隔离空数据环境启动 RESULT=OK；旧版本目录及包全部保留。版本与命名规则提交 c754d68。
