@@ -1167,3 +1167,10 @@
 ## 2026-10-22 海报主标题去掉冒号
 
 - 用户要求把主标题“你的 AI 学习搭档：”末尾冒号去掉，改为“你的 AI 学习搭档”；紫色第二行“懂课程，也懂你。”不变。已重新构建并同步本地、GitHub itn-lite 与服务器 6024。
+
+## 2026-10-22 服务器 6024 后端同步（学习计划 404 修复）
+
+- 现象：服务器 6024 前端已是新版，点“生成我的学习计划”报“请求失败（404）”。原因：服务器后端仍是 10-22 12:59 迁移时的旧二进制，没有 `POST /api/learner/plan` 路由（前端新、后端旧）。
+- 修复：重新打包 `services/learning`（src/cjpm.toml/cjpm.lock/renderer/migrations/schema.sql）上传到 `/opt/zhixun-yunshu/app/services/learning`；服务器 MySQL 执行 migration 025（`user_learning_memory` 增加 learning_plan_json / plan_generated_at / plan_model，复核 3 列存在）；用 `/opt/cangjie-1.2.0` 重新 `cjpm build -i -j4`（成功，仅 2 条既有告警）；重启 `zhixun-api`。
+- 验证：health 正常（Cangjie 1.2.0 + Spire / zhixun_learning）；未鉴权 `POST /api/learner/plan` 返回 401（路由存在，修复前为 404）；外网真实链路（匿名 session → 写入问卷画像 → POST /api/learner/plan）30.2s 返回 200，3 阶段/6 周、planModel=deepseek-v4.1-flash、learningPlan 已落库；6024 首页 200。测试游客（792384f1…）及其关联记录已精确清理，未触碰用户自己的两个测试游客会话。
+- 同步状态：本地代码/构建、GitHub `itn-lite`（HEAD 0444366）与服务器一致；本次仅服务器运行态与迁移更新，无源码改动，TRACE 随提交同步。
