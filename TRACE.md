@@ -5371,3 +5371,7 @@ read_chunk 读得到原文并带回库标识与正文。
 - 测试说明与证据：先加上图下详情的真实几何断言，旧版立即失败，随后修复；team-panel-check 最后 42/42，包含边界真实点击/拖拽、6 个同层节点不换行、缩放适配、规划期先关闭后重开、历史与事件重放、节点 DOM 保持。真实 DeepSeek 两次协作（7 节点/6 边；6 节点/5 边）均成功，执行未完即收起/重开/点击，页面异常 0；几何 parallel/belowTitle/stacked 均 true。最终不换行布局使用保存的真实事件再次回放截图，未为截图重复耗费模型 tokens；证据 tmp/team-dock-review/final-light.png、final-dark.png。
 - 延迟点击回归 request-feedback-check --audit-app 使用真实 Edge + 临时目录的真实仓颉内核，只在 HTTP 传输处暂停请求，统计 POST 数并回读持久化：笔记/记忆/知识点/资源/课程/连线/导入/并入/索引/整理均只写一次，最后 failures=0。期间两类测试写法已纠正：修复后冻结的确认框不能再用 Playwright.uncheck；动态文字 locator 在按钮变成“正在准备”后会指向下一知识库按钮，改为锁定原 DOM 后断言，两个知识库的各一次请求不再被误报为重复。
 - 已完成回归：route-lifecycle 18/18、sidebar-torture 55/55、chat-ux 18/18；subagent 的课程回归 81/81。真实模型只从 TEMP 凭据副本读取并在 finally 清零，不打印密钥；所有新测试写入隔离临时库。
+
+- 新建会话专项：subagent 补充 session/new 的延迟响应、菜单真实连点、/new、发送与切页竞态；旧版复现 10 次创建，修复后一次。分支+新建完整回归 8/8，追加专项两次通过。
+- 交付前最小桌面尺寸复查发现真实边界缺陷：900×600 时 dock 右界 958、关闭按钮右界 935，超过 900px，可能无法收起。放宽窄窗 dock 的 flex 收缩下限后右界为 892、关闭按钮 869；保留对话 280px。同脚本在 1024、900 增加实际矩形断言，team-panel-check 最终 44/44。此次发现后重做最终包，避免把已发现的窄窗问题交付。
+- 全页面请求回归补测索引/整理入口：锁定原 DOM（避免文案变化后定位到下一知识库），disabled 与 HTTP 单次请求均通过；request-feedback-check --audit-app 最终 failures=0。功能主提交 e48bdf0；本条之后的提交包含窄窗修正与本轮完整记录。

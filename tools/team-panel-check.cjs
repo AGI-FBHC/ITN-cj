@@ -105,6 +105,15 @@ async function checkReplyEntrypoints(browser, events, check) {
   await page.waitForSelector('#team-panel.open');
   await page.locator('[data-node-id="n3"] .team-node-title').click();
   check('final event fetch restores a run completed before the first poll', mockAsks === 1 && (await page.locator('#team-detail').innerText()).includes('MCP 负责模型与工具连接'));
+  for (const width of [1024, 900]) {
+    await page.setViewportSize({width, height:600});
+    check('dock close and chat remain within the narrow desktop: ' + width, await page.evaluate(() => {
+      const main = document.querySelector('.app > .main').getBoundingClientRect();
+      const pane = document.getElementById('team-panel').getBoundingClientRect();
+      const close = document.getElementById('team-panel-close').getBoundingClientRect();
+      return pane.right <= innerWidth && close.right <= innerWidth && main.right <= pane.left + 1 && main.width >= 270;
+    }));
+  }
   check('real app integration produces no uncaught browser errors', errors.length === 0, errors.join('; '));
   await page.close();
 }

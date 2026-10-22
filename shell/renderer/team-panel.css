@@ -140,6 +140,11 @@
 .team-open-btn { align-self: flex-start; margin-top: 8px; }
 @keyframes team-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 @keyframes team-line-flow { to { stroke-dashoffset: -22; } }
+@media (max-width: 1100px) {
+  .team-dock { min-width: 240px; }
+  #team-panel-legend { display: none; }
+  .team-detail-head { flex-wrap: wrap; }
+}
 @media (max-width: 720px) {
   .team-dock { flex-basis: 48%; min-width: 240px; }
   .app:has(.team-dock:not([hidden])) > .main { min-width: 200px; }
