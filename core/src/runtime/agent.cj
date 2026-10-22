@@ -297,15 +297,22 @@ public class Agent {
                 }
             }
         }
-        if (ids.size <= keepRecent + 1) {
+        let all = session.messagesForModel()
+        var retained = if (keepRecent > 0) { keepRecent } else { 1 }
+        if (all.size <= retained + 1) {
             lastCompactNote = "对话还短，不用压缩"
             return false
         }
-        let firstKept = ids[ids.size - keepRecent]
-        let all = session.messagesForModel()
+        // A tool result cannot survive without its preceding assistant call block.
+        while (retained < all.size && all[all.size - retained].role == ToolResultMsg) { retained += 1 }
+        if (retained >= all.size || retained > ids.size) {
+            lastCompactNote = "最近的工具调用需完整保留，暂不压缩"
+            return false
+        }
+        let firstKept = ids[ids.size - retained]
         let sb = StringBuilder()
         var i: Int64 = 0
-        while (i + keepRecent < all.size) {
+        while (i + retained < all.size) {
             sb.append("[")
             sb.append(roleName(all[i].role))
             sb.append("] ")

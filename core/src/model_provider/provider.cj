@@ -24,6 +24,7 @@ import itn_desktop_core.runtime.ToolCallBlock
 import itn_desktop_core.runtime.ToolSpec
 import itn_desktop_core.runtime.Message
 import itn_desktop_core.runtime.MsgRole
+import itn_desktop_core.runtime.repairToolMessageOrder
 import itn_desktop_core.runtime.objOf
 import itn_desktop_core.runtime.evMessageUpdate
 import itn_desktop_core.runtime.deltaThinkingDelta
@@ -144,7 +145,8 @@ public class OpenAiChatProvider <: ChatProvider {
             sys.put("content", JsonString(ctx.system))
             msgs.add(sys)
         }
-        for (m in ctx.messages) {
+        let modelMessages = repairToolMessageOrder(ctx.messages)
+        for (m in modelMessages) {
             let serialized = m.toChatJson()
             if (model.toAsciiLower().contains("mimo") && m.role == MsgRole.AssistantMsg && m.toolCalls.size > 0 && m.thinking.size > 0) {
                 serialized.put("reasoning_content",JsonString(m.thinking))

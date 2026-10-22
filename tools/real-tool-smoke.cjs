@@ -18,7 +18,9 @@ const root='D:/Desktop/ITN/ITN-Desktop',pause=ms=>new Promise(r=>setTimeout(r,ms
   await post('models/save',{id:'real-tool',name:'真实工具验收',baseUrl:model.base_url,apiKey:model.api_key,model:model.model});
   await post('models/roles',{chatModelId:'real-tool'});
   const sid=(await post('sessions/new',{})).sessionId;
-  const res=await post('agent/ask-pi',{kbId:'',question:'请调用 calc 工具计算 (12+8)*3/4，并用一句话告诉我结果。',sessionId:sid,web:'auto',mode:'chat',skill:'',perm:'auto'});
+  const parallel=process.env.REAL_TOOL_PARALLEL==='1';
+  const question=parallel?'请在同一次工具调用回复中并行调用 calc 两次，分别计算 (12+8)*3/4 和 7*8。工具结果返回后，用一句话给出这两个结果。不要执行其他操作。':'请调用 calc 工具计算 (12+8)*3/4，并用一句话告诉我结果。';
+  const res=await post('agent/ask-pi',{kbId:'',question,sessionId:sid,web:'auto',mode:'chat',skill:'',perm:'auto'});
   let events=[];
   for(let i=0;i<900;i++){events=(await post('sessions/events',{sessionId:sid})).events||[];if(events.some(e=>e.type==='turn/end'))break;await pause(200);}
   const end=events.find(e=>e.type==='turn/end');
@@ -30,7 +32,7 @@ const root='D:/Desktop/ITN/ITN-Desktop',pause=ms=>new Promise(r=>setTimeout(r,ms
   console.log('TOOL_RESULTS='+JSON.stringify(results));
   console.log('ANSWER_CHARS='+answer.length+' ANSWER_HEAD='+answer.replace(/\s+/g,' ').slice(0,90));
   if(end?.payload?.message)console.log('TURN_MESSAGE='+String(end.payload.message).slice(0,180));
-  const ok=res.ok===true&&end?.payload?.ok===true&&calls.includes('calc')&&results.some(r=>r.tool==='calc'&&r.ok===true)&&/15/.test(answer);
+  const ok=res.ok===true&&end?.payload?.ok===true&&calls.filter(t=>t==='calc').length>=(parallel?2:1)&&results.filter(r=>r.tool==='calc'&&r.ok===true).length>=(parallel?2:1)&&/15/.test(answer)&&(!parallel||/56/.test(answer));
   process.exitCode=ok?0:1;
- }finally{try{core.kill();}catch{}fs.writeFileSync(cred,'');}
+ }finally{try{core.kill();}catch{}await pause(300);fs.writeFileSync(cred,'');for(const name of ['itn.db','itn.db-wal','itn.db-shm']){const file=path.join(dir,name);if(fs.existsSync(file))fs.writeFileSync(file,'');}}
 })().catch(e=>{console.error('TOOL_SMOKE_ERROR '+String(e.message).slice(0,220));process.exitCode=1;});
