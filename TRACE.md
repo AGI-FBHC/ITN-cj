@@ -267,3 +267,11 @@ scripts/package-app.ps1原来强制复制两份docs说明，公开检出缺docs�
 
 - 结构与历史审计结果保存到 docs/history/2026-10-23-editions.json，记录四个来源 tip / 树哈希 / 原提交数、三个 subtree 导入提交、8/8 原 main 作者身份保留、27 个本地链接检查、Desktop 唯一路径适配及验证范围。
 - 审计基准提交为 992a5975；之后的文档记录提交仅增加审计结果。本地整合检出保留 main 作为原有远端基线，完成整合 PR 后再将其快进至合并结果。
+
+## 2026-10-23 三版本整合发布完成
+
+- PR #2 https://github.com/AGI-FBHC/ITN-cj/pull/2 已使用 merge commit 合入 main；合并提交 1418d3e7a52c50d8a70d856e7d9acf8deec45d5b。原 PR #1 保持已合并状态，原 main 的 1261 个提交仍全部可达。
+- 四个 snapshot/20261023/{main,pro,lite,desktop} 附注标签和 integration/three-editions 已上传；原 itn-pro、itn-lite、desktop 分支 tip 与整合前一致。GitHub 默认分支现有三个 versions 目录，源码入口与文档齐全。
+- 本地整合检出 D:/Desktop/ITN/ITN-cj-unified 已切换 main 并快进至合并结果。运行中的独立版本检出、服务器与数据库无需因本次目录整合迁移。
+- README 品牌横幅已实际渲染检查。为避免中文依赖预览环境字体，将图形文字转为 SVG 路径，保留中文 title/desc 供辅助阅读，最终约 92KB；渲染确认标题、三版本卡片与文字正常，无裁切。
+- 验证范围为来源提交/文件树/TRACE/作者身份/文档链接/脚本语法与 Desktop 发布前缀。未执行全量跨版本业务构建或部署。GitHub PR diff 超过 300 文件显示上限，本地按四个源树全量校验；审计结果位于 docs/history/2026-10-23-editions.json。
