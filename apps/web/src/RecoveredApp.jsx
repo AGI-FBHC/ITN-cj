@@ -797,7 +797,7 @@ function Hero({ onGetStarted: n }) {
               "anim-rise-in text-4xl font-black leading-[1.3] tracking-tight text-[#101014] md:text-6xl",
             style: { animationDelay: "0.15s" },
             children: [
-              "你的 AI 学习搭档：",
+              "你的 AI 学习搭档",
               jsxRuntime.jsx("br", {
                 "code-path": "src\\sections\\Hero.tsx:91:11",
               }),
