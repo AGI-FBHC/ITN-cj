@@ -1141,3 +1141,9 @@
 - 迁移验收时发现：数据库清理/令牌失效后，前端只用 `localStorage` 里的旧令牌反复请求 `/api/bootstrap`，界面停在“暂时无法加载 · 学习会话已失效，请重试”，点“重试”也不会重建会话。属既有缺陷，非迁移引入，但会直接卡住用户。
 - 修复 `apps/web/src/learning-api.jsx` 的 `bootstrap()`：`/bootstrap` 抛 401 时先 `localStorage.removeItem(TOKEN_KEY)`，再 `ensureSession()` 重建匿名会话并重试一次；其它错误照旧抛出。重新 `npm run build --prefix apps/web` 后把 dist 重新打包上传到服务器 `/opt/zhixun-yunshu/web/dist`（新入口 `index-YYZ3EA51.js`）。
 - 验证：浏览器在持有失效令牌的标签页刷新后，自动丢弃旧令牌、重建会话并正常渲染登录页（不再停留在“学习会话已失效”）；服务器 6024 首页 200。本批改动与 TRACE 本地提交，不推送。
+
+## 2026-10-22 会话失效自愈修复（前端）
+
+- 迁移验收时发现：数据库清理/令牌失效后，前端只用 `localStorage` 里的旧令牌反复请求 `/api/bootstrap`，界面停在“暂时无法加载 · 学习会话已失效，请重试”，点“重试”也不会重建会话。属既有缺陷，非迁移引入，但会直接卡住用户。
+- 修复 `apps/web/src/learning-api.jsx` 的 `bootstrap()`：`/bootstrap` 抛 401 时先 `localStorage.removeItem(TOKEN_KEY)`，再 `ensureSession()` 重建匿名会话并重试一次；其它错误照旧抛出。重新 `npm run build --prefix apps/web` 后把 dist 重新打包上传到服务器 `/opt/zhixun-yunshu/web/dist`（新入口 `index-YYZ3EA51.js`）。
+- 验证：浏览器在持有失效令牌的标签页刷新后，自动丢弃旧令牌、重建会话并正常渲染登录页（不再停留在“学习会话已失效”）；服务器 6024 首页 200。本批改动与 TRACE 本地提交，不推送。
