@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | Pro | `versions/pro` | SDK 1.1.3 + 对应 STDX | Node.js、Python、MySQL；按部署方式准备 Agent 依赖 |
 | Lite | `versions/lite` | SDK 1.2.0 + 对应 STDX | Node.js、MySQL；PPT / Logo 渲染需要 Python |
-| Desktop | `versions/desktop` | Windows SDK 1.2.0 + 对应 STDX | OpenSSL、Node.js、Electron |
+| Desktop | `versions/desktop` | 仓颉 Windows SDK 1.2.0 + 对应 STDX | OpenSSL、Node.js、Electron；打包需要 Windows SDK 的 `mt.exe` |
 
 Windows 终端统一使用 PowerShell 7。下文所有 `cd` 均从总仓库根目录开始。
 
@@ -19,6 +19,8 @@ npm run dev --prefix apps/web
 ```
 
 前端需要已配置的仓颉 API 网关、业务服务与 Agent 服务。构建与部署按 [专业版 README](../versions/pro/README.md) 和 [部署指南](../versions/pro/deploy/web/README.md) 执行。
+
+Pro 前端 `npm run build` 同时执行 `tsc -b`。该版本的 [前端说明](../versions/pro/apps/web/README.md) 记录了既有类型检查问题；若只生成静态产物，在 `apps/web` 内使用 `npx vite build`，这不代表完整类型检查通过。
 
 服务工程分别位于 `services/api`、`services/business`；不要把 Lite 的端口、数据库结构或 SDK 配置直接用于 Pro。
 
@@ -47,11 +49,12 @@ npm run dev --prefix apps/web
 ```powershell
 cd versions/desktop
 .\scripts\build.ps1
+.\scripts\package.ps1
 npm ci --prefix shell
 npm start --prefix shell
 ```
 
-`scripts/env.ps1` 管理仓颉 SDK、STDX 和 OpenSSL；构建产物由本版本脚本定位。内核构建失败时先检查工具链路径，桌面端启动还需要完成模型配置。
+`scripts/env.ps1` 管理仓颉 SDK、STDX 和 OpenSSL。`build.ps1` 生成编译产物，`package.ps1` 将内核与运行库放入 `dist/core` 并嵌入 UTF-8 清单；Electron 开发入口从这个目录启动内核。内核构建失败时先检查工具链路径，桌面端启动还需要完成模型配置。
 
 阅读 [PRODUCT.md](../versions/desktop/PRODUCT.md) 了解产品范围，修改代码前读取 [AGENTS.md](../versions/desktop/AGENTS.md)。桌面版内部 `docs/` 按原约定保留在本地，不由本次整合补入公开仓库。
 

@@ -54,10 +54,12 @@ cd ITN-cj
 进入专业版目录，按版本说明配置数据库、仓颉网关、业务服务与 Agent 服务。
 
 ```bash
-cd versions/pro
-npm ci --prefix apps/web
-npm run build --prefix apps/web
+cd versions/pro/apps/web
+npm ci
+npx vite build
 ```
+
+前端静态打包沿用 [Pro 前端说明](versions/pro/apps/web/README.md) 中的 Vite 入口；完整类型检查仍有该版本记录的历史遗留项。
 
 [架构、环境与接口](versions/pro/README.md) · [部署说明](versions/pro/deploy/web/README.md)
 
@@ -92,6 +94,7 @@ npm run dev --prefix apps/web
 ```powershell
 cd versions/desktop
 .\scripts\build.ps1
+.\scripts\package.ps1
 npm ci --prefix shell
 npm start --prefix shell
 ```

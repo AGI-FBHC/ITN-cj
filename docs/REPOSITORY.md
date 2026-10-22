@@ -27,6 +27,8 @@
 
 Subtree 的导入提交会把来源 tip 接入祖先链。旧提交记录的路径仍是来源仓库当时的路径，因此不能只用 `git log -- versions/lite` 判断是否保留了 Lite 历史。需要沿来源提交或快照标签查看早期记录。
 
+三个导入提交处的文件树分别与来源完全一致。整合后另有一项路径适配：`versions/desktop/scripts/publish-lumin.ps1` 根据 Git 根目录计算 Lumin 子树前缀，同时兼容独立检出 `lumin` 与总仓库 `versions/desktop/lumin`；这项变更作为新的提交记录，不改写原导入内容。
+
 成员在 GitHub 的贡献展示还取决于作者邮箱与账号关联，以及 GitHub 对默认分支统计的刷新；本次保留原邮箱，不修改成员身份。
 
 ## 验收方式

@@ -27,10 +27,16 @@ function Find-LocalProxy {
 }
 
 $proj = Resolve-Path "$PSScriptRoot\.."
-Push-Location $proj
+$gitRoot = (git -C $proj rev-parse --show-toplevel).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $gitRoot) { throw '无法确定 Git 仓库根目录' }
+$luminPath = Join-Path $proj 'lumin'
+# subtree 的前缀相对于 Git 根目录，同时兼容独立检出与 versions/desktop。
+$subtreePrefix = [System.IO.Path]::GetRelativePath($gitRoot, $luminPath).Replace('\', '/')
+if ($subtreePrefix -eq '..' -or $subtreePrefix.StartsWith('../')) { throw 'Lumin 目录必须位于当前仓库内' }
+Push-Location $gitRoot
 try {
     # lumin/ 有未提交改动就停下 —— 否则推上去的历史和你眼前看到的代码对不上
-    $dirty = @(git status --porcelain -- lumin)
+    $dirty = @(git status --porcelain -- $subtreePrefix)
     if ($dirty.Count -gt 0) {
         Write-Output 'lumin/ 还有未提交的改动，先提交再发布：'
         $dirty | ForEach-Object { Write-Output ("  " + $_) }
@@ -38,7 +44,7 @@ try {
     }
 
     git branch -D $Split 2>$null | Out-Null
-    git subtree split --prefix=lumin -b $Split
+    git subtree split --prefix=$subtreePrefix -b $Split
     if ($LASTEXITCODE -ne 0) { throw 'git subtree split 失败' }
 
     $refspec = "refs/heads/" + $Split + ":refs/heads/" + $Branch

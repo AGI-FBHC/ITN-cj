@@ -253,3 +253,12 @@ scripts/package-app.ps1原来强制复制两份docs说明，公开检出缺docs�
 - 新建根 README：提供 Pro / Lite / Desktop 对比、源码入口、分版本启动命令和架构；新增品牌 SVG 横幅，沿用用户确认的“你的 AI 学习搭档 / 懂课程，也懂你。”标题。
 - 新建 docs/GETTING_STARTED.md、docs/REPOSITORY.md，明确版本工作目录、SDK 差异、来源快照和保留历史的合并方式；根 AGENTS.md 同步三版本路径，版本原文与历史 TRACE 均不回改。
 - 导入期间 GitHub Git 下载连接多次中断；使用现有本地对象及 GitHub Git Blob API 按原 SHA 补齐文件对象。逐个验证内容哈希，只填充 Git 对象库，不改动来源提交。
+
+### 三版本导入完成与路径验收
+
+- 不 squash 导入提交：Pro 7a1534a、Lite 0547a0f、Desktop 2cf6cbb。三个导入目录的 Git 树哈希分别与固定来源一致；各版本 TRACE 字节保持，原 main TRACE 仍为根日志的完整前缀。
+- 祖先验证：四个来源 tip 均为整合分支祖先，来源提交在 `rev-list <source> --not HEAD` 中缺失数为 0；原 main 的 8 组作者姓名/邮箱身份全部保留，合并后共 9 组身份。
+- 路径检查发现 Desktop 发布 Lumin 的旧脚本固定使用 `--prefix=lumin`，在总仓库会指向错误位置。脚本改为相对于 Git 根计算前缀，使用临时独立仓库/总仓库夹具执行脚本原始前缀代码，分别得到 lumin 和 versions/desktop/lumin，均通过；未执行实际发布。
+- 15 个 PowerShell 脚本完成 AST 语法检查，Pro 两个构建/部署 shell 脚本完成 bash -n 检查。已修正根文档的 Desktop 启动顺序：build 后先 package，把内核与运行库放入 Electron 查找的 dist/core；补充 Windows SDK 的 mt.exe 依赖。
+- 独立只读审查指出 Pro 的完整 TypeScript 构建有来源分支已记录的遗留错误；根文档沿用该版本前端说明中的 Vite 静态构建入口，并明确不等于类型检查通过。本轮未修改业务逻辑、数据库或服务配置，也未启动应用或外部模型。
+- 根 README / 启动与组织文档的本地链接检查通过，SVG 横幅 XML 合法。源版本的历史空白格式按原样保留；本轮新增和修改文件单独检查空白错误。
