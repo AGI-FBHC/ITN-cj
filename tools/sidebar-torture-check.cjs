@@ -133,7 +133,7 @@ async function main() {
     // 没有对话模型时对话页只渲染空状态、不会拉会话事件 —— 那样测不到会话栏的真实行为。
     const mockPort = await freePort();
     mock = spawn('python', [path.join(root, 'tools/mock-openai/server.py'), String(mockPort)],
-      {windowsHide: true, stdio: 'ignore', env: {...process.env, ITN_MOCK_CHUNK_DELAY_MS: '0', ITN_MOCK_SLOW_MS: '8000'}});
+      {windowsHide: true, stdio: 'ignore', env: {...process.env, ITN_MOCK_CHUNK_DELAY_MS: '0', ITN_MOCK_SLOW_MS: '20000'}});
     await post('models/save', {id: 'sidebar-mock', name: '侧栏夹具', baseUrl: 'http://127.0.0.1:' + mockPort + '/v1', apiKey: 'test', model: 'mock'});
     await post('models/roles', {chatModelId: 'sidebar-mock'});
     browser = await chromium.launch({channel: 'msedge', headless: true, args: ['--no-proxy-server']});
@@ -512,6 +512,33 @@ async function main() {
       JSON.stringify({after: Math.round(widthAfter), restored: Math.round(widthRestored)}));
     // 复原宽度，避免影响后续
     await page.evaluate(() => savePrefs({uiPanelW: ''}));
+
+    // O) 运行中的会话：删除要被拒绝，改名要成功且不打断任务
+    await nav('chat');
+    await page.fill('#chat-input', '慢速任务测试：运行中改名与删除保护');
+    await page.locator('.composer-send').click();
+    await page.waitForFunction(() => state.busyTurn === true, null, {timeout: 15000}).catch(() => {});
+    const busySid = await page.evaluate(() => state.chatSessionId);
+    const busyRow = page.locator('#panel-body .panel-item-row.rail-session')
+      .filter({has: page.locator('.panel-item[data-id="' + busySid + '"]')});
+    await busyRow.locator('.panel-item-more').click();
+    await page.locator('.session-menu').getByText('删除…', {exact: true}).click();
+    const deleteToast = await page.locator('#toast').innerText();
+    const deleteDialogs = await page.locator('#view .card.dialog').count();
+    check('运行中的会话删除被拒绝并给出提示', deleteToast.includes('正在跑') && deleteDialogs === 0,
+      JSON.stringify({toast: deleteToast, dialogs: deleteDialogs}));
+    await busyRow.locator('.panel-item-more').click();
+    await page.locator('.session-menu').getByText('重命名…', {exact: true}).click();
+    await page.fill('#session-rename-input', '运行中改名验收');
+    await page.getByRole('button', {name: '保存', exact: true}).click();
+    await page.waitForFunction(() => (state.sessions || []).some((s) => s.title === '运行中改名验收'), null, {timeout: 15000});
+    await sleep(400);
+    const afterRename = await page.evaluate((sid) => ({
+      running: state.chatRequests.has(sid),
+      title: document.querySelector('#panel-body .panel-item[data-id="' + sid + '"] .panel-item-label')?.textContent || '',
+    }), busySid);
+    check('运行中的会话改名成功且任务继续', afterRename.running === true && afterRename.title.includes('运行中改名验收'), JSON.stringify(afterRename));
+    await page.waitForFunction(() => state.busyTurn === false, null, {timeout: 90000}).catch(() => {});
 
     check('全程没有前端或内核异常', errors.length === 0, errors.join('; '));
     const failed = checks.filter((c) => !c.ok);
