@@ -8,10 +8,12 @@
 | --- | --- |
 | `core/` | 仓颉内核：知识库、索引、检索、Agent 循环、模型调用、生成 |
 | `shell/` | Electron 外壳：窗口、系统文件对话框、打包 |
-| `docs/` | 产品、架构、接口契约、数据模型 |
-| `scripts/` | 构建与打包脚本 |
+| `lumin/` | 仓颉 Agent 运行时与 CLI |
+| `scripts/` | 构建、打包、发布脚本 |
+| `tools/` | 自动化验收、发布服务与测试工具 |
+| `samples/` | 可复现的输入样例 |
 
-其余约定见 [AGENTS.md](AGENTS.md)，每次操作与对话要点追加到 [TRACE.md](TRACE.md)。
+桌面端的架构、接口和操作说明保留在本地 `docs/`，不随公开仓库发布。其余约定见 [AGENTS.md](AGENTS.md)，每次操作与对话要点追加到 [TRACE.md](TRACE.md)。
 
 ## 当前状态
 
@@ -20,7 +22,7 @@
 ## 如何构建
 
 ```powershell
-# 构建内核（需要先有 D:\cangjie-sdk\1.2.0 工具链，见 docs/04-技术验证.md）
+# 构建内核（需要仓颉 1.2.0 工具链，环境加载见 scripts/env.ps1）
 .\scripts\build.ps1
 
 # 产出可独立分发的内核目录（目标机器无需安装仓颉）
@@ -53,4 +55,4 @@ npx electron .
 
 ```
 
-产物为 `dist/Lumin-<版本号>/Lumin.exe` 与 `dist/Lumin-<版本号>.zip`，版本目录直接与历版并列。每次交付递增 `shell/package.json` 与 `shell/package-lock.json` 的补丁版本，保留旧版本目录，不追加其他后缀。界面由仓颉内核托管，Electron 只负责窗口。技术验证结论见 [docs/04-技术验证.md](docs/04-技术验证.md)。
+产物为 `dist/Lumin-<版本号>/Lumin.exe` 与 `dist/Lumin-<版本号>.zip`，版本目录直接与历版并列。每次交付递增 `shell/package.json` 与 `shell/package-lock.json` 的补丁版本，保留旧版本目录，不追加其他后缀。界面由仓颉内核托管，Electron 负责窗口。

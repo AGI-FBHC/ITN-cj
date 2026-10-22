@@ -5419,3 +5419,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 上传先进入 `/opt/lumin-release/incoming/*.uploading`，远端 SHA256 分别与本地逐项一致后才原子移动；旧服务代码和海报页备份在 `/opt/lumin-release/backups/`，部署序号 `20261022-140321`。服务器文件哈希：安装器 29294D1B…、ZIP BA83F121…、serve-release.cjs 8B176C12…、index.html EC5494FE…。
 - 海报页新增高识别度金色 `Powered by Cangjie` 技术徽标，并在页脚重复展示；真实 Edge 本地回归 22/22。公网复核 v0.8.33、两种下载入口和两处 Cangjie 文案均为 200/存在。完整公网安装器分段下载得到 155,713,666 bytes、SHA256 与发布文件一致；ZIP 的服务器哈希、公网 HEAD、Range 和页面入口已核验，未继续等待整包重复下载，因为用户明确要求此类迭代不要做深度耗时测试。
 - 为后续快速迭代新增 `tools/deploy-release.ps1`：校验安装器 manifest/24 项验收与本地哈希，运行发布服务及下载页检查，并行 scp 上传安装器/ZIP/服务代码/海报页，远端逐文件哈希，原子切换并重启 systemd，再跑公网页面检查。命令为 `.\tools\deploy-release.ps1 -Version <x.y.z>`；只有需要完整双包公网哈希时才加 `-FullPublicDownload`。`tools/verify-public-release.cjs` 用并行 HTTP Range 下载并重算 SHA256，避免单连接慢速等待。scripts/README 已写入同一流程。
+
+### 2026-10-22 · 桌面端 GitHub 结构整理
+
+- 按此前明确规则，桌面端 `docs/` 只在本地保存，不上传 GitHub：保留 23 份本地文件，其中 21 份停止 Git 跟踪，`.gitignore` 新增 `/docs/`，不删除、不改写用户未跟踪文档。
+- 根 README 改为公开源码结构：`core/` 仓颉业务内核、`shell/` Electron 外壳、`lumin/` 运行时与 CLI、`scripts/` 构建打包发布、`tools/` 验收与发布服务、`samples/` 样例。移除私有 docs 链接。
+- AGENTS/PRODUCT 同步本地文档政策；`scripts/package-app.ps1` 改为可选附带本地说明书，公开检出没有 `docs/` 时仍可打包。PowerShell AST 与 diff 检查通过，未修改业务接口、内核或真实用户数据。
+- 目标远端的 main 布局为 `apps/desktop/`；本次按用户指定只更新 `desktop` 分支，分支根目录仍直接承载桌面端源码，不混入 Web 平台代码。
