@@ -5544,3 +5544,7 @@ read_chunk 读得到原文并带回库标识与正文。
 - 真实模型：新增real-session-isolation-smoke，临时凭据副本+空隔离库+真实deepseek-flash+Edge。A在项目甲calc 17*19并长答，B在项目乙短答；两个空会话先持久化、A执行时B可启动、原生calc续聊323、答案/事件不串、侧栏可见、切回B内容正确、项目归属和无JS异常，共9/9。最终复测B约1.6s、两轮总15s。中间一次重跑有一轮返回ok=false，但旧通用断言未记录具体错误且临时库已清零，原因不能追溯；保留initial-failure日志，补双方原始错误摘要（脱敏）后最终9项复验通过，不将该次失败擅自归因模型/网络。本轮未做昂贵PPT或大库生成。
 - 版本/工具：shell/package.json与lock顶层/根包均0.8.37；perf-runtime-audit默认读取当前版本，可用--pack或LUMIN_PERF_PACK选包，报告版本/sourceCommit从实际release.json读取，不再标成旧0.8.35。session-conflict-probe支持--pack/SESSION_CONFLICT_PACK，避免误验旧包。
 - 全程PowerShell7，仓颉业务内核，未新增Python业务或测试夹具；未改真实Lumin/MiMo数据库，不打印密钥，不改Web，原.taste-skill保持未跟踪。功能完成后先本地提交，再用该提交构建正式包，最终包验收另行追加。
+
+- 0.8.37 正式本地交付验收：功能提交82352b3178908ea2e53a00cba9effed97dc5a4bf后打包；dist/Lumin-0.8.37/Lumin.exe与dist/Lumin-0.8.37.zip已生成。release.version/build/sourceCommit与功能提交一致，shell/package.json、lock顶层/根包和包内package版本均0.8.37，38项关键资产哈希逐项通过。ZIP含Lumin.exe与相同release清单；231384276 bytes，SHA256=7D314767D0747B773698A307473FA6BE41804698B6B608E8D64D5C87A1F3B6A0。
+- 正式EXE在新TEMP空数据目录原生启动，PRELOAD/TITLEBAR=ok、RESULT=OK，未借用真实用户模型/数据库。首次版本验收脚本用ConvertFrom-Json对象解析package-lock根空字符串键失败，改-AsHashtable后版本与后续启动/ZIP检查通过，非产品JSON损坏。
+- 原0.8.36及之前版本未覆盖；本轮只提供本地便携目录/ZIP，未重新做安装器或发布天翼云。收尾Git仅保留用户原有.taste-skill/未跟踪，TRACE与全部功能/测试变更已本地提交，可按功能提交回滚。
