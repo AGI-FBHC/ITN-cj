@@ -10,6 +10,7 @@ const {spawn}=require('node:child_process');
 const {chromium}=require('D:/Desktop/ITN/ITN/src/frontend/agent-demo/node_modules/playwright');
 
 const root=path.resolve(__dirname,'..');
+const uiDir=process.env.ITN_UI_DIR?path.resolve(process.env.ITN_UI_DIR):path.join(root,'shell/renderer');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const freePort=()=>new Promise(resolve=>{
   const server=net.createServer();
@@ -28,7 +29,7 @@ const freePort=()=>new Promise(resolve=>{
   const core=spawn(path.join(root,'dist/core/itn-desktop-core.exe'),[
     '--data-dir='+dataDir,
     '--port-file='+portFile,
-    '--ui-dir='+path.join(root,'shell/renderer')
+    '--ui-dir='+uiDir
   ],{windowsHide:true,stdio:'ignore'});
   let browser;
   let passed=0,failed=0;
