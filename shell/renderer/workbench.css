@@ -306,7 +306,11 @@ body.library-workspace #rail-toggle { visibility:hidden; }
 .document-browser .preview-chunk { max-width:76ch; margin-inline:auto; padding:22px 0; }
 .document-browser .preview-chunk .md { font-size:15px; line-height:1.9; }
 .document-browser .search-reset { display:none; }
-.document-browser .library-documents:has(.library-results:not(:empty)) > .list { display:none; }
+/* 有搜索结果时整张文档卡片切换为“结果视图”：文档列表连同筛选行、条数说明一起收起，
+   只留“返回文档列表”——否则残留的“显示 N/N 篇资料”会让人以为列表坏了（实测反馈）。 */
+.document-browser .library-documents:has(.library-results:not(:empty)) > .list,
+.document-browser .library-documents:has(.library-results:not(:empty)) > .row,
+.document-browser .library-documents:has(.library-results:not(:empty)) > .muted { display:none; }
 .document-browser .library-documents:has(.library-results:not(:empty)) > .search-reset { display:inline-flex; }
 .document-browser .library-results .item { padding:12px 8px; margin:4px 0; border:0; border-bottom:1px solid var(--line); background:transparent; box-shadow:none; border-radius:0; }
 .document-browser .library-results h3 { font-size:14px; }

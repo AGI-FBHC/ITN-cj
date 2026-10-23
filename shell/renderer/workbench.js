@@ -776,7 +776,8 @@ PAGES.kb.render = async function() {
   const browser = el('div', 'document-browser'); browser.append(documents, preview); view.insertBefore(browser, view.querySelector('.harvest-entry'));
   preview.setAttribute('aria-label', '资料阅读区');
   const results = view.querySelector('.library-results'); documents.appendChild(results);
-  documents.appendChild(btn('返回文档列表', 'ghost sm search-reset', () => { results.innerHTML = ''; view.querySelector('[aria-label="搜索资料内容"]').value = ''; }));
+  // 返回按钮放在结果上方：长结果列表时它仍第一眼可见，而不是沉到卡片底部。
+  documents.insertBefore(btn('返回文档列表', 'ghost sm search-reset', () => { results.innerHTML = ''; view.querySelector('[aria-label="搜索资料内容"]').value = ''; }), results);
   const first = documents.querySelector('.library-document[data-status="ready"] button:not([disabled])') || documents.querySelector('.library-document button:not([disabled])');
   if (first) { first.dataset.autoPreview='true'; first.click(); delete first.dataset.autoPreview; }
 };

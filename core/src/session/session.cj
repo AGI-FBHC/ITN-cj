@@ -58,6 +58,11 @@ let sessionListCacheLock = Mutex()
 var sessionListCache: ?ArrayList<JsonObject> = None
 var sessionListCacheDir: String = ""
 var sessionListCacheEpoch: Int64 = -1
+// single-flight 与节流标记：流式期间每条 delta 都推纪元，若每个到达的列表请求都各自全量重算，
+// 会轮番占住数据库锁把 state/settings/tasks 等轻接口一起拖死（实测并发 3 个列表共 3.68 秒）。
+var sessionListLastComputeMs: Int64 = -3000
+// >0 表示一次重算已开始（带 3 秒超时自愈：即便重算抛异常也不会永久退回陈旧缓存）
+var sessionListComputeStartedMs: Int64 = 0
 
 func resourceMetaField(raw: String): JsonValue {
     if (raw.size == 0) { return JsonNull() }
@@ -1005,9 +1010,7 @@ public class SessionStore {
      * 实测在 21MB 的真库上直接卡死（这版是回退后重新测过的）。
      */
     public func list(): ArrayList<JsonObject> {
-        let out = ArrayList<JsonObject>()
         migrateFromJson()
-        let dbh = db()
         // 纪元命中直接回缓存：凡是写 sessions/session_events/sessions_meta 的 SQL 都会把
         // 纪元 +1（见 db.cj），没变就是没变。组装一次要 ~1 秒（引擎怕全表聚合），
         // 聊天期间每轮都会来读，缓存把稳态压到几毫秒。
@@ -1021,9 +1024,54 @@ public class SessionStore {
                     case None => ()
                 }
             }
+            // 过期时回「上一份」并把重算挪去后台（stale-while-revalidate）：流式期间每条 delta 都推纪元，
+            // 若调用线程自己等全量重算，一次切换就要陪跑几秒（实测切回对话页 sessions/list 6.1 秒）。
+            // 有旧结果就先给旧的；距上次算完不足 1 秒也不再重复安排，把重算交给在飞的那个。
+            // 冷启动没有旧结果时才在本线程算（调用方必须拿到数据）。
+            let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+            let inFlight = sessionListComputeStartedMs > 0 && nowMs - sessionListComputeStartedMs < 15000
+            var stale: ?ArrayList<JsonObject> = None
+            if (sessionListCacheDir == dataDir) {
+                match (sessionListCache) {
+                    case Some(cached) => stale = Some(copySessionList(cached))
+                    case None => ()
+                }
+            }
+            var needCompute = !inFlight
+            if (needCompute) {
+                match (stale) {
+                    case Some(_) => if (nowMs - sessionListLastComputeMs < 1000) { needCompute = false }
+                    case None => ()
+                }
+            }
+            if (needCompute) {
+                sessionListComputeStartedMs = nowMs
+                if (inFlight) {
+                    // 冷启动撞上在飞重算：极少见，按旧版行为再算一份，后写回者胜。
+                    sessionListCacheLock.unlock()
+                    return computeSessionList(epoch)
+                }
+                let _background = spawn {
+                    this.computeSessionList(epoch)
+                }
+            }
+            match (stale) {
+                case Some(cached) =>
+                    return cached
+                case None =>
+                    // 理论不可达（needCompute 且无旧结果才会走到 spawn 之外），兜底再算一次。
+                    sessionListCacheLock.unlock()
+                    return computeSessionList(epoch)
+            }
         } finally {
             sessionListCacheLock.unlock()
         }
+    }
+
+    /* 全量组装并写回缓存。后台线程与冷启动共用；抛异常时在飞标记按超时自愈。 */
+    private func computeSessionList(epoch: Int64): ArrayList<JsonObject> {
+        let out = ArrayList<JsonObject>()
+        let dbh = db()
 
         let counts = HashMap<String, Int64>()
         let lastIds = HashMap<String, Int64>()
@@ -1150,6 +1198,8 @@ public class SessionStore {
             sessionListCache = Some(out)
             sessionListCacheDir = dataDir
             sessionListCacheEpoch = epoch
+            sessionListLastComputeMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+            sessionListComputeStartedMs = 0
         } finally {
             sessionListCacheLock.unlock()
         }

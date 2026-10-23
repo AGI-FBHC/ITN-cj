@@ -7126,6 +7126,8 @@ PAGES.chat = {
     state.chatRepaintUsage = paintUsage;
     crow.appendChild(usageText);
     crow.appendChild(modelText);
+    // 上一份 composer 已随视图被换掉：先清扫断连的思考控件，避免控件集合随每次渲染膨胀。
+    repaintReasoningControls();
     const reasoningControl = createReasoningControl(reasoningKey);
     crow.appendChild(reasoningControl.root);
 
@@ -7809,9 +7811,12 @@ PAGES.chat = {
         }
       }
     };
-    window.addEventListener("keydown", (e) => {
+    // 每次整页渲染都会走到这里：不摘掉上一个，window 上的 Esc 闭包会连着旧聊天 DOM 一起滞留（实测监听器随轮次线性增长）。
+    if (state.chatGlobalEsc) window.removeEventListener("keydown", state.chatGlobalEsc);
+    state.chatGlobalEsc = (e) => {
       if (e.key === "Escape" && state.busyTurn && !document.querySelector(".card.dialog")) stopTurn();
-    });
+    };
+    window.addEventListener("keydown", state.chatGlobalEsc);
     // 待批准的动作可能来自任何一轮（包括直接打接口起的那一轮）：空闲时也要看
     await pollApprovals();
     if (state.approvalTimer) clearInterval(state.approvalTimer);
