@@ -137,6 +137,9 @@
     document.addEventListener("click", event => {
       if (state.pop && !state.pop.hidden && !state.box.contains(event.target)) toggle(false);
     });
+    document.addEventListener("lumin:top-popover-open", event => {
+      if (event.detail?.source !== "notifications" && state.open) toggle(false);
+    });
     document.addEventListener("keydown", event => {
       if (event.key === "Escape" && state.open) {
         event.preventDefault();
@@ -212,7 +215,10 @@
     state.open = !!open;
     state.pop.hidden = !state.open;
     state.button.setAttribute("aria-expanded", String(state.open));
-    if (state.open) paint();
+    if (state.open) {
+      document.dispatchEvent(new CustomEvent("lumin:top-popover-open", {detail: {source: "notifications"}}));
+      paint();
+    }
   }
 
   function push(input) {

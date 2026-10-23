@@ -5600,3 +5600,14 @@ read_chunk 读得到原文并带回库标识与正文。
 - 在 0.8.41 基础上又补了一处感知流畅性：成长页不再把 `/api/course/report` 的重查询阻塞在 `go('report')` 的导航 Promise 里，而是先绘制带真实加载提示的骨架，延迟 250ms 后仅在用户仍停留该页时启动数据请求；用户快速离开页面时请求不再启动，避免重查询抢锁拖慢紧接着的资源页。实测包内 renderer：chat 145ms、home 271ms、report 114ms、resources 40ms、notes 154ms、wrong 182ms、kb 157ms；成长内容加载期间不再阻塞用户切页。
 - 0.8.42 最终交付：功能提交 `0173dc6f81f0a2e8ed6a0a72e7b7b11bb0a0883f`，`dist/Lumin-0.8.42/Lumin.exe`，`dist/Lumin-0.8.42.zip`（220.68 MB，SHA256 `650935E373FCCABE2B0B5AF3AD9556C62CC1B10094891B3E577C9DCD75A6D156`）；release 为 `lumin-0.8.42-0173dc6`，包内版本 0.8.42。包内通知/确认专项 20/20、包内拖拽专项 25/25、包内导航专项 14/14；正式 EXE 空目录启动 `RESULT=OK`。
 - 测试辅助提交 `b1d914a` 仅让三个专项支持 `ITN_UI_DIR`，便于对包内 renderer 复跑；0.8.41 包保留可回滚。`.taste-skill/` 仍未跟踪。
+
+### 2026-10-24 03:20 +08:00 · 点击域几何审计与顶部浮层互斥（0.8.43）
+
+- 用户要求继续扫描组件错位、视觉位置与鼠标实际点击位置不一致，并处理发现的其他交互 Bug。先复用真实 Edge + 隔离仓颉内核，在源码工作树扫描，不读写真实用户数据库、不打印密钥、不改 Web。
+- 原静态 UI 审计和拖拽专项只能证明“元素存在/能拖动”，不能发现中心区域被透明层、固定栏或其他浮层挡住。新增 `tools/pointer-geometry-check.cjs`：对 `button/a/input/select/textarea/summary/[role=...]/.clickable/.knowledge-ev-card` 的可见矩形中心及左右 25% 点执行真实 `document.elementFromPoint()`；先与所有 `overflow` 祖先求可见裁剪区，避免把本来就在滚动、平移画布外的部分误判；同时记录 canvas 的 CSS 矩形、内部像素尺寸和缩放比。
+- 覆盖矩阵：1440×960 / 130% 下全部 20 个页面/设置分区；1024×820 与 768×820 下主页、学习、成果、知识库、对话、模型设置；再在动态层验证任务中心、通知中心、全局确认框、命令检索、协作侧栏和知识时间线。所有浮层检查实际视口边界；知识网络 6 个节点在 85%、100%、130% 缩放下分别用真实鼠标点击并断言 `knowledgeNet.selected`。
+- 第一轮发现任务中心与通知中心可同时展开。原因是两个按钮都调用 `stopPropagation()`，各自的 document 外部点击监听不会收到对方点击；两个 `position:absolute` 面板随后重叠，后开面板会遮挡先开面板的控件。修复为两层共同发送 `lumin:top-popover-open` 事件，任一方打开时另一方立即收起；测试先开任务面板再点通知，并断言只有一个 `hidden=false`，同时测量现存浮层的视口边界和中心/边缘命中。该问题在旧版可稳定复现，修复后消失。
+- 测试误报也按证据校正，不把测试问题算作产品通过：`calibrate→report`、`models→settings/models`、`wrong→notes`、`settings/kb→kb/manage` 是现有路由别名；全局模态框和命令面板会故意阻断下层页面，因此只审计当前浮层范围内控件；早期可见矩形未先与 overflow 祖先求交，导致画布中被裁剪的课程节点误报被 rail 遮挡，已修正裁剪算法后重跑。
+- 最终 `pointer-geometry-check`：32 个页面/窗口组合 + 4 个动态层 + 3 个缩放节点检查，`RESULT=OK 3 passed, 0 failed`，截图在 `tmp/pointer-geometry/`，报告在 `report.json`。知识网络节点点击在 0.85/1/1.3 缩放全部命中；任务/通知互斥通过。`ui-audit` 120/120，无小字、低对比、横向溢出、无标签图标、整句按钮或 JS 异常。
+- 回归证据：`interaction-consistency` 20/20；`navigation-fluid` 14/14（快速切页、成长骨架、无重复读取）；`team-panel` 44/44（真实窗口 900/1024、协作树、关闭/重开、窄屏）；`drag-offset` 25/25（85%/100%/130% 桌宠、分隔条、思维导图、知识网络、协作面板）；`knowledge-check` 93/93（节点/标签命中、时间线、检查器、颜色/笔记）；`sidebar-torture` 55/55（快速切页、会话竞态、资源栏、运行中会话、任务中心收起）；`route-lifecycle` 18/18；`panel-sticky` 3/3；`scrollbar` 1/1；`tasks-check` 22/22；所有 runner 未发现页面异常。测试夹具的模型服务为本地 fixture，不把 mock 结果当作真实模型质量结论。
+- 本轮业务改动仅 `tasks.js` 与 `notifications.js` 的顶部浮层互斥，新增专项测试 `tools/pointer-geometry-check.cjs`；`.taste-skill/` 保持未跟踪。版本升至 0.8.43，待本地提交后打包验收。

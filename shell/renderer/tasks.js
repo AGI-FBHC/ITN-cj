@@ -123,12 +123,13 @@
   function toggle(open){
     state.open=open;state.pop.hidden=!open;state.button.classList.toggle('open',open);
     state.button.setAttribute('aria-expanded',String(open));
-    if(open){refresh(true);}
+    if(open){document.dispatchEvent(new CustomEvent('lumin:top-popover-open',{detail:{source:'tasks'}}));refresh(true);}
   }
   const wrap=name=>{const orig=window[name];if(typeof orig!=='function'||orig.__taskWrapped)return;const w=async function(...a){const r=await orig.apply(null,a);mount();return r;};w.__taskWrapped=true;window[name]=w;};
   wrap('go');wrap('workbenchAfterPage');
   document.addEventListener('click',e=>{if(state.pop&&!state.pop.hidden&&!state.box.contains(e.target))toggle(false);});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.pop&&!state.pop.hidden)toggle(false);});
+  document.addEventListener('lumin:top-popover-open',e=>{if(e.detail?.source!=='tasks'&&state.open)toggle(false);});
   async function tick(){if(!document.hidden){mount();await refresh(false);}setTimeout(tick,state.open?1500:5000);}
   const start=()=>{mount();refresh(false);setTimeout(tick,1200);};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
