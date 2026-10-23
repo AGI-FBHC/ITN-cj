@@ -5528,3 +5528,4 @@ read_chunk 读得到原文并带回库标识与正文。
 - 未完成部分：MiMo停在新建会话立即上栏、写后读force、同秒rowid排序、项目占位与并发问题修正。工作区有core/src/api/api.cj、core/src/session/session.cj、shell/renderer/app.js三处未提交改动，以及未跟踪tools/session-conflict-probe.cjs；均保持原样。最后工具调用为19:22前后的编辑，后续模型消息为MessageAbortedError，未见修后编译/回归/提交/新包。两份探针结果都属于修复前失败基线，不算修复通过。
 - 只读核对出的接续点：session.cj现在仅有list(force:Bool)，guided_test/session_store_test/provider_test等仍调用无参list()，需后续收尾再验证。0.8.36 manifest.sourceCommit仍为旧b2043e0，package-lock仍0.8.35；包的源码追踪/版本一致性需在下次交付时处理，不能据此断言现包缺少已核对的前端修复。
 - 本聊天目前保持暂停。后续以0.8.36已完成修复+上述未提交改动为起点，避免重复0.8.35阶段工作；不得覆盖另一会话工作。未改真实Lumin或MiMo数据库，未启动模型调用、打包或发布。
+- 读取范围说明：本次提取了120条有正文的消息，重点核对全部5条用户请求、阶段总结、最后编辑记录与当前Git差异；未重放历史测试或逐条执行历史工具。
