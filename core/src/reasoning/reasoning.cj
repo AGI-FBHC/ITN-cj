@@ -22,7 +22,7 @@ public func reasoningProfile(cfg: ModelConfig): String {
     let host = endpointHost(cfg.baseUrl)
     let model = cfg.model.toAsciiLower()
     if (host == "api.deepseek.com" && (model == "deepseek-flash" || model.contains("deepseek-v4"))) { return "deepseek" }
-    if ((host == "api.xiaomimimo.com" || host == "api.mimo.xiaomi.com") && model.contains("mimo")) { return "mimo" }
+    if ((host == "api.xiaomimimo.com" || host == "api.mimo.xiaomi.com" || host == "token-plan-cn.xiaomimimo.com") && model.contains("mimo")) { return "mimo" }
     if ((host == "dashscope.aliyuncs.com" || host == "dashscope-intl.aliyuncs.com" || host == "dashscope-us.aliyuncs.com") && model.contains("qwen3")) { return "qwen-budget" }
     if (host == "api.openai.com" && (hasPrefix(model, "gpt-5") || hasPrefix(model, "gpt-6") || hasPrefix(model, "o3") || hasPrefix(model, "o4") || model == "o1")) { return "openai" }
     return "none"

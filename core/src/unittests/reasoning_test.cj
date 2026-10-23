@@ -30,6 +30,9 @@ class ReasoningTest {
         cfg.baseUrl = "https://api.deepseek.com/v1"
         @Expect(reasoningProfile(cfg), "deepseek")
         @Expect(supportsReasoningMode(cfg, "max"), true)
+        cfg.baseUrl = "https://token-plan-cn.xiaomimimo.com/v1"
+        cfg.model = "mimo-v2.6-flash"
+        @Expect(reasoningProfile(cfg), "mimo")
     }
 
     @TestCase

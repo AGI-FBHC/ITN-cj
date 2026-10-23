@@ -5548,3 +5548,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - 0.8.37 正式本地交付验收：功能提交82352b3178908ea2e53a00cba9effed97dc5a4bf后打包；dist/Lumin-0.8.37/Lumin.exe与dist/Lumin-0.8.37.zip已生成。release.version/build/sourceCommit与功能提交一致，shell/package.json、lock顶层/根包和包内package版本均0.8.37，38项关键资产哈希逐项通过。ZIP含Lumin.exe与相同release清单；231384276 bytes，SHA256=7D314767D0747B773698A307473FA6BE41804698B6B608E8D64D5C87A1F3B6A0。
 - 正式EXE在新TEMP空数据目录原生启动，PRELOAD/TITLEBAR=ok、RESULT=OK，未借用真实用户模型/数据库。首次版本验收脚本用ConvertFrom-Json对象解析package-lock根空字符串键失败，改-AsHashtable后版本与后续启动/ZIP检查通过，非产品JSON损坏。
 - 原0.8.36及之前版本未覆盖；本轮只提供本地便携目录/ZIP，未重新做安装器或发布天翼云。收尾Git仅保留用户原有.taste-skill/未跟踪，TRACE与全部功能/测试变更已本地提交，可按功能提交回滚。
+
+### 2026-10-23 · 明确思考厂商适配配置（0.8.38）
+
+- 用户确认：配置时应能单独选择已经适配的厂商，未适配接口保持默认值。界面将原技术项 auto/none 改为“默认 / DeepSeek / MiMo / Qwen / OpenAI / 不启用思考”，保留原持久化值以兼容旧配置。
+- “默认”保持安全语义：只自动识别已知官方接口，未适配网关不额外发送思考参数；“不启用思考”是显式关闭项。选择项下方说明随厂商切换，分别提示实际控制方式，避免把字段兼容误当深度档位兼容。
+- 快速填写 MiMo Flash/Pro 预设现在直接选择 MiMo 适配；仓颉默认识别补充官方 TokenPlan 域名 token-plan-cn.xiaomimimo.com，避免预设模型仍停留在默认。自定义网关仍由用户按实际兼容协议选择，不猜测。
+- 验证：ReasoningTest 11/11 通过（含 TokenPlan host 自动识别）；真实 Edge reasoning-ui 39/39 通过，新增检查默认/厂商/显式关闭的值、中文标签、说明联动和保存请求，无浏览器异常。接口结构、会话模式存储和现有思考菜单行为不变。
+- README 与本地 docs/02 同步说明；docs 仍不进入公开 Git。版本按既有规则升至 0.8.38，保留旧包，无额外命名后缀。

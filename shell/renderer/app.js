@@ -8163,6 +8163,7 @@ const MODEL_PRESETS = [
     model: "mimo-v2.6-flash",
     vision: "mimo-v2.6-pro",
     embed: "",
+    reasoningProfile: "mimo",
     note: "日常问答与生成用 mimo-v2.6-flash，便宜且快；切片与图片描述走 mimo-v2.6-pro。该服务不提供 /embeddings，向量模型留空即可——知识库会自动退回关键词检索。",
   },
   {
@@ -8174,6 +8175,7 @@ const MODEL_PRESETS = [
     model: "mimo-v2.6-pro",
     vision: "mimo-v2.6-pro",
     embed: "",
+    reasoningProfile: "mimo",
     note: "全部用 mimo-v2.6-pro：理解更稳、讲义更完整，单次耗时也更长。",
   },
   {
@@ -8285,13 +8287,27 @@ async function settingsModels() {
     f3.appendChild(fieldOf("向量模型（可留空）", inputOf("m-embed", "")));
     mcard.appendChild(f3);
     const reasoningProfile = selectOf('m-reasoning-profile', [
-      {value:'auto', label:'自动（auto）'}, {value:'none', label:'不启用（none）'},
-      {value:'deepseek', label:'DeepSeek'}, {value:'mimo', label:'MiMo'},
-      {value:'qwen-budget', label:'Qwen Budget'}, {value:'openai', label:'OpenAI'},
+      {value:'auto', label:'默认'}, {value:'deepseek', label:'DeepSeek'},
+      {value:'mimo', label:'MiMo'}, {value:'qwen-budget', label:'Qwen'},
+      {value:'openai', label:'OpenAI'}, {value:'none', label:'不启用思考'},
     ], 'auto');
-    const reasoningField = fieldOf('思考协议', reasoningProfile);
+    const reasoningField = fieldOf('思考适配', reasoningProfile);
     reasoningField.querySelector('label').htmlFor = reasoningProfile.id;
-    reasoningField.appendChild(el('p', 'muted sm', '自动识别官方接口；第三方网关请按其支持的协议选择。'));
+    const reasoningHint = el('p', 'muted sm');
+    const reasoningHints = {
+      auto: '默认：自动识别官方接口；未适配的网关不会额外发送思考参数。',
+      deepseek: 'DeepSeek：使用思考开关和低、高、极深档位。',
+      mimo: 'MiMo：使用思考开关；当前不区分多个深度档位。',
+      'qwen-budget': 'Qwen：使用思考开关和思考 token 预算。',
+      openai: 'OpenAI：使用 reasoning_effort；具体档位随模型能力。',
+      none: '不启用思考：任何接口都不发送思考参数。',
+    };
+    const paintReasoningHint = () => {
+      reasoningHint.textContent = reasoningHints[reasoningProfile.value] || reasoningHints.auto;
+    };
+    reasoningProfile.onchange = paintReasoningHint;
+    paintReasoningHint();
+    reasoningField.appendChild(reasoningHint);
     mcard.appendChild(reasoningField);
     const f4 = el("div", "row");
     f4.appendChild(fieldOf("朗读模型（可留空）", inputOf("m-tts-model", "mimo-v2.5-tts")));

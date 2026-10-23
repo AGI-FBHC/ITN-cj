@@ -193,7 +193,14 @@ const until = async (fn, label, ms = 10000) => {
     check('both theme surfaces actually differ', colours[0] !== colours[1]);
 
     await page.evaluate(() => go('settings','models')); await page.waitForSelector('#m-reasoning-profile');
-    check('new model form defaults to auto with the six specified protocols', await page.locator('#m-reasoning-profile').inputValue() === 'auto' && JSON.stringify(await page.locator('#m-reasoning-profile option').evaluateAll(xs => xs.map(x => x.value))) === JSON.stringify(['auto','none','deepseek','mimo','qwen-budget','openai']));
+    check('new model form defaults to the safe default profile', await page.locator('#m-reasoning-profile').inputValue() === 'auto' &&
+      JSON.stringify(await page.locator('#m-reasoning-profile option').evaluateAll(xs => xs.map(x => x.value))) === JSON.stringify(['auto','deepseek','mimo','qwen-budget','openai','none']) &&
+      JSON.stringify(await page.locator('#m-reasoning-profile option').evaluateAll(xs => xs.map(x => x.textContent))) === JSON.stringify(['默认','DeepSeek','MiMo','Qwen','OpenAI','不启用思考']) &&
+      (await page.locator('#m-reasoning-profile').locator('xpath=following-sibling::p').innerText()).includes('未适配的网关不会额外发送'));
+    await page.locator('#m-reasoning-profile').selectOption('deepseek');
+    check('selecting an adapted vendor explains its actual controls', (await page.locator('#m-reasoning-profile').locator('xpath=following-sibling::p').innerText()).includes('低、高、极深'));
+    await page.locator('#m-reasoning-profile').selectOption('none');
+    check('explicitly disabling thinking is distinct from the default profile', (await page.locator('#m-reasoning-profile').locator('xpath=following-sibling::p').innerText()).includes('任何接口都不发送'));
     await page.locator('.item').filter({hasText:'本地仓颉检查模型'}).getByRole('button',{name:'填到表单',exact:true}).click();
     await page.locator('#m-reasoning-profile').selectOption('mimo'); await page.getByRole('button',{name:'保存模型',exact:true}).click();
     await until(() => modelSaves.length > 0, 'model save');
