@@ -37,6 +37,7 @@ public class RunOutcome {
     public var error: String = ""
     public var usageIn: Int64 = 0
     public var usageOut: Int64 = 0
+    public var usageReasoning: Int64 = -1
     public let toolResults = ArrayList<JsonObject>()
     public let warnings = ArrayList<String>()
 
@@ -50,6 +51,7 @@ public class RunOutcome {
         }
         o.put("usageIn", JsonInt(usageIn))
         o.put("usageOut", JsonInt(usageOut))
+        if (usageReasoning >= 0) { o.put("usageReasoning", JsonInt(usageReasoning)) }
         let ws = JsonArray()
         for (w in warnings) {
             ws.add(JsonString(w))
@@ -225,6 +227,9 @@ public class Agent {
             stream.push(evMessageEnd(am))
             out.usageIn = out.usageIn + reply.usageIn
             out.usageOut = out.usageOut + reply.usageOut
+            if (turns == 1) { out.usageReasoning = reply.usageReasoning }
+            else if (out.usageReasoning >= 0 && reply.usageReasoning >= 0) { out.usageReasoning += reply.usageReasoning }
+            else { out.usageReasoning = -1 }
 
             if (reply.stopReason == "error" || reply.stopReason == "length") {
                 out.ok = false

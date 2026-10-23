@@ -90,6 +90,18 @@ public class SessionStore {
         return "t" + Random().nextUInt64().toString()
     }
 
+    /** 会话的下一轮思考模式；独立于 checkpoint/state，压缩、停止与切分支不覆盖它。 */
+    public func reasoningMode(sessionId: String): String {
+        if (sessionId.size == 0) { return "default" }
+        return db().getKv("sessions_meta", "reasoning:" + sessionId, "default")
+    }
+
+    public func setReasoningMode(sessionId: String, mode: String): Unit {
+        if (sessionId.size == 0) { throw Exception("缺少 sessionId，无法保存思考模式") }
+        if (mode.size == 0) { throw Exception("缺少思考模式 mode") }
+        db().putKv("sessions_meta", "reasoning:" + sessionId, mode)
+    }
+
     public func append(event: SessionEvent): Unit {
         if (event.at.size == 0) {
             event.at = DateTime.now().toString()
@@ -676,6 +688,7 @@ public class SessionStore {
         // 起名：旧名字 +（N）。N 取"当前没被占用的最小序号"，所以开第 2、3、4 个分支也各自有名字
         let base = branchBaseTitle(sessionId)
         rename(newSid, branchTitleFor(base))
+        setReasoningMode(newSid, reasoningMode(sessionId))
         return newSid
     }
 
@@ -843,6 +856,7 @@ public class SessionStore {
             va([tv(newSid), tv(now), tv(now)]))
         copyChain(sessionId, newSid, branchEventIds(sessionId))
         rename(newSid, branchTitleFor(branchBaseTitle(sessionId)))
+        setReasoningMode(newSid, reasoningMode(sessionId))
         return newSid
     }
 
@@ -973,6 +987,7 @@ public class SessionStore {
         db().delKv("sessions_meta", "project:" + sessionId)
         db().delKv("sessions_meta", "resource:" + sessionId)
         db().delKv("sessions_meta", "guided:" + sessionId)
+        db().delKv("sessions_meta", "reasoning:" + sessionId)
     }
 
     /**

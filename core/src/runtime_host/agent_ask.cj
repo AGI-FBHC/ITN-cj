@@ -19,6 +19,9 @@ import itn_desktop_core.agent.learningTools
 import itn_desktop_core.agent.learningTeamTools
 import itn_desktop_core.agent.presentationTools
 import itn_desktop_core.agent.personalTools
+import itn_desktop_core.agent.reasoningTools
+import itn_desktop_core.agent.reasoningModeForTurn
+import itn_desktop_core.reasoning.copyReasoningConfig
 import itn_desktop_core.agent.knowledgeTools
 import itn_desktop_core.agent.courseTools
 import itn_desktop_core.agent.guidedTools
@@ -217,6 +220,8 @@ public class WorkContext {
     public var attachments: JsonArray = JsonArray()
     /** 导学侧栏：文件读写每一步都必须经过用户确认，即使权限档为 full。 */
     public var confirmFileAccess: Bool = false
+    /** 空值读取会话设置；显式模式只在本轮开始时校验并固定。 */
+    public var reasoningMode: String = ""
 
     public init() {}
 }
@@ -268,7 +273,9 @@ public class LuminAgent {
                 out0.put("message", JsonString("没有可用的对话模型，请先在设置里配置"))
                 return out0
             case Some(cfg) =>
-                let prov = OpenAiChatProvider(cfg)
+                let effective = reasoningModeForTurn(store, cfg, sessionIdIn,
+                    match (work) { case Some(w) => w.reasoningMode; case None => "" })
+                let prov = OpenAiChatProvider(copyReasoningConfig(cfg, effective))
                 let sidForAbort = sessionIdIn
                 // 界面按了停止 → provider 在下一个增量处收手（不然一轮长回答"停不下来"）
                 prov.shouldAbort = Some({ => sessionHub().isAborted(sidForAbort) })
@@ -315,7 +322,9 @@ public class LuminAgent {
                 out0.put("message", JsonString("没有可用的对话模型，请先在设置里配置"))
                 return out0
             case Some(cfg) =>
-                let prov = OpenAiChatProvider(cfg)
+                let effective = reasoningModeForTurn(store, cfg, sessionIdIn,
+                    match (work) { case Some(w) => w.reasoningMode; case None => "" })
+                let prov = OpenAiChatProvider(copyReasoningConfig(cfg, effective))
                 let sidForAbort = sessionIdIn
                 prov.shouldAbort = Some({ => sessionHub().isAborted(sidForAbort) })
                 return runFull(prov, kbId, taskBrief(kind, topic, count), sessionIdIn, webModeIn, "", work,
@@ -343,6 +352,16 @@ public class LuminAgent {
         setTaskState(store.dataDir, sessionId, turnId, "running")
         courseMarkBusy(store.dataDir,sessionId,true)
         try {
+            // 此时才有最终 sessionId。显式请求保存到这个会话；后续工具/界面修改只影响下一轮。
+            match (provider) {
+                case p: OpenAiChatProvider =>
+                    let requested = match (work) { case Some(w) => w.reasoningMode; case None => "" }
+                    let effective = reasoningModeForTurn(store, p.reasoningConfig, sessionId, requested)
+                    p.reasoningMode = effective
+                    p.reasoningConfig.reasoningMode = effective
+                    if (requested.size > 0) { sessions.setReasoningMode(sessionId, requested) }
+                case _ => ()
+            }
             let courseTarget=CourseStore(store.dataDir).target(sessionId)
             let guidedStore=GuidedStore(store.dataDir)
             let guidedKb=if(guidedStore.isGuided(sessionId)){strOf(guidedStore.context(sessionId),"kbId")}else{""}
@@ -406,6 +425,16 @@ public class LuminAgent {
 
         let cfgSettings = store.load()
 
+        // 独立的运行时副本供协作/PPT子Agent继承，不读取后续界面变更后的会话模式。
+        let runtimeModelConfig: ?ModelConfig = match (provider) {
+            case p: OpenAiChatProvider => Some(copyReasoningConfig(p.reasoningConfig, p.reasoningMode))
+            case _ => None
+        }
+        let runningReasoningMode = match (runtimeModelConfig) {
+            case Some(cfg) => cfg.reasoningMode
+            case None => "default"
+        }
+
         // ---- 联网策略（与手写那条链路同一套判断，不另立规矩）----
         let wmode = effectiveWebMode(store.dataDir, sessionId, webModeIn)
         let allowWeb = wmode != "off"
@@ -453,10 +482,11 @@ public class LuminAgent {
                 }
             })) { defs.add(d) }
         for (d in learningTeamTools(store, kbId, { => sessionHub().isAborted(sid) }, sid, turnId, question,
-            { kind: String, payload: JsonObject => log(kind, payload) })) { defs.add(d) }
+            { kind: String, payload: JsonObject => log(kind, payload) }, runtimeModel: runtimeModelConfig)) { defs.add(d) }
         let records = ArrayList<ToolRecord>()
-        for(d in presentationTools(store,sid,turnId,question,{ => sessionHub().isAborted(sid) },{kind: String,payload: JsonObject => log(kind,payload)})){defs.add(d)}
+        for(d in presentationTools(store,sid,turnId,question,{ => sessionHub().isAborted(sid) },{kind: String,payload: JsonObject => log(kind,payload)},runtimeModel: runtimeModelConfig)){defs.add(d)}
         for(d in personalTools(store,sid,turnId,question)){defs.add(d)}
+        for(d in reasoningTools(store,sid,question,runningMode: runningReasoningMode)){defs.add(d)}
         for(d in courseTools(store,sid,question)){defs.add(d)}
         for(d in guidedTools(store,sid,question)){defs.add(d)}
         for(d in taskTools(store,sid,question)){defs.add(d)}
@@ -732,11 +762,13 @@ public class LuminAgent {
         /* 这一轮真实用掉的 token（供应商回的 usage）。
            界面上"上下文用了多少"只能从这里来 —— 自己按字符估算是骗人的。
            pi 的 TUI 在页脚也显示这个数，它是用户判断"该不该 /compact"的唯一依据。 */
-        if (outcome.usageIn > 0 || outcome.usageOut > 0) {
+        if (outcome.usageIn > 0 || outcome.usageOut > 0 || outcome.usageReasoning >= 0) {
             let up = JsonObject()
             up.put("in", JsonInt(outcome.usageIn))
             up.put("out", JsonInt(outcome.usageOut))
+            if (outcome.usageReasoning >= 0) { up.put("reasoning", JsonInt(outcome.usageReasoning)) }
             log("turn/usage", up)
+            out.put("tokens", up)
         }
         flushThink()
         sessionHub().clearRunning(sid)

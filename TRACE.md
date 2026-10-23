@@ -5475,3 +5475,20 @@ read_chunk 读得到原文并带回库标识与正文。
 - 普通聊天、资源/课程生成走 OpenAiChatProvider；学习协作树 core/src/agent/learning_team.cj 和 PPT 子任务等还走 core/src/llm/llm.cj 的 LlmClient。应在仓颉抽取共享请求参数适配，防止主会话设置生效而子任务失效；不能只改 renderer 按钮。现有统计仅输入/输出，单独思考用量需要解析接口提供的 usage 细项，缺失不能由字节/字数伪造。
 - 建议方案：输入区模型选择旁增加简洁“思考”菜单，默认跟随模型且不额外发送参数；按“服务商/网关+协议+具体模型”能力只列真实支持选项。每会话独立，发送时固化设置，工具续接同轮不变，切换会话不互相覆盖。先支持对话与随课导学、明确继承的协作子任务；知识库索引/embedding/TTS不受会话深度影响。同步提供Lumin读取当前模式与经用户明确要求设置模式的工具，沿用权限规则。
 - 后续若用户要求实施：先更新本地接口契约，再做能力识别与两条调用链适配、会话保存及UI；优先真实验证现有模型网关，至少覆盖简单问答、复杂推理、并行工具及续聊、跨会话不同深度、切模型不支持参数、停止/重试。比较首个正文耗时与真实usage，不能仅凭参数返回200认定档位有效。用户当前尚未批准实施，无业务代码/版本/程序包变更。
+
+### 2026-10-23 · 实施思考深度模式（0.8.35）
+
+- 用户确认“可以 帮我加一下”，授权从调研进入实施。沿前述方案增加会话级思考菜单、仓颉参数适配、Agent读写工具；只做本地迭代打包，不启动定时任务、不改Web、不自动发布远端。界面与会话/API由两名子Agent分域并行，父负责共享协议、模型传输、子任务继承、真实验收与交付。
+- 先更新本地 docs/02 契约；该目录仍不进Git。新增 core/src/reasoning/reasoning.cj 统一capability/参数：auto只识别官方host与受支持型号，第三方网关可在模型表单明确选deepseek/mimo/qwen-budget/openai，或none停用；按真实支持列出default/off/on/low/medium/high/max。DeepSeek不用不存在的medium，MiMo只开关；Qwen预算保留正文空间且不向已知thinking-only型号提供关闭；需要Responses工具链的OpenAI型号不冒充支持当前Chat Completions深度工具调用。
+- ModelConfig新增reasoningProfile，经models.reasoning_profile列幂等迁移保存；reasoningMode是运行时副本字段，不进全局模型配置。API校验合法profile，旧客户端不带字段时保留既有设置。仓颉OpenAiChatProvider和LlmClient共享参数函数；思考档位和输出预算分开，思考模型不携冲突temperature，支持接口请求usage流尾帧。
+- 新增POST /api/agent/reasoning只读、/api/sessions/reasoning设置当前会话下一轮。sessions_meta独立reasoning键持久化，分支复制、删除清理。ask-pi/task-pi在开始时校验并固定本轮模式；旧会话档位与新模型不兼容时只回退本次default、不覆盖原选择。协作树与PPT子Agent接收ModelConfig运行时副本，不读取其他会话或后续全局变更。
+- get_reasoning_mode读取模型能力/已保存模式/本轮固定模式；set_reasoning_mode仅在本轮用户明确要求且原文目标与args匹配时保存下一轮，不接受模型仅自报confirmed或把“关闭”升级成max，不改变正在执行的工具续接。支持“开启深度思考，不要执行其他操作”这种正常指令，不把与设置无关的否定词误当撤销授权。
+- Provider按厂商规则回传assistant.reasoning_content，包含DeepSeek工具上下文中的纯正文assistant轮次；MiMo字节保护只适用于原default路径，用户主动开启时不会静默降级关闭。usageReasoning从completion_tokens_details.reasoning_tokens取值，未提供用-1而非估算，跨请求有缺失不伪造完整总数；retry累计真实用量且不重复把思考加到输出总量。
+- 前端普通聊天与随课导学共用紧凑菜单，按API选项绘制，逐会话保存和空会话草稿迁移；防重保存、错误保留原值、切会话/切模型异步结果隔离。两主题与键盘焦点适配。usage仅实际变化才触发重绘，菜单签名缓存保留选项DOM，避免流式轮询时点击目标消失。模型表单增加思考协议，正常输入区展示上一轮实际思考token。
+- 真实验收发现并修复现存并发卡点：两个新会话首次使用同一cwd，runtime/session.cj存在exists后Directory.create的竞争，返回-17 File exists。给共享会话目录创建加进程内锁；新增16个并发native session断言。首次真实A低档已经完成工具，而B败于目录创建，未归因模型参数。修后真实并发成功。
+- 仓颉定向验证：ReasoningTest 11项、ReasoningSessionTest 8项，共19/19，最终代码连续两轮通过；另ProviderTest 19/19、ToolContextTest 6/6、AgentLoopTest 13/13。本轮57项不同的核心用例，未声称全量207项通过。覆盖实际回环HTTP出站、两条模型传输、思考历史、工具设置授权/目标不符拒绝、本轮固定与下轮生效、分支/删除、API/profile兼容、非法档位零上游调用、缺省和0用量。
+- 测试过程修正：初次构建默认参数误用位置参数，改为仓颉具名参数；测试过滤不能用竖线OR，该命令意外开始全量，已中断，后按具体suite执行；子Agent测试文件尾部多一个括号导致编译失败，删除后完整定向重跑通过。以上失败未计作通过结果。
+- 真模型用 tools/real-reasoning-smoke.cjs 与新dist/core，凭据仅从TEMP数据库副本读取，隔离学习库，finally清零凭据及临时模型库/WAL/SHM。当前deepseek-flash网关显式deepseek协议：A保存low、B保存off并发，A两个calc成功返回15/56；A运行中把下一轮改high，本轮两次模型请求仍low，B不出现思考。下一轮high读取get_reasoning_mode且记住15/56。首次通过耗时约2.8s/2.5s，真实usage分别in17570/out104/reasoning11、in17941/out78/reasoning24；非同题质量/速度基准，不以数字推断高档必然更好。其他厂商本轮只测协议出站，不宣称逐家真实API通过。
+- 前端子Agent使用ui-ux-pro-max检查规范；真实Edge+隔离仓颉夹具37/37，旧HEAD相同用例在缺少思考菜单处失败，已查看普通/导学浅深主题截图。此类测试验证操作和请求体，不冒充真实计费/模型质量验证。最终复跑与包验收另行追加。
+
+- 最终复验：前端真实Edge37/37第二轮通过；共57项不同核心用例通过，其中19项思考用例在最终代码连续两轮通过。最终release构建成功。最新dist/core真实deepseek复跑通过：low/off并发约3.3s，high续聊约2.4s；新增真实set_reasoning_mode调用把会话下一轮保存off，该轮所有上游请求仍high，证明工具不会中途改变模式。此轮high续聊上游实际上报reasoning=0，按0展示，不假定高档每轮一定产生思考正文。

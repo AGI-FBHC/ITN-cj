@@ -12,6 +12,9 @@ public class ModelConfig {
     public var baseUrl: String = ""
     public var apiKey: String = ""
     public var model: String = ""
+    public var reasoningProfile: String = "auto"
+    /** Per-turn snapshot only; never persisted as a model-wide preference. */
+    public var reasoningMode: String = "default"
     public var visionModel: String = ""
     public var embeddingModel: String = ""
     public var ttsModel: String = ""
@@ -29,6 +32,7 @@ public class ModelConfig {
         o.put("baseUrl", JsonString(baseUrl))
         o.put("apiKey", JsonString(apiKey))
         o.put("model", JsonString(model))
+        o.put("reasoningProfile", JsonString(reasoningProfile))
         o.put("visionModel", JsonString(visionModel))
         o.put("embeddingModel", JsonString(embeddingModel))
         o.put("ttsModel", JsonString(ttsModel))
@@ -60,6 +64,8 @@ public class ModelConfig {
                 m.baseUrl = strOf(vj, "baseUrl")
                 m.apiKey = strOf(vj, "apiKey")
                 m.model = strOf(vj, "model")
+                let profile = strOf(vj, "reasoningProfile")
+                m.reasoningProfile = if (profile.size > 0) { profile } else { "auto" }
                 m.visionModel = strOf(vj, "visionModel")
                 m.embeddingModel = strOf(vj, "embeddingModel")
                 m.ttsModel = strOf(vj, "ttsModel")
@@ -244,7 +250,7 @@ public class Store {
         } catch (e: Exception) {
             ()
         }
-        for (col in ["tts_model", "tts_voice", "tts_format", "tts_protocol"]) {
+        for (col in ["tts_model", "tts_voice", "tts_format", "tts_protocol", "reasoning_profile"]) {
             try {
                 db().exec("ALTER TABLE models ADD COLUMN " + col + " TEXT")
             } catch (e: Exception) {
@@ -261,7 +267,7 @@ public class Store {
         s.embedModelId = roleOf("embed")
         s.chunkModelId = roleOf("chunk")
         s.ttsModelId = roleOf("tts")
-        for (r in db().querySql("SELECT id, name, base_url, api_key, model, vision_model, embedding_model, capabilities, tts_model, tts_voice, tts_format, tts_protocol " +
+        for (r in db().querySql("SELECT id, name, base_url, api_key, model, vision_model, embedding_model, capabilities, tts_model, tts_voice, tts_format, tts_protocol, reasoning_profile " +
             "FROM models ORDER BY ord")) {
             let m = ModelConfig()
             m.id = r.text(0)
@@ -276,6 +282,7 @@ public class Store {
             m.ttsVoice = r.text(9)
             m.ttsFormat = r.text(10)
             m.ttsProtocol = r.text(11)
+            m.reasoningProfile = if (r.text(12).size > 0) { r.text(12) } else { "auto" }
             s.models.add(m)
         }
         for (r in db().querySql("SELECT id, name, root_dir, source_path, doc_count, chunk_count, image_count, built_at " +
@@ -300,10 +307,10 @@ public class Store {
         ops.add(DbOp("DELETE FROM models", ArrayList<DbValue>()))
         var ord: Int64 = 0
         for (m in s.models) {
-            ops.add(DbOp("INSERT INTO models (id, name, base_url, api_key, model, vision_model, embedding_model, capabilities, tts_model, tts_voice, tts_format, tts_protocol, ord) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ops.add(DbOp("INSERT INTO models (id, name, base_url, api_key, model, vision_model, embedding_model, capabilities, tts_model, tts_voice, tts_format, tts_protocol, reasoning_profile, ord) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 va([tv(m.id), tv(m.name), tv(m.baseUrl), tv(m.apiKey), tv(m.model), tv(m.visionModel), tv(m.embeddingModel),
-                    tv(joinCsv(m.capabilities)), tv(m.ttsModel), tv(m.ttsVoice), tv(m.ttsFormat), tv(m.ttsProtocol), nv(ord)])))
+                    tv(joinCsv(m.capabilities)), tv(m.ttsModel), tv(m.ttsVoice), tv(m.ttsFormat), tv(m.ttsProtocol), tv(m.reasoningProfile), nv(ord)])))
             ord += 1
         }
         ops.add(DbOp("DELETE FROM knowledge_bases", ArrayList<DbValue>()))

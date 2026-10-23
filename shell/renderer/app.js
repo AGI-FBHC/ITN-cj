@@ -26,6 +26,13 @@ function esc(s) {
 }
 
 async function api(path, body, signal) {
+  // Capture by request session, including the separate guided composer. A pending
+  // save belongs to this session even if the user changes pages while it finishes.
+  if ((path === '/api/agent/ask-pi' || path === '/api/agent/task-pi') && body && body.reasoningMode === undefined) {
+    const entry = reasoningEntries.get('session:' + body.sessionId);
+    if (entry?.saving) await entry.saving;
+    if (entry?.data && !entry.loading && entry.signature === reasoningSignature()) body = {...body, reasoningMode: entry.data.effectiveMode};
+  }
   const init = { method: body === undefined ? "GET" : "POST" };
   if (signal) init.signal = signal;
   if (body !== undefined) {
@@ -45,6 +52,15 @@ async function api(path, body, signal) {
     throw new Error("内核返回的不是 JSON（HTTP " + res.status + "）");
   }
   if (json.code !== 0) throw new Error(json.message || ("请求失败（HTTP " + res.status + "）"));
+  if (path === '/api/sessions/events' && body?.sessionId) {
+    const usage = (json.data?.events || []).filter(e => e.type === 'turn/usage').at(-1);
+    if (usage) {
+      const previous = reasoningUsage.get(body.sessionId), next = usage.payload || {};
+      if (!previous || reasoningUsageSignature(previous) !== reasoningUsageSignature(next)) {
+        reasoningUsage.set(body.sessionId, next); repaintReasoningControls();
+      }
+    }
+  }
   return json.data;
 }
 
@@ -681,11 +697,13 @@ function mascotActivity(activityState, busyCount) {
 window.luminMascotActivity = mascotActivity;
 
 async function loadCfg() {
+  const previousReasoningSignature = reasoningSignature();
   state.cfg = await api("/api/settings");
   // /api/settings 里没有界面与智能体偏好：用最近一次读到的合回来，别把设置页上的开关冲掉
   if (state.agentPrefs) Object.assign(state.cfg, state.agentPrefs);
   if (!state.cfg.models) state.cfg.models = [];
   if (!state.cfg.knowledgeBases) state.cfg.knowledgeBases = [];
+  if (previousReasoningSignature !== reasoningSignature()) repaintReasoningControls(true);
   if (!state.kb || !state.cfg.knowledgeBases.some((k) => k.id === state.kb)) {
     const indexed = state.cfg.knowledgeBases.find((k) => (k.chunkCount || 0) > 0);
     state.kb = (indexed || state.cfg.knowledgeBases[0] || {}).id || "";
@@ -797,6 +815,197 @@ function kbName(id) {
 function modelLabel(id) {
   const m = state.cfg.models.find((x) => x.id === id);
   return m ? (m.name || m.id) : "";
+}
+
+/* Reasoning is a session preference. Only the kernel supplies modes and model
+ * capabilities; a blank conversation keeps its choice in its own local draft. */
+const reasoningEntries = new Map(), reasoningControls = new Set(), reasoningUsage = new Map();
+let reasoningDraft = 0, reasoningControlId = 0;
+const reasoningKey = () => state.chatSessionId ? 'session:' + state.chatSessionId : 'draft:' + reasoningDraft;
+function reasoningSignature() {
+  const m = state.cfg.models.find(m => m.id === state.cfg.chatModelId) || {};
+  return JSON.stringify([state.cfg.chatModelId, m.model, m.baseUrl, m.reasoningProfile || 'auto']);
+}
+function reasoningEntry(key) {
+  if (!reasoningEntries.has(key)) reasoningEntries.set(key, {data:null, signature:'', seq:0, loading:false, saving:null, error:''});
+  return reasoningEntries.get(key);
+}
+function repaintReasoningControls(refresh = false) {
+  for (const control of reasoningControls) {
+    if (!control.root.isConnected) { control.dispose(); reasoningControls.delete(control); continue; }
+    control.paint();
+    if (refresh) control.refresh();
+  }
+}
+async function loadReasoning(key, force = false) {
+  const e = reasoningEntry(key), signature = reasoningSignature();
+  if (e.saving || (e.loading && e.signature === signature) || (!force && e.data && e.signature === signature)) return;
+  const seq = ++e.seq;
+  e.signature = signature; e.loading = true; e.error = '';
+  repaintReasoningControls();
+  try {
+    const data = await api('/api/agent/reasoning', key.startsWith('session:') ? {sessionId:key.slice(8)} : {});
+    if (seq !== e.seq || signature !== reasoningSignature()) return;
+    if (!Array.isArray(data?.options) || typeof data.effectiveMode !== 'string') throw Error('思考设置暂不可用');
+    if (key.startsWith('draft:') && e.data) {
+      data.mode = e.data.mode;
+      if (data.options.some(o => o.id === data.mode)) data.effectiveMode = data.mode;
+    }
+    e.data = data;
+  } catch (err) {
+    if (seq === e.seq && signature === reasoningSignature()) e.error = '读取失败：' + err.message;
+  } finally {
+    if (seq === e.seq) e.loading = false;
+    repaintReasoningControls();
+  }
+}
+function saveReasoning(key, mode) {
+  const e = reasoningEntry(key);
+  if (e.saving || e.loading || e.signature !== reasoningSignature() || !e.data?.options.some(o => o.id === mode)) return;
+  if (e.data.mode === mode) return;
+  e.error = ''; ++e.seq;
+  if (key.startsWith('draft:')) {
+    e.data = {...e.data, mode, effectiveMode:mode}; repaintReasoningControls(); return;
+  }
+  const signature = e.signature;
+  e.saving = (async () => {
+    try {
+      const data = await api('/api/sessions/reasoning', {sessionId:key.slice(8), mode});
+      if (signature === reasoningSignature()) e.data = data;
+      else e.signature = '';
+    } catch (err) { e.error = '保存失败，已保留原选择：' + err.message; }
+    finally { e.saving = null; repaintReasoningControls(true); }
+  })();
+  repaintReasoningControls();
+  return e.saving;
+}
+function reasoningUsageText(usage) {
+  const n = usage?.reasoning;
+  return n != null && Number.isFinite(Number(n)) && Number(n) >= 0 ? ' · 思考 ' + Number(n) : '';
+}
+function reasoningUsageSignature(usage) {
+  return JSON.stringify([Number(usage.in || 0), Number(usage.out || 0), usage.reasoning == null ? null : Number(usage.reasoning)]);
+}
+
+/** Same menu/keyboard/error handling for normal chat and the guided side panel. */
+function createReasoningControl(getKey) {
+  const root = el('div', 'composer-reasoning-wrap');
+  const trigger = el('button', 'composer-model composer-reasoning'); trigger.type = 'button';
+  const menu = el('div', 'composer-menu reasoning-menu'); menu.hidden = true;
+  menu.id = 'reasoning-menu-' + (++reasoningControlId); menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', '思考深度');
+  trigger.setAttribute('aria-haspopup', 'menu'); trigger.setAttribute('aria-controls', menu.id); trigger.setAttribute('aria-expanded', 'false');
+  root.append(trigger, menu);
+  let key = '', open = false, paintedSignature = '';
+  const close = (focus = false) => {
+    open = false; menu.hidden = true; trigger.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', outside);
+    if (focus && root.isConnected) trigger.focus();
+  };
+  const outside = event => { if (!root.contains(event.target)) close(); };
+  const paint = () => {
+    const nextKey = getKey();
+    if (key !== nextKey) { close(); key = nextKey; }
+    const e = reasoningEntry(key), signature = reasoningSignature();
+    // Polling full history must not detach an option under the user's pointer.
+    // Usage can repaint its own label while an unchanged menu keeps its DOM/focus.
+    const nextSignature = JSON.stringify([key, signature, e.signature, e.loading, !!e.saving, e.error, e.data]);
+    if (paintedSignature === nextSignature) return;
+    paintedSignature = nextSignature;
+    const fresh = e.signature === signature, data = fresh ? e.data : null;
+    const selected = data?.options.find(o => o.id === data.effectiveMode);
+    const label = e.saving ? '保存中…' : e.loading || !fresh ? '加载中…' : selected?.label || '设置';
+    trigger.replaceChildren(el('span', 'cm-name', '思考 · ' + label));
+    const chevron = el('span'); chevron.innerHTML = icon('chevron'); chevron.setAttribute('aria-hidden', 'true'); trigger.appendChild(chevron);
+    trigger.setAttribute('aria-label', '思考深度：' + label); trigger.setAttribute('aria-busy', String(!!e.saving || e.loading));
+    trigger.title = '思考深度 · 仅此会话，下一轮生效';
+    const focusedMode = menu.contains(document.activeElement) ? document.activeElement.dataset.mode : null;
+    menu.replaceChildren(el('div', 'reasoning-title', '思考深度'));
+    const note = e.error || (e.loading ? '正在读取可用档位…' : e.saving ? '正在保存，下一轮生效…' :
+      data?.requiresConfiguration ? '请先在模型设置中配置思考协议。' : data && !data.supported ? '当前模型未开放思考档位。' : '仅此会话，下一轮生效');
+    const status = el('div', 'reasoning-status', note); status.setAttribute('role', e.error ? 'alert' : 'status'); menu.appendChild(status);
+    if (data && data.mode !== data.effectiveMode) menu.appendChild(el('div', 'reasoning-status', '原选择当前不可用，本轮使用「' + (selected?.label || data.effectiveMode) + '」。'));
+    for (const option of data?.options || []) {
+      const b = el('button', 'composer-menu-item reasoning-option', option.label); b.type = 'button'; b.dataset.mode = option.id;
+      b.setAttribute('role', 'menuitemradio'); b.setAttribute('aria-checked', String(option.id === data.effectiveMode));
+      b.classList.toggle('active', option.id === data.effectiveMode);
+      b.disabled = !!e.saving || e.loading || (!data.supported && option.id !== 'default');
+      b.onclick = event => { event.stopPropagation(); saveReasoning(key, option.id); };
+      menu.appendChild(b);
+    }
+    if (e.error) {
+      const retry = btn('重新读取', 'ghost sm', event => { event.stopPropagation(); loadReasoning(key, true); });
+      retry.setAttribute('role', 'menuitem'); retry.disabled = !!e.saving || e.loading; menu.appendChild(retry);
+    }
+    if (data && (data.requiresConfiguration || !data.supported)) {
+      const configure = btn('管理模型', 'ghost sm', async () => {
+        close(); const modelId = state.cfg.chatModelId;
+        await go('settings', 'models');
+        if (current !== 'settings' || currentSection !== 'models') return;
+        const model = state.cfg.models.find(m => m.id === modelId);
+        if (model && $('m-reasoning-profile')) { fillModelForm(model); $('m-reasoning-profile').focus(); }
+      }); configure.setAttribute('role', 'menuitem'); menu.appendChild(configure);
+    }
+    if (open && focusedMode != null) menu.querySelectorAll('[data-mode]').forEach(b => { if (b.dataset.mode === focusedMode && !b.disabled) b.focus(); });
+  };
+  trigger.onclick = event => {
+    event.stopPropagation(); if (open) { close(); return; }
+    open = true; paint(); menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); document.addEventListener('click', outside);
+    if (reasoningEntry(key).error) loadReasoning(key, true);
+  };
+  root.onkeydown = event => {
+    if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); close(true); return; }
+    if (event.key === 'Tab') { close(); return; }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation();
+    if (!open) trigger.click();
+    const choices = [...menu.querySelectorAll('button:not(:disabled)')], at = choices.indexOf(document.activeElement);
+    const index = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1 : (at + (event.key === 'ArrowUp' ? -1 : 1) + choices.length) % choices.length;
+    choices[index]?.focus();
+  };
+  const control = {root, paint, refresh:(force = false) => loadReasoning(getKey(), force), dispose:() => close()};
+  reasoningControls.add(control); paint();
+  return control;
+}
+
+/* studyplayer.js owns its composer and session state. Adapt its public DOM here
+ * so both inputs use the same preference component without duplicating logic. */
+function mountGuidedReasoning() {
+  state.guidedReasoningCleanup?.();
+  const row = document.querySelector('.sp-chat-compose-row'), select = document.querySelector('.sp-chat-session');
+  if (!row || !select) return;
+  const group = el('div', 'guided-reasoning-controls'), usage = el('span', 'composer-usage');
+  const model = el('button', 'composer-model guided-model'); model.type = 'button'; model.title = '切换对话模型';
+  const models = el('div', 'composer-menu guided-model-menu'); models.hidden = true;
+  const control = createReasoningControl(() => 'session:' + select.value);
+  group.append(model, models, control.root); row.before(usage); row.insertBefore(group, row.querySelector('.sp-chat-send'));
+  let lastKey = '';
+  const sync = () => {
+    model.textContent = modelLabel(state.cfg.chatModelId); model.setAttribute('aria-label', '对话模型：' + model.textContent);
+    const u = reasoningUsage.get(select.value);
+    usage.textContent = u ? '↑' + Number(u.in || 0) + ' ↓' + Number(u.out || 0) + reasoningUsageText(u) : ''; usage.hidden = !u;
+    usage.title = '上一轮 token；思考量包含在输出中';
+    control.root.hidden = !select.value;
+    control.paint();
+    if (select.value && lastKey !== select.value) { lastKey = select.value; control.refresh(true); }
+  };
+  const originalPaint = control.paint;
+  control.paint = () => { originalPaint(); model.textContent = modelLabel(state.cfg.chatModelId); model.title = model.textContent + ' · 点击切换'; model.setAttribute('aria-label', '对话模型：' + model.textContent); const u = reasoningUsage.get(select.value); usage.textContent = u ? '↑' + Number(u.in || 0) + ' ↓' + Number(u.out || 0) + reasoningUsageText(u) : ''; usage.hidden = !u; };
+  const closeModels = event => { if (!group.contains(event.target)) { models.hidden = true; model.setAttribute('aria-expanded', 'false'); } };
+  model.setAttribute('aria-haspopup', 'true'); model.setAttribute('aria-expanded', 'false');
+  model.onclick = () => {
+    models.hidden = !models.hidden; model.setAttribute('aria-expanded', String(!models.hidden)); models.replaceChildren();
+    for (const m of state.cfg.models) {
+      const b = btn(m.name || m.id, 'composer-menu-item', null);
+      b.onclick = () => runGuarded('model:roles', b, '正在切换…', async () => {
+        try { await api('/api/models/roles', {chatModelId:m.id, embedModelId:state.cfg.embedModelId, chunkModelId:state.cfg.chunkModelId, ttsModelId:state.cfg.ttsModelId}); await loadCfg(); sync(); models.hidden = true; model.setAttribute('aria-expanded', 'false'); model.focus(); }
+        catch (e) { toast('切换失败：' + e.message); }
+      }); models.appendChild(b);
+    }
+  };
+  group.addEventListener('keydown', event => { if (event.key === 'Escape' && !models.hidden) { event.stopPropagation(); models.hidden = true; model.setAttribute('aria-expanded', 'false'); model.focus(); } });
+  const observer = new MutationObserver(sync); observer.observe(select, {childList:true, attributes:true});
+  select.addEventListener('change', sync); document.addEventListener('click', closeModels); sync();
+  state.guidedReasoningCleanup = () => { observer.disconnect(); select.removeEventListener('change', sync); document.removeEventListener('click', closeModels); control.dispose(); reasoningControls.delete(control); group.remove(); usage.remove(); state.guidedReasoningCleanup = null; };
 }
 
 /** 「首次使用清单」：五个必须走通的环节，完成状态全部来自真实数据。 */
@@ -1024,6 +1233,7 @@ async function go(page, section, opts) {
   if(page==="resources"&&section==="files")section="";
   const navigation = state.navigationGeneration = (state.navigationGeneration || 0) + 1;
   clearRouteUi();
+  state.guidedReasoningCleanup?.();
   state.knowledgeObserver?.disconnect();state.knowledgeObserver=null;
   state.notesListObserver?.disconnect(); state.notesListObserver = null;
   state.objectFocus = opts?.focus || null;
@@ -1091,6 +1301,7 @@ async function go(page, section, opts) {
   try {
     await PAGES[target].render();
     if (navigation !== state.navigationGeneration) return;
+    if (target === 'study') mountGuidedReasoning();
   } catch (e) {
     if (navigation !== state.navigationGeneration) return;
     v.innerHTML = "";
@@ -1480,6 +1691,9 @@ function askTopic(kind, defaultTopic) {
  * 按发生顺序摆出来，和伴学助手用的是同一套渲染。
  */
 async function generateArtifact(kind, topic) {
+  const reasoningPreference = reasoningEntry(reasoningKey());
+  if (reasoningPreference.saving) { toast('思考设置正在保存，请稍候发送'); return; }
+  const reasoningMode = reasoningPreference.signature === reasoningSignature() ? reasoningPreference.data?.effectiveMode : undefined;
   const title = kind === "lecture" ? "生成讲义" : "生成练习册";
   if (!hasChatModel()) {
     toast("还没有可用的对话模型");
@@ -1553,6 +1767,7 @@ async function generateArtifact(kind, topic) {
       topic: topic,
       count: kind === "quiz" ? 5 : undefined,
       sessionId: sid,
+      reasoningMode,
       web: "auto",
       perm: state.cfg.agentPerm || "auto",
       ctxChapter: state.chapter || "",
@@ -3655,6 +3870,8 @@ function slashSessionInfo() {
   ul.appendChild(el("li", null, "上一轮 token：输入 " + ((turns[turns.length - 1] || {}).usageIn || 0) +
     " · 输出 " + ((turns[turns.length - 1] || {}).usageOut || 0)));
   ul.appendChild(el("li", null, "累计（本窗口看到的）：输入 " + usageIn + " · 输出 " + usageOut));
+  const lastUsage = turns.at(-1);
+  if (lastUsage?.usageReasoning != null) ul.appendChild(el('li', null, '上一轮思考 token：' + lastUsage.usageReasoning + '（已含在输出中）'));
   dlg.appendChild(ul);
   const row = el("div", "row");
   row.appendChild(btn("复制会话链接", "", () => copyText("lumin://thread/" + sid)));
@@ -5875,7 +6092,7 @@ function turnsFromEvents(events) {
         else t.teamEntries.push({runId: p.runId});
       }
     }
-    else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
+    else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); t.usageReasoning = p.reasoning == null ? null : Number(p.reasoning); }
     else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
     else if (e.type === 'model/retry') {
       t.activity = p.reason === 'network_retry' ? 'network_retry' : 'retrying';
@@ -6889,25 +7106,28 @@ PAGES.chat = {
       modelText.dataset.model = state.cfg.chatModelId || "";
     };
     paintModelChip();
+    modelText.setAttribute('aria-label', '切换对话模型');
     modelText.onclick = (ev) => { ev.stopPropagation(); openMenu("model"); };
     /* 上一轮的 token 用量：这是用户判断"上下文是不是快满了"的唯一依据
        （pi 的 TUI 也在页脚显示同一个数）。没有数据就不显示，不写 0 糊弄人。 */
     const usageText = el("span", "composer-usage", "");
     usageText.hidden = true;
     const paintUsage = () => {
-      const turns = (state.chatTurns || []).filter((t) => t.usageIn || t.usageOut);
+      const turns = (state.chatTurns || []).filter((t) => t.usageIn || t.usageOut || t.usageReasoning != null);
       const last = turns[turns.length - 1];
       if (!last) { usageText.hidden = true; return; }
       const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
       usageText.hidden = false;
-      usageText.textContent = "↑" + fmt(last.usageIn || 0) + " ↓" + fmt(last.usageOut || 0);
+      usageText.textContent = "↑" + fmt(last.usageIn || 0) + " ↓" + fmt(last.usageOut || 0) + reasoningUsageText({reasoning:last.usageReasoning});
       usageText.title = "上一轮真实用掉的 token（供应商回的 usage）：输入 " + (last.usageIn || 0) +
-        " · 输出 " + (last.usageOut || 0) + "\n上下文接近上限时该 /compact —— 现在还没有手动压缩，暂时只能靠它提示";
+        " · 输出 " + (last.usageOut || 0) + reasoningUsageText({reasoning:last.usageReasoning}) + "\n思考量包含在输出中，不重复计入总量";
     };
     paintUsage();
     state.chatRepaintUsage = paintUsage;
     crow.appendChild(usageText);
     crow.appendChild(modelText);
+    const reasoningControl = createReasoningControl(reasoningKey);
+    crow.appendChild(reasoningControl.root);
 
     /* 一个按钮两种状态：空闲是"发送"，跑着是"停止"（Codex 也是这么干的） */
     const actionBtn = el("button", "composer-send", "");
@@ -6940,6 +7160,7 @@ PAGES.chat = {
     splitHint.hidden = true;
     v.appendChild(splitHint);
     v.appendChild(inputRow);
+    reasoningControl.refresh();
 
     /* ＋ 菜单：只放真做得成的事。联网方式与技能列表都不在这儿（见上面那段注释）。 */
     let closeMenu = () => { menu.hidden = true; };
@@ -7401,11 +7622,23 @@ PAGES.chat = {
       // 跑着的时候 Enter = 插话，不是"等这一轮跑完再说"
       if (state.busyTurn) { steer(); return; }
       if (state.chatStarting || busyActions.has("session:new")) return;
+      const originReasoningKey = reasoningKey(), preference = reasoningEntry(originReasoningKey);
+      if (preference.saving) { toast('思考设置正在保存，请稍候发送'); return; }
+      const reasoningMode = !preference.loading && preference.signature === reasoningSignature() ? preference.data?.effectiveMode : undefined;
       if (!state.chatSessionId) {
+        const generation = state.navigationGeneration;
         state.chatStarting = true;
         paintActionBtn();
         try {
-          state.chatSessionId = (await api("/api/sessions/new", {})).sessionId;
+          const created = await api("/api/sessions/new", {});
+          if (generation !== state.navigationGeneration || reasoningKey() !== originReasoningKey) return;
+          state.chatSessionId = created.sessionId;
+          if (preference.data) reasoningEntries.set('session:' + created.sessionId, {...preference, data:{...preference.data, mode:'default', effectiveMode:'default'}, seq:0, loading:false, saving:null});
+          ++reasoningDraft;
+          if (reasoningMode && reasoningMode !== 'default') await saveReasoning('session:' + created.sessionId, reasoningMode);
+          if (generation !== state.navigationGeneration || state.chatSessionId !== created.sessionId) return;
+          if (reasoningEntry('session:' + created.sessionId).error) return;
+          reasoningControl.paint(); reasoningControl.refresh();
         } catch (e) { toast("新建会话失败：" + e.message); return; }
         finally {state.chatStarting = false; paintActionBtn();}
         // 顶栏的面包屑跟着换到这一段（会话名先空着，模型起好名字会再刷一次）
@@ -7482,6 +7715,7 @@ PAGES.chat = {
         // 检索范围固定为"本机全部知识库"：空 kbId 在内核里就是通用模式的语义
         const payload = {
           kbId: "", question: text, attachments, sessionId: sid, web: "auto",
+          reasoningMode,
           // 模式由会话决定：普通对话（没项目）＝ 常规聊天，内核据此锁死"只写默认目录"
           mode: (state.chatProject ? "work" : "chat"),
           skill: state.skill || "", perm: state.cfg.agentPerm || "auto",
@@ -7595,6 +7829,7 @@ PAGES.chat = {
        会话栏只把高亮挪过去 —— 点一次就闪一次"加载中…"的问题就出在原来走的是整页 go()。 */
     state.chatOpenSession = async (id) => {
       state.chatSessionId = id;
+      reasoningControl.paint(); reasoningControl.refresh(true);
       // 右侧资源栏属于"这一段对话的产物"：换会话就收起，
       // 否则上一条会话的产物会留在新会话旁边（实测可复现）。
       if (typeof workbench !== "undefined" && workbench.open && typeof closeResourceDock === "function") {
@@ -7877,6 +8112,16 @@ PAGES.models = {
   async render() { await go("settings", "models", { replace: true }); },
 };
 
+function fillModelForm(m) {
+  for (const [id, value] of Object.entries({
+    'm-id':m.id, 'm-name':m.name, 'm-base':m.baseUrl, 'm-model':m.model,
+    'm-vision':m.visionModel, 'm-embed':m.embeddingModel, 'm-tts-model':m.ttsModel,
+    'm-tts-voice':m.ttsVoice, 'm-tts-format':m.ttsFormat, 'm-tts-protocol':m.ttsProtocol,
+    'm-reasoning-profile':m.reasoningProfile || 'auto', 'm-key':'',
+  })) $(id).value = value || '';
+  $('view').scrollTop = 0;
+}
+
 async function settingsModels() {
   await loadCfg();
   // 先用 DocumentFragment 攒起来，设置页再整体塞进右侧内容区
@@ -7901,6 +8146,7 @@ async function settingsModels() {
         $("m-tts-voice").value = p.ttsVoice || "";
         $("m-tts-format").value = p.ttsFormat || "wav";
         $("m-tts-protocol").value = p.ttsProtocol || "";
+        $("m-reasoning-profile").value = p.reasoningProfile || "auto";
         hint.textContent = p.note;
         document.querySelectorAll(".chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
@@ -7925,6 +8171,15 @@ async function settingsModels() {
     f3.appendChild(fieldOf("多模态模型（图片描述，可留空）", inputOf("m-vision", "mimo-v2.6-pro")));
     f3.appendChild(fieldOf("向量模型（可留空）", inputOf("m-embed", "")));
     mcard.appendChild(f3);
+    const reasoningProfile = selectOf('m-reasoning-profile', [
+      {value:'auto', label:'自动（auto）'}, {value:'none', label:'不启用（none）'},
+      {value:'deepseek', label:'DeepSeek'}, {value:'mimo', label:'MiMo'},
+      {value:'qwen-budget', label:'Qwen Budget'}, {value:'openai', label:'OpenAI'},
+    ], 'auto');
+    const reasoningField = fieldOf('思考协议', reasoningProfile);
+    reasoningField.querySelector('label').htmlFor = reasoningProfile.id;
+    reasoningField.appendChild(el('p', 'muted sm', '自动识别官方接口；第三方网关请按其支持的协议选择。'));
+    mcard.appendChild(reasoningField);
     const f4 = el("div", "row");
     f4.appendChild(fieldOf("朗读模型（可留空）", inputOf("m-tts-model", "mimo-v2.5-tts")));
     const voiceInput = inputOf("m-tts-voice", "苏打 / alloy");
@@ -7969,6 +8224,7 @@ async function settingsModels() {
           ttsVoice: $("m-tts-voice").value.trim(),
           ttsFormat: $("m-tts-format").value,
           ttsProtocol: $("m-tts-protocol").value,
+          reasoningProfile: $("m-reasoning-profile").value,
         });
         toast("模型已保存");
         go("settings", "models");
@@ -8068,18 +8324,7 @@ async function settingsModels() {
           }));
         }
         acts.appendChild(btn("填到表单", "sm ghost", () => {
-          $("m-id").value = m.id;
-          $("m-name").value = m.name || "";
-          $("m-base").value = m.baseUrl || "";
-          $("m-model").value = m.model || "";
-          $("m-vision").value = m.visionModel || "";
-          $("m-embed").value = m.embeddingModel || "";
-          $("m-tts-model").value = m.ttsModel || "";
-          $("m-tts-voice").value = m.ttsVoice || "";
-          $("m-tts-format").value = m.ttsFormat || "";
-          $("m-tts-protocol").value = m.ttsProtocol || "";
-          $("m-key").value = "";
-          $("view").scrollTop = 0;
+          fillModelForm(m);
         }));
         if (m.hasApiKey && m.model) {
           acts.appendChild(btn("诊断连接", "sm ghost", async (ev) => {

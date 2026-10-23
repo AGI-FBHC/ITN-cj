@@ -34,6 +34,7 @@ import itn_desktop_core.harvest.*
 import std.fs.*
 import itn_desktop_core.util.*
 import itn_desktop_core.runtime.validatedAttachments
+import itn_desktop_core.reasoning.validReasoningProfile
 import itn_desktop_core.tts.*
 
 public class Api {
@@ -200,6 +201,18 @@ public class Api {
                 case Some(b) =>
                     let s = store.load()
                     let incoming = ModelConfig.fromJson(b)
+                    match (b.get("reasoningProfile")) {
+                        case Some(value) =>
+                            let valid = match (value) {
+                                case profile: JsonString => validReasoningProfile(profile.getValue())
+                                case _ => false
+                            }
+                            if (!valid) {
+                                fail(ctx, 400, "reasoningProfile 不支持，请选择 auto/none/deepseek/mimo/qwen-budget/openai")
+                                return
+                            }
+                        case None => ()
+                    }
                     if (incoming.id.size == 0) {
                         fail(ctx, 400, "缺少 id")
                         return
@@ -208,6 +221,10 @@ public class Api {
                     var i = 0
                     while (i < s.models.size) {
                         if (s.models[i].id == incoming.id) {
+                            // 旧客户端不认识此字段时沿用既有协议，显式 auto 才恢复自动识别。
+                            if (b.get("reasoningProfile").isNone()) {
+                                incoming.reasoningProfile = s.models[i].reasoningProfile
+                            }
                             if (incoming.apiKey.size == 0) {
                                 incoming.apiKey = s.models[i].apiKey
                             }
@@ -902,6 +919,23 @@ public class Api {
             return
         }
 
+        if (path == "/api/agent/reasoning" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => ok(ctx, sessionReasoningState(store, strOf(b, "sessionId")))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/sessions/reasoning" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    try { ok(ctx, setSessionReasoningMode(store, strOf(b, "sessionId"), strOf(b, "mode"))) }
+                    catch (e: ReasoningModeError) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // lumin（pi 运行时）跑一轮问答：与 /api/agent/ask 同形，用来同题对照（见 docs/11）
         if (path == "/api/agent/ask-pi" && method == "POST") {
             match (bodyJson(ctx)) {
@@ -915,6 +949,8 @@ public class Api {
                         ok(ctx, LuminAgent(store).askTask(strOf(b, "kbId"), question,
                             strOf(b, "sessionId"), strOf(b, "web"), trimStr(strOf(b, "skill")),
                             Some(workContextOf(store, b))))
+                    } catch (e: ReasoningModeError) {
+                        fail(ctx, 400, e.message)
                     } catch (e: Exception) {
                         fail(ctx, 500, "问答失败（lumin）：" + e.message)
                     }
@@ -942,6 +978,8 @@ public class Api {
                     try {
                         ok(ctx, LuminAgent(store).make(kind, strOf(b, "kbId"), topic, count,
                             strOf(b, "sessionId"), strOf(b, "web"), Some(workContextOf(store, b))))
+                    } catch (e: ReasoningModeError) {
+                        fail(ctx, 400, e.message)
                     } catch (e: Exception) {
                         fail(ctx, 500, "生成失败（lumin）：" + e.message)
                     }
@@ -1454,6 +1492,15 @@ public class Api {
                 arr.add(t)
             }
             for (d in taskTools(store, "", "")) {
+                let t = JsonObject()
+                t.put("name", JsonString(d.name))
+                t.put("title", JsonString(d.label))
+                t.put("desc", JsonString(d.description))
+                t.put("usage", JsonString(d.schema))
+                t.put("available", JsonBool(true))
+                arr.add(t)
+            }
+            for (d in reasoningTools(store, "", "")) {
                 let t = JsonObject()
                 t.put("name", JsonString(d.name))
                 t.put("title", JsonString(d.label))
@@ -3273,6 +3320,15 @@ func verifyBackup(path: String): Int64 {
 func workContextOf(store: Store, b: JsonObject): WorkContext {
     let db = DbHub.open(store.dataDir)
     let work = WorkContext()
+    match (b.get("reasoningMode")) {
+        case Some(v) => match (v) {
+            case s: JsonString =>
+                if (s.getValue().size == 0) { throw ReasoningModeError("reasoningMode 不能为空；省略字段表示使用会话设置") }
+                work.reasoningMode = s.getValue()
+            case _ => throw ReasoningModeError("reasoningMode 必须是可用档位的字符串")
+        }
+        case None => ()
+    }
     work.attachments = validatedAttachments(b.get("attachments"))
     work.confirmFileAccess = boolOf(b, "confirmFileAccess")
     work.dir = db.getKv("settings", "agent_work_dir", "")
@@ -3384,6 +3440,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/kb/search",
         "/api/agent/ask",
         "/api/agent/ask-pi",
+        "/api/agent/reasoning",
+        "/api/sessions/reasoning",
         "/api/agent/approvals",
         "/api/agent/approvals/answer",
         "/api/agent/steer",

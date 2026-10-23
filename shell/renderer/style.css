@@ -3038,6 +3038,31 @@ html[data-theme="dark"] .composer {
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 
+/* Session reasoning controls share the existing composer colours and density. */
+.composer-reasoning-wrap { position: relative; flex: 0 0 auto; }
+.composer-reasoning { color: var(--ink); max-width: 168px; }
+.composer-reasoning > span:last-child { display: flex; }
+.reasoning-menu.composer-menu { left: auto; right: 0; width: 250px; min-width: 0; max-width: min(300px, 85vw); max-height: min(420px, 65vh); overflow-y: auto; }
+.reasoning-title { padding: 6px 9px; font-size: calc(14px * var(--fs, 1)); font-weight: 600; color: var(--ink); }
+.reasoning-status { padding: 4px 9px 8px; font-size: calc(13px * var(--fs, 1)); line-height: 1.5; color: var(--ink-2); white-space: normal; }
+.reasoning-status[role="alert"] { color: var(--danger); }
+.reasoning-option { min-height: 32px; justify-content: space-between; }
+.reasoning-option.active { background: var(--brand-soft); }
+.reasoning-option.active::after { content: '✓'; color: var(--ink); }
+.reasoning-option:disabled { opacity: .55; cursor: progress; }
+.composer-reasoning:focus-visible, .reasoning-menu button:focus-visible, .guided-model:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.guided-reasoning-controls { display: flex; align-items: center; justify-content: flex-end; gap: 6px; position: relative; min-width: 0; }
+.guided-reasoning-controls .guided-model { max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+.guided-reasoning-controls .composer-reasoning { max-width: 140px; }
+.guided-model-menu.composer-menu { left: auto; right: 0; min-width: 200px; max-width: 100%; }
+.sp-chat-compose-row:has(.guided-reasoning-controls) { flex-wrap: wrap; }
+.sp-chat-compose-row .guided-reasoning-controls { flex: 1 1 auto; }
+.sp-chat-composer > .composer-usage { display: block; white-space: normal; text-align: right; }
+.composer-row:has(.composer-reasoning) { flex-wrap: wrap; }
+.composer-row:has(.composer-reasoning) .composer-model { min-width: 0; }
+.composer-row:has(.composer-reasoning) .composer-usage { white-space: normal; }
+.composer-reasoning-wrap[hidden], .sp-chat-composer > .composer-usage[hidden] { display: none; }
+
 /* ============================================================
    第十轮：工作过程折叠组 + 每轮变更文件卡（借鉴 pi-studio 的"思考+工具折叠组 / 变更文件卡"）
    ============================================================ */
