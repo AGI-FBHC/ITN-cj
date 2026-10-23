@@ -856,13 +856,51 @@ body.chat-mode .view > .composer { width: 100%; max-width: 920px; margin-inline:
 .tool-row .tool-name { color: var(--ink-2); }
 .tool-row .tool-sum { margin-left: auto; text-align: right; }
 @keyframes pulsedot { 50% { opacity: .25; } }
-/* 流式输出不插竖线光标：最后一段正文以与启动 logo 相近的节奏柔和呼吸。 */
+/* 流式输出不插竖线光标：最后一段正文让一道有颜色的光从文字内部扫过。 */
 .stream-line {
-  animation: stream-breathe 2.8s ease-in-out infinite;
+  --stream-base: var(--ink);
+  --stream-mid: color-mix(in srgb, var(--ink) 42%, var(--ok) 58%);
+  --stream-bright: color-mix(in srgb, var(--ink) 18%, var(--ok) 82%);
+  --stream-warm: color-mix(in srgb, var(--ink) 35%, var(--amber) 65%);
+  background-image: linear-gradient(
+    108deg,
+    var(--stream-base) 0%,
+    var(--stream-base) 22%,
+    var(--stream-mid) 33%,
+    var(--stream-bright) 42%,
+    var(--stream-warm) 49%,
+    var(--stream-bright) 56%,
+    var(--stream-mid) 64%,
+    var(--stream-base) 75%,
+    var(--stream-base) 100%
+  );
+  background-size: 220px 100%;
+  background-repeat: repeat-x;
+  background-position: 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--stream-bright) 38%, transparent));
+  animation: stream-sheen 1.9s linear infinite;
   animation-delay: var(--stream-delay, 0ms);
-  will-change: opacity;
+  will-change: background-position, filter;
 }
-@keyframes stream-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .66; } }
+@keyframes stream-sheen {
+  0% { background-position: 0 0; }
+  100% { background-position: 220px 0; }
+}
+html[data-theme="dark"] .stream-line {
+  --stream-mid: color-mix(in srgb, var(--ink) 48%, var(--ok) 52%);
+  --stream-bright: color-mix(in srgb, var(--ok) 58%, #ffffff 42%);
+  --stream-warm: color-mix(in srgb, var(--amber) 52%, #ffffff 48%);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) .stream-line {
+    --stream-mid: color-mix(in srgb, var(--ink) 48%, var(--ok) 52%);
+    --stream-bright: color-mix(in srgb, var(--ok) 58%, #ffffff 42%);
+    --stream-warm: color-mix(in srgb, var(--amber) 52%, #ffffff 48%);
+  }
+}
 .msg-actions { margin-top: 8px; }
 .err-text { color: var(--danger); }
 .tool-sheet { margin-bottom: 0; }
@@ -1304,7 +1342,12 @@ body.win-maximized .tb-btn .icon-restore { display: block; }
 /* 减少动态：保留透明度/颜色这类帮助理解的过渡，去掉位移动画 */
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation-duration: 1.4s; }
-  .stream-line { animation: none; opacity: .72; }
+  .stream-line {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    filter: none;
+  }
   .tb-btn:active, .btn:active, .nav-item:active, .seg-item:active, .chip:active, .toc-item:active, .palette-item:active { transform: none; }
   .view > * { animation: none; }
 }

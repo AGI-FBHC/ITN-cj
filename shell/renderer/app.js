@@ -6510,8 +6510,8 @@ function assistantBlock(text, live) {
   return a;
 }
 
-/* 流式输出只让最后一段正文呼吸。动画相位跟全局时钟走，重建当前轮次时不会每次从 0 重播。 */
-const STREAM_BREATH_MS = 2800;
+/* 流式输出只让最后一段正文过一道光。相位跟全局时钟走，重建当前轮次时不会每次从 0 重播。 */
+const STREAM_SWEEP_MS = 1900;
 function latestStreamBlock(host) {
   const root = host.querySelector(".md") || host;
   const last = root.children.length ? root.children[root.children.length - 1] : null;
@@ -6528,7 +6528,7 @@ function markStreamTail(host) {
   const target = latestStreamBlock(host);
   if (!target || !target.textContent.trim()) return;
   target.classList.add("stream-line");
-  const phase = Math.round(performance.now() % STREAM_BREATH_MS);
+  const phase = Math.round(performance.now() % STREAM_SWEEP_MS);
   target.style.setProperty("--stream-delay", "-" + phase + "ms");
 }
 

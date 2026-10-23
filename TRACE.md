@@ -5631,3 +5631,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 最终真实模型验收：tools/real-release-tasks.cjs 经真实 Edge 输入框发送、新仓颉 core 与 deepseek-flash 实际接口完成6/6任务，共14个用户回合（2/2/3/2/2/3，各小于5）。覆盖kb_search/read_chunk/calc、多轮上下文、remember_learning_fact/save_note/search_personal_resources/read_personal_resource、record_knowledge_point/read_knowledge_point/suggest_knowledge_links、generate_learning_resource/read_learning_resource、research_topic_team、多级节点关闭重开/点击、真实文件write/read、较早轮次建立分支后calc续聊。逐轮断言真实工具成功、非空正文、最终turn/end；保存的数据/文件/父会话不变性均验证。所有14回合无失败工具或未完成终态、无前端异常。真实流式思考已在turn/end前可见，报告thinkingVisible=true。完整脱敏报告/逐回合事件/截图：tmp/real-release-tasks-2026-10-23T23-14-26-270Z/。主对话上报usage合计in376331/out5671，仅代表外层实际回报，不冒充资源/协作子模型完整计费。
 - 全量核心包unittests 228/228（tmp/core-091-all.log）；独立宿主ThinkingStreamTest 9/9，此独立测试包不在上述228之内，两部分共237个不同用例。ProviderTest最终26/26（tmp/provider-091-final.log）。思考UI最终14/14（含已完成回复原始事件按钮和可取消的气泡消息编辑），报告在 TEMP/itn-thinking-stream-1Lyy0i/report.json；检查浅/深窄窗截图文字与点击区域正常。
 - 先本地功能提交13dd298，再普通merge远端desktop历史为8020835；两者无文件树差异，仅保留远端已有提交关系，未rewrite或force。首次并行打包因真实六任务占用dist/core.exe而被现有保护明确拒绝，没有静默用旧内核；等待该原进程真实结束后重新打包，正在生成0.9.1双包。后续只做包内资源与安装/下载验证，不重复耗费模型或大库生成。
+
+### 2026-10-24 · 流式回复光影涌动与 0.9.2
+
+- 用户追加要求：把 Agent 回复最新一行的“呼吸灯”改成更明显的光影涌动。0.9.1 安装版/便携包已经完成验收并发布到 6025 海报页，因此本次视觉增量按顺序升为 0.9.2，保留 0.9.1 作为回滚版本。
+- 原实现仅对最新 Markdown 文本块做 opacity 1→.66 的 2.8 秒呼吸。现在改为文字内部重复渐变光带，以绿色和暖金色双光带每 1.9 秒横向流动；浅色主题采用深墨绿→青绿→暖金，深色主题采用浅灰→薄荷绿→暖白。字色仍由主题令牌计算，不新增硬编码背景块，仅用 `background-clip:text` 绘制文字内部的光。
+- 保留可访问性边界：`prefers-reduced-motion: reduce` 时关闭背景剪裁、滤镜和动画，恢复 currentColor；不支持背景裁字的浏览器保留正文颜色。光带只挂最新正文块，不插入光标，不影响正文选择、链接和 Markdown 结构；流式结束仍移除 `.stream-line`。
+- 验证更新：busy-caret 专项 10/10 通过，检查不是透明度脉冲、背景渐变重复、220px 光带移动、文字填充透明且滤镜存在、深色主题独立色板；截图按单行裁剪目视确认双色光带在普通字号下可见。思考 UI 14/14、聊天 UX 18/18、全页面 UI 审计 120/120 同时通过。未重复运行付费六任务，也不重做内核测试；本轮只改渲染层，不改变模型、工具、数据库或分支语义。
