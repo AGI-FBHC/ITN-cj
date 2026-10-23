@@ -1837,6 +1837,10 @@ public class Api {
                         fail(ctx, 400, "缺少 sessionId / turnId")
                         return
                     }
+                    if (sessionHub().activeTurn(sid).size > 0) {
+                        fail(ctx, 409, "请先停止当前任务再回退会话")
+                        return
+                    }
                     let removed = SessionStore(store.dataDir).rewind(sid, tid)
                     let o = JsonObject()
                     o.put("ok", JsonBool(removed > 0))
@@ -1885,6 +1889,10 @@ public class Api {
                         fail(ctx, 400, "缺少 sessionId")
                         return
                     }
+                    if (sessionHub().activeTurn(sid).size > 0) {
+                        fail(ctx, 409, "请先停止当前任务再切换历史分支")
+                        return
+                    }
                     let ss = SessionStore(store.dataDir)
                     // 允许传 eventId（精确）或 turnId（那一条提问所在轮次的第一条）
                     var target = intOf(b, "eventId")
@@ -1908,18 +1916,41 @@ public class Api {
         if (path == "/api/sessions/branch" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
-                    let sid = strOf(b, "sessionId")
-                    let tid = strOf(b, "turnId")
+                    let sid = trimStr(strOf(b, "sessionId"))
+                    let tid = trimStr(strOf(b, "turnId"))
                     if (sid.size == 0) {
                         fail(ctx, 400, "缺少 sessionId")
                         return
                     }
                     let ss = SessionStore(store.dataDir)
+                    if (DbHub.open(store.dataDir).scalarInt("SELECT COUNT(*) FROM sessions WHERE id = ?", va([tv(sid)])) == 0) {
+                        fail(ctx, 404, "找不到原会话")
+                        return
+                    }
+                    if (tid.size > 0 && ss.turnStartEventId(sid, tid) <= 0) {
+                        fail(ctx, 404, "找不到分支起点轮次")
+                        return
+                    }
+                    let running = sessionHub().activeTurn(sid)
+                    if (running.size > 0 && (tid.size == 0 || tid == running)) {
+                        fail(ctx, 409, "这一轮仍在执行，请完成或停止后再创建分支")
+                        return
+                    }
                     // turnId 空 = 「从最新的一条分」：整段复制过去（界面 ⋯ 里的新建分支走这条）
                     let nsid = if (tid.size > 0) { ss.branch(sid, tid) } else { ss.branchAll(sid) }
-                    // 分支继承原会话的项目归属，但**不**继承上下文缓存：它是新的一段
+                    // 截断到指定祖先轮次，保留原始工具配对；不能复制后续轮次或运行状态。
+                    checkpointBranchContext(store.dataDir, sid, nsid)
+                    // 分支继承项目目录与资源标签，不复制审批、任务状态或排队插话。
                     let ps = ProjectStore(store.dataDir)
                     ps.bind(nsid, ps.projectOf(sid))
+                    for (prefix in ["resource:", "guided:"]) {
+                        let value = DbHub.open(store.dataDir).getKv("sessions_meta", prefix + sid, "")
+                        if (value.size > 0) {
+                            let binding = objOf(JsonValue.fromStr(value)).getOrThrow()
+                            if (prefix == "guided:") { binding.put("sessionId", JsonString(nsid)) }
+                            DbHub.open(store.dataDir).putKv("sessions_meta", prefix + nsid, binding.toString())
+                        }
+                    }
                     let o = JsonObject()
                     o.put("sessionId", JsonString(nsid))
                     // 名字一起回给界面：新分支可能还没有事件（列表里暂时看不到），
@@ -1938,6 +1969,10 @@ public class Api {
                     let sid = strOf(b, "sessionId")
                     if (sid.size == 0) {
                         fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    if (sessionHub().activeTurn(sid).size > 0) {
+                        fail(ctx, 409, "请先停止当前任务再修改会话分支")
                         return
                     }
                     let ss = SessionStore(store.dataDir)
@@ -2001,6 +2036,10 @@ public class Api {
                     let tid = strOf(b, "turnId")
                     if (sid.size == 0 || tid.size == 0) {
                         fail(ctx, 400, "缺少 sessionId / turnId")
+                        return
+                    }
+                    if (sessionHub().activeTurn(sid).size > 0) {
+                        fail(ctx, 409, "请先停止当前任务再切换历史分支")
                         return
                     }
                     let done = SessionStore(store.dataDir).activateTurn(sid, tid)

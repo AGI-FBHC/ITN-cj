@@ -6404,12 +6404,22 @@ function turnsFromEvents(events) {
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); t.usageReasoning = p.reasoning == null ? null : Number(p.reasoning); }
     else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
     else if (e.type === 'model/retry') {
-      t.activity = p.reason === 'network_retry' ? 'network_retry' : 'retrying';
+      t.activity = p.reason === 'network_retry' ? 'network_retry' : p.reason === 'invalid_tool_arguments' ? 'tool_retry' : 'retrying';
       t.retryAttempt = Number(p.attempt || 0);
       t.retryMaxAttempts = Number(p.maxAttempts || 0);
     }
     else if(e.type==='model/request')t.activity='waiting';
-    else if (e.type === "assistant/thinking") t.items.push({ t: "think", text: p.text || "", ms: p.ms || 0 });
+    else if (e.type === "assistant/thinking_delta" || e.type === "assistant/thinking") {
+      const streaming = e.type === "assistant/thinking_delta";
+      const last = t.items[t.items.length - 1];
+      const existing = p.segmentId ? t.items.find(it => it.t === 'think' && it.segmentId === p.segmentId)
+        : last?.t === 'think' && last.streaming ? last : null;
+      const item = existing || {t: 'think', text: '', ms: 0, segmentId: p.segmentId || ''};
+      item.text = streaming ? item.text + (p.text || '') : (p.text || item.text);
+      item.ms = Number(p.ms || 0); item.streaming = streaming;
+      if (!existing) t.items.push(item);
+      if (streaming) t.activity = 'thinking';
+    }
     else if (e.type === "user/message") { t.user = p.text || ""; t.attachments = p.attachments || []; t.userAt = e.at; }
     else if (e.type === "assistant/delta") {
       t.activity="responding";
@@ -6479,6 +6489,7 @@ function turnsFromEvents(events) {
   // 收尾：还挂在 running 上的工具说明这一轮没跑完（取消/出错）
   for (const t of turns) {
     for (const it of t.items) {
+      if (it.t === 'think' && t.ok != null) it.streaming = false;
       if (it.t === "tool" && it.running && t.ok === false) {
         it.running = false;
         it.ok = false;
@@ -6569,15 +6580,58 @@ function toolLabel(tool) {
  * 思考段：默认展开（用户要能看见它在想什么），点一下收起。
  * 摘要只报真实耗时 —— "已思考 N 秒"，不编造步骤。
  */
-function thinkRow(it, live, isTail) {
+function thinkRow(it, live, isTail, key, index) {
   const d = el("details", "think-row");
-  // 只有"正在写的最后一段"展开：这段思考一结束（开始出正文或动工具）就折起来
-  d.open = !!(live && isTail);
+  d.dataset.thinkIndex = String(index);
+  const initial = state.thinkExpansions?.[key] ?? !!(live && isTail && it.streaming);
+  d.open = initial;
+  d.ontoggle = () => {
+    if (d.open === initial && d.dataset.userToggled !== '1') return;
+    d.dataset.userToggled = '1';
+    state.thinkExpansions ||= {}; state.thinkExpansions[key] = d.open;
+  };
   const secs = Math.max(1, Math.round(Number(it.ms || 0) / 1000));
-  const s = el("summary", "think-sum", "思考过程 · " + secs + " 秒");
+  const s = el("summary", "think-sum", (live && it.streaming ? "正在思考" : "思考过程") + " · " + secs + " 秒");
   d.appendChild(s);
   if (it.text) d.appendChild(el("div", "think-text", it.text));
   return d;
+}
+
+// Only thinking text changed: keep the disclosure, selection and scroll position intact.
+function updateThinkingRows(node, turn, live) {
+  for (const row of node.querySelectorAll('.think-row')) {
+    const item = turn.items[Number(row.dataset.thinkIndex)];
+    if (!item || item.t !== 'think') return false;
+    const text = row.querySelector('.think-text');
+    if (!text) return false;
+    const previous = text.textContent, next = item.text || '';
+    if (next.startsWith(previous) && text.childNodes.length === 1 && text.firstChild.nodeType === Node.TEXT_NODE) {
+      text.firstChild.appendData(next.slice(previous.length));
+    } else if (previous !== next) text.textContent = next;
+    row.querySelector('.think-sum').textContent = (live && item.streaming ? '正在思考' : '思考过程') + ' · ' + Math.max(1, Math.round(Number(item.ms || 0) / 1000)) + ' 秒';
+  }
+  return true;
+}
+
+function reconcileTurnBlock(previous, next, turn, live) {
+  const groups = new Map([...previous.querySelectorAll(':scope > .work-group')].map(group => [group.dataset.processKey, group]));
+  const user = previous.querySelector(':scope > .msg-user');
+  const wanted = [...next.children].map(child => {
+    if (child.classList.contains('msg-user') && user && child.outerHTML === user.outerHTML) return user;
+    const old = child.classList.contains('work-group') && groups.get(child.dataset.processKey);
+    if (!old || old.dataset.processSignature !== child.dataset.processSignature || !updateThinkingRows(old, turn, live)) return child;
+    const reading = old.contains(getSelection()?.anchorNode) || old.querySelector('.think-row[data-user-toggled="1"][open]');
+    old.dataset.initialOpen = child.open || reading ? '1' : '0';
+    old.open = old.dataset.initialOpen === '1';
+    old.querySelector('.work-stat').textContent = child.querySelector('.work-stat').textContent;
+    return old;
+  });
+  const keep = new Set(wanted);
+  for (const child of [...previous.children]) if (!keep.has(child)) child.remove();
+  wanted.forEach((child, index) => {
+    if (previous.children[index] !== child) previous.insertBefore(child, previous.children[index] || null);
+  });
+  return previous;
 }
 
 /** 正文下面那排 icon：复制 / 改这条重发 / 从这里开分支 / 看内部事件。 */
@@ -6602,14 +6656,15 @@ async function copyText(text) {
 
 /** 这一轮的原始事件（界面显示的一切都是从它们渲染出来的，这里给出原始 JSON）。 */
 function rawTurnToggle(t, box) {
-  const b = iconBtn("看这一轮的内部事件（原始 JSON）", "code", () => {
-    const live = box.querySelector(".turn-raw");
+  const b = iconBtn("看这一轮的内部事件（原始 JSON）", "code", event => {
+    const host = event.currentTarget.closest('.turn-block') || box;
+    const live = host.querySelector(".turn-raw");
     if (live) { live.remove(); return; }
     const evs = (state.chatEvents || []).filter((e) => (e.turnId || "—") === t.id);
     const wrap = el("div", "turn-raw");
     wrap.appendChild(el("div", "turn-raw-title", "这一轮实际传输的事件（" + evs.length + " 条）"));
     wrap.appendChild(el("pre", "turn-raw-pre", JSON.stringify(evs, null, 2)));
-    box.appendChild(wrap);
+    host.appendChild(wrap);
     wrap.scrollIntoView({ block: "nearest" });
   });
   return b;
@@ -6689,7 +6744,7 @@ function renderTurnBlock(t, live) {
         side: "user",
         at: t.userAt,
         onCopy: () => copyText(t.user),
-        onEdit: canEdit ? () => editTurnInline(t, box) : null,
+        onEdit: canEdit ? event => editTurnInline(t, event.currentTarget.closest('.turn-block') || box) : null,
       }));
       // 这一轮要是"同一分叉点上的几兄弟"之一，气泡下面给 ‹ n/m ›（会话树）
       const fam = (t.id && t.id !== "local") ? branchFamilyFor(t.id) : null;
@@ -6717,18 +6772,22 @@ function renderTurnBlock(t, live) {
     const steps=items.filter(x=>x.t==='tool').length;
     const group=el('details','work-group');group.dataset.timelineKind='process';
     const key=(t.id || 'local')+':'+groupIndex++;
+    group.dataset.processKey=key;
+    group.dataset.processSignature=JSON.stringify(items.map(it=>it.t==='think'?['think',it.segmentId || '',t.items.indexOf(it)]:it));
     const initial=state.workExpansions?.[key] ?? active;
+    group.dataset.initialOpen=initial?'1':'0';
     group.open=initial;
     group.ontoggle=()=>{
       // <details> 会为"创建时就 open"异步补发一次 toggle —— 那不是用户操作，不能写进偏好，
       // 否则"进行中默认展开"会在跑完后被当成用户要求，工作过程一直不收（实测偶发）。
-      if(group.open===initial&&group.dataset.userToggled!=='1')return;
+      if(group.open===(group.dataset.initialOpen==='1')&&group.dataset.userToggled!=='1')return;
       group.dataset.userToggled='1';
       state.workExpansions=state.workExpansions || {};state.workExpansions[key]=group.open;
     };
     const head=el('summary','work-head');head.innerHTML='<span class="work-chev">'+icon('chevron')+'</span><span>工作过程</span><span class="work-stat">'+(active?'进行中':secs?secs+' 秒':'')+(steps?' · '+steps+' 步':'')+'</span>';
     const body=el('div','work-body');
-    items.forEach((it,i)=>body.appendChild(it.t==='think'?thinkRow(it,active,active&&i===items.length-1):toolCard(it,active)));
+    items.forEach((it,i)=>body.appendChild(it.t==='think'?thinkRow(it,active,active&&i===items.length-1,
+      JSON.stringify([state.chatSessionId,t.id,t.items.indexOf(it)]),t.items.indexOf(it)):toolCard(it,active)));
     group.append(head,body);box.appendChild(group);
   };
   for(const item of processBlocks){if(item.t==='think'||item.t==='tool')pending.push(item);else{flushProcess();appendContent(item);}}
@@ -6786,6 +6845,7 @@ function renderTurnBlock(t, live) {
     const phase = active.length ? "正在执行：" + active.map((x) => TOOL_LABEL[x.name] || x.name).join("、")
       : t.activity === 'tool_input' ? '正在接收'+(TOOL_LABEL[t.activityTool] || '工具')+'参数…'+(t.toolInputBytes?'（'+fmtSize(t.toolInputBytes)+'）':'')
       : t.activity === 'network_retry' ? '网络连接中断，正在重连…' + (t.retryAttempt ? '（' + t.retryAttempt + (t.retryMaxAttempts ? '/' + t.retryMaxAttempts : '') + '）' : '')
+      : t.activity === 'tool_retry' ? '正在重新生成工具参数…'
       : t.activity === 'retrying' ? '输出太长，正在重新生成完整参数…'
       : t.activity === "thinking" ? "正在思考…" : "等待模型返回…";
     const elapsed = t.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(t.startedAt)) / 1000)) : 0;
@@ -7780,7 +7840,7 @@ PAGES.chat = {
        只有内容变了的那一轮（通常就是正在流式输出的那一轮）会重建，其余直接复用。 */
     const paintCache = new Map();   // 轮次 id → { node, sig, live }
     let paintOrder = "";            // 轮次顺序指纹：没变就不动 DOM 顺序
-    function turnSig(t, live) {
+    function turnSig(t, live, thinkingShapeOnly = false) {
       const parts = [t.kind || "", t.user || "", t.ok === null ? "" : String(t.ok), t.message || "",
                      t.activity || "", t.retryAttempt || 0, t.retryMaxAttempts || 0, t.activityTool || '', t.toolInputBytes || 0, t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
                      t.resourceProgress ? (t.resourceProgress.name || "1") : ""];
@@ -7792,6 +7852,7 @@ PAGES.chat = {
       const famSig = (t.id && t.id !== "local") ? branchFamilyFor(t.id) : null;
       parts.push("bf:" + (famSig ? famSig.idx + "/" + famSig.members.length : ""));
       for (const it of t.items) {
+        if (thinkingShapeOnly && it.t === 'think') { parts.push('think', it.segmentId || '', !!it.text); continue; }
         parts.push(it.t, it.name || "", it.running ? 1 : 0, it.ok == null ? "" : (it.ok ? 1 : 0),
                    it.text ? it.text.length : 0, it.summary ? it.summary.length : 0, it.ms || 0);
       }
@@ -7859,11 +7920,16 @@ PAGES.chat = {
           const key = t.id || ("idx-" + order.length);
           order.push(key);
           const sig = turnSig(t, live);
+          const shapeSig = turnSig(t, live, true);
           const hit = paintCache.get(key);
           if (!hit || hit.sig !== sig || hit.live !== live) {
-            const node = renderTurnBlock(t, live);
-            if (hit && hit.node.isConnected) hit.node.replaceWith(node);
-            paintCache.set(key, { node, sig, live });
+            if (hit && hit.live === live && hit.shapeSig === shapeSig && updateThinkingRows(hit.node, t, live)) {
+              hit.sig = sig;
+            } else {
+              let node = renderTurnBlock(t, live);
+              if (hit && hit.node.isConnected) node = reconcileTurnBlock(hit.node, node, t, live);
+              paintCache.set(key, { node, sig, shapeSig, live });
+            }
           }
         }
         const nowOrder = order.join(">");
@@ -8006,7 +8072,7 @@ PAGES.chat = {
               if (e.type === "turn/start") request.turnId = e.turnId;
               if (e.type === "tool/call" || e.type === "tool/result") request.phase = "working";
               else if (e.type === "assistant/delta") request.phase = "speaking";
-              else if (e.type === "assistant/thinking") request.phase = "thinking";
+              else if (e.type === "assistant/thinking" || e.type === "assistant/thinking_delta") request.phase = "thinking";
             }
             mascotActivity(request.phase, state.chatRequests.size);
             renderPanel(false, true);
@@ -8236,6 +8302,7 @@ const EVENT_LABEL = {
   "validation": "引用自检",
   "turn/end": "一轮结束",
   "assistant/thinking": "思考",
+  "assistant/thinking_delta": "思考增量",
 };
 function openSession(sessionId) {
   state.sessionId = sessionId;

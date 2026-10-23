@@ -247,16 +247,40 @@ public class OpenAiChatProvider <: ChatProvider {
             reply.errorMessage = "模型输出达到上限，工具参数被截断，未执行任何工具。请缩小文件内容或分段生成后重试。"
             return reply
         }
+        // Validate the entire batch before publishing any executable call. A completed
+        // tool-only response can contain malformed model-generated JSON even when its
+        // finish_reason is tool_calls (rather than length). Re-request this model step
+        // once; never repair arguments or restart the agent/its completed actions.
         for (call in acc.calls) {
             if (call.name.size > 0) {
                 let args = trimStr(call.args.toString())
                 if (!validToolArguments(args)) {
-                    reply.toolCalls.clear()
+                    let audit = JsonObject()
+                    audit.put("tool", JsonString(call.name))
+                    audit.put("argumentBytes", JsonInt(args.size))
+                    audit.put("toolCount", JsonInt(acc.calls.size))
+                    audit.put("finishReason", JsonString(acc.finishReason))
+                    // Arguments can contain private content: audit metadata only.
+                    match (onAudit) { case Some(f) => f("model/tool_arguments_invalid", audit); case None => () }
+                    if (canRecover && acc.finishReason == "tool_calls" && trimStr(reply.text).size == 0) {
+                        let retryAudit = JsonObject()
+                        retryAudit.put("reason", JsonString("invalid_tool_arguments"))
+                        retryAudit.put("attempt", JsonInt(2))
+                        retryAudit.put("tool", JsonString(call.name))
+                        match (onAudit) { case Some(f) => f("model/retry", retryAudit); case None => () }
+                        let retried = respondWithLimit(ctx, stream, outputLimit, false)
+                        addRetryUsage(retried, reply)
+                        return retried
+                    }
                     reply.stopReason = "error"
                     reply.errorMessage = "模型返回的 " + call.name + " 参数不是完整的 JSON 对象，未执行工具。请重试。"
                     return reply
                 }
-                reply.toolCalls.add(ToolCallBlock(call.id, call.name, args))
+            }
+        }
+        for (call in acc.calls) {
+            if (call.name.size > 0) {
+                reply.toolCalls.add(ToolCallBlock(call.id, call.name, trimStr(call.args.toString())))
             }
         }
         if (trimStr(reply.text).size == 0 && reply.toolCalls.size == 0) {
@@ -495,6 +519,23 @@ func validToolArguments(text: String): Bool {
     if (t.size == 0) {
         return false
     }
+    let bytes = t.toArray()
+    // stdx 1.2 accepts raw LF (and other control characters) inside JSON
+    // strings. Tool execution needs strict JSON, so reject those bytes before
+    // decoding. Escaped forms such as backslash+n remain valid and unchanged.
+    var quoted = false
+    var escaped = false
+    for (byte in bytes) {
+        if (quoted && byte < 0x20) { return false }
+        if (escaped) {
+            escaped = false
+        } else if (quoted && byte == 92) {
+            escaped = true
+        } else if (byte == 34) {
+            quoted = !quoted
+        }
+    }
+    if (quoted || escaped) { return false }
     try {
         return JsonValue.fromStr(t) is JsonObject
     } catch (e: Exception) {

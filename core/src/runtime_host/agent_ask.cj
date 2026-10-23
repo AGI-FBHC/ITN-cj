@@ -137,27 +137,62 @@ class AnswerSeg {
  *
  * provider 只推 reasoning_content 的增量（thinking_delta），没有显式边界，
  * 所以这里按"下一件事"来切段：开始出正文 / 开始动工具 / 这一轮跑完时各封一次。
- * 每个思考段记一条 assistant/thinking 事件 —— 界面据此画 Codex 那样的"已思考 N 秒"，
- * 折叠着，点开才看内容；它证明的是"模型先想、再决定要不要动工具"，而不是写死的步骤。
+ * 首个非空增量立即发布，之后按时间或字节数批量发布，避免每个 token 写数据库。
+ * 封段时以同一个 segmentId 发布完整快照，界面替换增量段，不重复累计文字或耗时。
  */
 class ThinkSeg {
-    public var buf = StringBuilder()
-    public var startMs: Int64 = 0
-    public var started: Bool = false
+    private let turnId: String
+    private var buf = StringBuilder()
+    private var pending = StringBuilder()
+    private var pendingBytes: Int64 = 0
+    private var startMs: Int64 = 0
+    private var lastDeltaMs: Int64 = 0
+    private var started = false
+    private var published = false
+    private var sequence: Int64 = 0
+
+    public init(turnId: String) { this.turnId = turnId }
 
     public func add(t: String, now: Int64): Unit {
+        if (t.size == 0) { return }
         if (!started) {
             started = true
             startMs = now
+            sequence += 1
         }
         buf.append(t)
+        pending.append(t)
+        pendingBytes += t.size
     }
 
-    public func take(): String {
-        let t = buf.toString()
+    private func payload(text: String, now: Int64): JsonObject {
+        let p = JsonObject()
+        p.put("text", JsonString(text))
+        p.put("ms", JsonInt(if (now >= startMs) { now - startMs } else { 0 }))
+        p.put("segmentId", JsonString(turnId + "-thinking-" + sequence.toString()))
+        return p
+    }
+
+    public func takeDelta(now: Int64, force: Bool): ?JsonObject {
+        if (pendingBytes == 0) { return None }
+        if (!force && published && now - lastDeltaMs < 140 && pendingBytes < 4096) { return None }
+        let p = payload(pending.toString(), now)
+        pending = StringBuilder()
+        pendingBytes = 0
+        lastDeltaMs = now
+        published = true
+        return Some(p)
+    }
+
+    public func take(now: Int64): ?JsonObject {
+        if (!started) { return None }
+        let p = payload(buf.toString(), now)
         buf = StringBuilder()
+        pending = StringBuilder()
+        pendingBytes = 0
         started = false
-        return t
+        published = false
+        return Some(p)
     }
 }
 
@@ -669,22 +704,24 @@ public class LuminAgent {
         // 否则模型查资料时的"让我看看…"讲解会和正文糊在一起（实测被当成讲义存了下来）。
         let answerBuf = StringBuilder()
         let seg = AnswerSeg()
-        let think = ThinkSeg()
+        let think = ThinkSeg(turnId)
         let activityClock = ActivityClock()
         let toolInputBytes = [0i64]
-        // 思考段封段：开始出正文 / 开始动工具 / 这一轮跑完时各刷一次
+        // 同步发布，保证尾部增量与完整快照先于正文、工具或终态事件落库。
         func flushThink(): Unit {
-            let t = think.take()
-            if (t.size == 0) {
-                return
+            let now = DateTime.now().toUnixTimeStamp().toMilliseconds()
+            match (think.takeDelta(now, true)) {
+                case Some(p) => log("assistant/thinking_delta", p)
+                case None => ()
             }
-            let p = JsonObject()
-            p.put("text", JsonString(byteSafePrefix(t, 6000)))
-            p.put("ms", JsonInt(DateTime.now().toUnixTimeStamp().toMilliseconds() - think.startMs))
-            log("assistant/thinking", p)
+            match (think.take(now)) {
+                case Some(p) => log("assistant/thinking", p)
+                case None => ()
+            }
         }
         stream.on({ e: AgentEvent =>
             let kind = kindText(e.kind)
+            if (kind == "message_end" || kind == "turn_end" || kind == "agent_end") { flushThink() }
             if (kind == "turn_end" || kind == "message_end") { checkpointContext(store.dataDir, sid, session) }
             // turn 边界 = 一次模型请求，事件流里已经有了（turn_start/turn_end）；
             // 这里不再额外记"步骤"——这是 agent，步骤由它自己决定，不该由我们编。
@@ -720,7 +757,12 @@ public class LuminAgent {
                         if (strOf(ae, "type") == "thinking_delta") {
                             let th = strOf(ae, "delta")
                             if (th.size > 0) {
-                                think.add(th, DateTime.now().toUnixTimeStamp().toMilliseconds())
+                                let now = DateTime.now().toUnixTimeStamp().toMilliseconds()
+                                think.add(th, now)
+                                match (think.takeDelta(now, false)) {
+                                    case Some(p) => log("assistant/thinking_delta", p)
+                                    case None => ()
+                                }
                             }
                             if (activityClock.ready()) {
                                 let dp = JsonObject()
@@ -757,7 +799,12 @@ public class LuminAgent {
             ()
         })
 
-        let outcome = agent.prompt(question, stream)
+        let outcome = try {
+            agent.prompt(question, stream)
+        } finally {
+            // provider 抛异常或被取消时也封段；外层随后才写 turn/end。
+            try { flushThink() } finally { sessionHub().clearRunning(sid) }
+        }
         checkpointContext(store.dataDir, sid, session)
         /* 这一轮真实用掉的 token（供应商回的 usage）。
            界面上"上下文用了多少"只能从这里来 —— 自己按字符估算是骗人的。
@@ -770,8 +817,6 @@ public class LuminAgent {
             log("turn/usage", up)
             out.put("tokens", up)
         }
-        flushThink()
-        sessionHub().clearRunning(sid)
 
         // 没有流式增量时（例如服务端一次性返回），退回会话里最后一条 assistant 正文
         var answer = answerBuf.toString()
