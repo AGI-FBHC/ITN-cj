@@ -5575,3 +5575,6 @@ read_chunk 读得到原文并带回库标识与正文。
 - 触摸前已先跑旧版 `knowledge-check` 基线 92/92，随后逐步发现并修正 2D 改造带来的测试假设问题：新增节点后必须重建 layout；5px 内抖动仍算点击；节点拖动不再被误判为相机旋转；标签命中改为真实文本矩形；检查器过渡需要二次 fit。所有失败均先保留现象再修，不把工具测试问题包装成产品通过。
 - 回归：`tools/knowledge-check.cjs` 最终 93/93，真实 Edge + 原生仓颉内核 + 隔离数据库，设备像素比 1.5，覆盖点选精度、节点拖动、空白平移、标签命中、关系说明开关、调色、笔记、时间线、共享平面检查器和窄屏无横向溢出。新增 `tools/knowledge-visual-check.cjs` 13/13，真实 64/200 节点、悬停只突出关联、选中冻结、滚轮缩放、降动效、200 节点重排 <250ms、64/200 节点帧预算和无 JavaScript 异常。`tools/chat-ux-check.cjs` 18/18，确认原相机旋转断言已改为力导向图集成且不回归其他页面。
 - 视觉证据：`tmp/knowledge-visual-check/light.png` 与 `dark.png` 为真实 64 节点浅/深色截图；`tmp/knowledge-shots/network-graph.png` 为完整编辑流程截图。只修改 Electron renderer 与本地测试，不新增 Python 业务、不改 Web、不调用真实模型、不读写用户真实数据库；原 `.taste-skill/` 保持未跟踪。版本同步升至 0.8.40，待本地提交后打包验收。
+
+- 0.8.40 本地交付核验：功能提交 `351bb00a1494950a1887c516e82762f6b2f1a873`，版本目录 `dist/Lumin-0.8.40`，ZIP `dist/Lumin-0.8.40.zip`（220.67 MB，SHA256 `B0516DF5687067288B730FB76AF0984E89E59D9A7FDD713B7D04B85435F56CF5`）。`release.version=0.8.40`、`build=lumin-0.8.40-351bb00`、`sourceCommit` 与功能提交一致，包内 package 版本和源码 lock 顶层/根包版本均为 0.8.40；ZIP 内确认包含 `Lumin.exe` 与两份一致的 `release.json`。
+- 用正式 `dist/Lumin-0.8.40/Lumin.exe` 在全新 TEMP/APPDATA/LOCALAPPDATA 空目录原生启动，结果 PRELOAD=ok、TITLEBAR=ok、NAV=5、DOCX=ok、RESULT=OK。再用包内实际 renderer（`dist/Lumin-0.8.40/resources/app/renderer`）+ 原生仓颉内核重跑知识网络 93/93，证明交付包中的页面而不只是源码工作树通过。未做安装器、未发布天翼云、未推送远端；旧版本目录保留。
