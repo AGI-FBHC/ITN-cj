@@ -5508,3 +5508,14 @@ read_chunk 读得到原文并带回库标识与正文。
 - 顺带发现（UX 缺陷，非性能）：知识库内容搜索出结果后 CSS 规则 .document-browser .library-documents:has(.library-results:not(:empty)) > .list{display:none} 把文档列表整体隐藏，但“显示 40/40 篇资料”计数与筛选控件仍可见、搜索结果混插同一卡片、「看内容」按钮物理点击必失败（Playwright 20s 超时复现，截图 tmp/kb-occlusion-*/kb-after-search.png），恢复入口“返回文档列表”在折叠区外；产品自动预览用 DOM .click() 绕过命中测试故自测未发现。依据 tmp/kb-css-probe 命中规则确认。
 - 判例说明：quiz 分阶测试生成在 features 首跑 45s 未产出资源；干净实例复测 1.2s 成功且事件链完整（tool/call→resource/saved，approvals 空），course-check 覆盖 quiz 且通过，判为一次性环境抖动（夹具模型服务），记观察项不算产品缺陷。calibrate 深链真实库 ~8.4s 就绪为成长页慢查询继承（时间线探针 tmp/wrong-timeline）。
 - 本轮产物：tools/perf-runtime-audit.cjs 修复+features 补齐；tmp/feature-retake.cjs、tmp/kb-occlusion.cjs、tmp/kb-collapse2.cjs、tmp/kb-css-probe.cjs、tmp/wrong-timeline.cjs 五个一次性探针（诊断脚本，不进业务）；全部原始数据在各 tmp/perf-runtime-*/result.json 与截图。未改任何业务源码、未动真实数据库（两次快照校验 originalFileUnchanged=true）、未打包未发布。修复优先级建议：1) learning/state.cj:27 查询/索引与 learning/context 拆分懒加载；2) 列表缓存 single-flight 与流式期间 stale-while-revalidate；3) Esc 闭包与 reasoningControls 泄漏二分修复；4) 知识库搜索后隐藏逻辑的 UX 收口；5) cold-wrong 序列复现。用户尚未批准修复实施。
+
+### 2026-10-23 · 修复运行时卡顿与内存滞留（0.8.36 本地迭代）
+
+- 用户批准进入修复阶段。本轮改动：core/src/learning/state.cj（成长页慢查询）、core/src/session/session.cj（会话列表缓存并发与节流）、shell/renderer/app.js（聊天页全局 Esc 滞留 + 思考控件清扫）、shell/renderer/workbench.css 与 workbench.js（知识库搜索视图收口）、shell/package.json（0.8.35→0.8.36）、tools/perf-runtime-audit.cjs（pack 指向 0.8.36）。
+- state.cj 修复：recentReading 由 progress LEFT JOIN chunks（EXPLAIN SCAN p; SCAN c，真实库 6 行结果 6.5-6.9s）改为两步——先取最近 6 条 progress，再按 ux_chunks_key 唯一索引逐条补 doc_title/heading_path；排序语义保持 datetime(at) DESC,rowid DESC。不依赖查询计划器行为。
+- session.cj 修复：SessionStore.list() 重构为 computeSessionList(epoch) + stale-while-revalidate——纪元命中照旧毫秒返回；过期且有旧缓存时立即回旧缓存，把全量重算交给后台 spawn（带在飞标记：startedMs>0 且 <15s 视为在飞，超时自愈防异常卡死；距上次算完 <1s 不重复安排；无缓存冷启动仍在本线程算，调用方必须拿到数据）。流式期间列表请求不再陪跑全量重算。
+- app.js 修复：聊天页每次渲染新增的匿名 window keydown（Esc 停止）改为存 state.chatGlobalEsc，渲染前先摘除旧监听；composer 重建前调用 repaintReasoningControls() 清扫已断连的思考控件，控件集合不再随渲染轮次膨胀。
+- 知识库搜索视图：workbench.css 隐藏列表时同步隐藏筛选行与“显示 N/N 篇资料”计数（.row/.muted 并入 ：has 选择器）；workbench.js “返回文档列表”按钮 insertBefore 到结果上方，长结果时第一眼可见。搜索后截图确认只剩返回按钮+结果。
+- 验证：cjpm build 通过；全量单元测试 207/207（含 learning_state_test、session_store_test 两处直接覆盖）；真实 Edge 回归 route-lifecycle 18/18、reasoning-ui 37/37、nonchat 26/26；启动探针 quiz 生成 1.2s 正常。
+- 性能复测（perf-runtime-audit --dataset=snapshot --phase=full，隔离副本，originalFileUnchanged=true）：cold-report 8482→1731ms、cold-memory 8030→920ms、cold-wrong 15023 超时→832ms、stream-new-session-short 9662→1572/3487ms、导航六页循环 11200→4800-7200ms（本轮两次复测有机器噪声）；空库 40 轮快循环每 5 轮 GC：listeners 130→865 变为 112→127 持平，nodes 1058→14149 变为 795→789 持平，泄漏消失。剩余瓶颈：course/report 1.3s（learning_events 全量历史聚合）、流式期间后台重算与 delta 写入的每语句锁争用、流式中切回对话页的会话重载——记入 TRACE 供后续轮次跟进。
+- 交付：dist/Lumin-0.8.36/ 与 dist/Lumin-0.8.36.zip 本地包（未发布天翼云、未做安装器）。本地提交 8022b82（fix）与 dfa40c6（docs TRACE）。真实数据库全程未改动。
