@@ -153,6 +153,7 @@ $assetFiles = @(
     'resources/app/renderer/mascot/xiaoyuanlong-working.png', 'resources/app/renderer/mascot/xiaoyuanlong-success.png',
     'resources/app/renderer/studyplayer.js', 'resources/app/renderer/studyplayer.css',
     'resources/app/renderer/tasks.js', 'resources/app/renderer/tasks.css',
+    'resources/app/renderer/notifications.js', 'resources/app/renderer/notifications.css',
     'resources/app/renderer/team-panel.js', 'resources/app/renderer/team-panel.css',
     'resources/app/renderer/ppt-renderer/render_ppt.py',
     'resources/app/renderer/ppt-renderer/legacy_agent.py',

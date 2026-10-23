@@ -4,9 +4,9 @@ const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', complet
 const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
 
 // Keep the lock outside any particular dialog so reopening it cannot repeat a write.
-function workbenchRequestButton(label,cls,key,busyLabel,task) {
+function workbenchRequestButton(label,cls,key,busyLabel,task,options) {
   const button=btn(label,cls,null);
-  button.onclick=()=>runGuarded(typeof key==='function'?key():key,button,busyLabel,task).catch(e=>toast(e.message));
+  button.onclick=()=>runGuarded(typeof key==='function'?key():key,button,busyLabel,task,options).catch(e=>toast(e.message));
   return button;
 }
 
@@ -161,6 +161,8 @@ async function startAgentTask(question,projectId) {
 function openPresentationBrief(res) {
   document.querySelector('.presentation-brief')?.remove();
   const overlay=el('div','task-modal presentation-brief'),dialog=el('section','task-modal-card');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','确认PPT制作需求');
+  let unbindEscape=()=>{};
+  const close=()=>{unbindEscape();overlay.remove();};
   dialog.append(el('h2',null,'这份 PPT 要讲给谁？'),el('p','muted','Lumin 会按确认的需求重新设计页面，制作可编辑的 PowerPoint 文件。'));
   const audience=inputOf('ppt-audience','例如：初学者、项目评审','初学者'),purpose=inputOf('ppt-purpose','例如：课堂讲解、项目汇报','清楚讲解核心概念与应用'),pages=inputOf('ppt-pages','页数','8'),style=inputOf('ppt-style','配色、版式或参考风格','简洁，墨绿与暖金，图文结合');
   pages.type='number';pages.min='1';pages.max='60';
@@ -173,16 +175,18 @@ function openPresentationBrief(res) {
   const submit=async waive=>{
     if(!waive&&(!audience.value.trim()||!purpose.value.trim()||!style.value.trim()||Number(pages.value)<1||Number(pages.value)>60)){toast('请填写完整需求，页数1至60');return;}
     const details=waive?'无需确认PPT细节，受众、页数和风格由你决定，直接制作。':'已确认PPT细节：受众='+audience.value+'；用途='+purpose.value+'；页数='+pages.value+'；风格='+style.value+'；背景样式='+background.value+'；内容密度='+detail.value+'。';
-    overlay.remove();try{await startAgentTask(details+source+'请使用create_presentation逐页设计并制作真实.pptx文件，包括合适的版式与讲者备注。先提供候选产物让我看，不要自动存入个性资源。');}catch(e){toast(e.message);}
+    close();try{await startAgentTask(details+source+'请使用create_presentation逐页设计并制作真实.pptx文件，包括合适的版式与讲者备注。先提供候选产物让我看，不要自动存入个性资源。');}catch(e){toast(e.message);}
   };
-  const actions=el('div','row');actions.append(btn('按要求制作','primary',()=>submit(false)),btn('直接制作','ghost',()=>submit(true)),btn('取消','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);audience.focus();
-  overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  const actions=el('div','row');actions.append(btn('按要求制作','primary',()=>submit(false)),btn('直接制作','ghost',()=>submit(true)),btn('取消','ghost',close));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);unbindEscape=bindModalEscape(overlay,close);audience.focus();
+  overlay.onclick=e=>{if(e.target===overlay)close();};
 }
 const PERSONAL_FORMAT={pptx:'PowerPoint',ppt:'PowerPoint',md:'Markdown',markdown:'Markdown',html:'网页',htm:'网页',docx:'Word',pdf:'PDF',png:'图片',jpg:'图片',jpeg:'图片',svg:'SVG',txt:'文本'};
 async function offerPersonalSave(file) {
   if(typeof offerCourseSave==='function'&&await offerCourseSave(file))return;
   document.querySelector('.personal-save-confirm')?.remove();
   const settings=await api('/api/personal/settings',{}),overlay=el('div','task-modal personal-save-confirm'),dialog=el('section','task-modal-card');
+  let unbindEscape=()=>{};
+  const close=()=>{unbindEscape();overlay.remove();};
   dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','确认存入个性资源');
   dialog.append(el('h2',null,'满意这版，再存入个性资源'),el('p','muted','确认后会创建这一版的独立副本；后续修改候选稿不会覆盖它。'));
   const title=inputOf('personal-save-title','资源名称',file.title || file.name || '个性资源');dialog.appendChild(fieldOf('资源名称',title));
@@ -190,11 +194,11 @@ async function offerPersonalSave(file) {
   const actions=el('div','row'),confirm=workbenchRequestButton('确认存入','primary','personal:save:'+file.path,'正在存入…',async()=>{
     try{
       const saved=await api('/api/personal/save',{path:file.path,title:title.value.trim() || file.name,text:file.indexText || file.text || '',learningId:file.learningId || '',learningVersion:file.learningVersion || 0,sessionId:file.sessionId || state.chatSessionId || '',turnId:file.turnId || '',confirmed:true});
-      overlay.remove();toast('已存入个性资源 · 确认版本 '+saved.version);if(current==='resources')await go('resources');
+      close();toast('已存入个性资源 · 确认版本 '+saved.version);if(current==='resources')await go('resources');
     }catch(e){toast('保存失败：'+e.message);}
   });
-  actions.append(confirm,btn('这版先不存','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);title.focus();
-  overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  actions.append(confirm,btn('这版先不存','ghost',close));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);unbindEscape=bindModalEscape(overlay,close);title.focus();
+  overlay.onclick=e=>{if(e.target===overlay)close();};
 }
 async function openPersonalEntry(item) {
   if(!['chat','resources'].includes(current))await go('resources');
@@ -1072,7 +1076,8 @@ function knowledgeHM(at){const d=new Date(at);return String(d.getHours()).padSta
 function knowledgeDay(at){const d=new Date(at),t=new Date(),y=new Date(Date.now()-864e5);const same=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();if(same(d,t))return '今天';if(same(d,y))return '昨天';return (d.getMonth()+1)+' 月 '+d.getDate()+' 日';}
 function knowledgeDialog(title,build,wide){
   const overlay=el('div','task-modal knowledge-dialog'),panel=el('section','task-modal-card'+(wide?' wide':''));panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',title);panel.appendChild(el('h2',null,title));overlay.appendChild(panel);document.body.appendChild(overlay);
-  const close=()=>overlay.remove();overlay.onkeydown=e=>{if(e.key==='Escape')close();};overlay.onclick=e=>{if(e.target===overlay)close();};build(panel,close);return overlay;
+  let unbindEscape=()=>{};
+  const close=()=>{unbindEscape();overlay.remove();};unbindEscape=bindModalEscape(overlay,close);overlay.onclick=e=>{if(e.target===overlay)close();};build(panel,close);return overlay;
 }
 async function openKnowledgeLinkSuggestions(button){
   return runGuarded('knowledge:suggest-links',button,'分析中…',async()=>{
@@ -1240,7 +1245,7 @@ async function openKnowledgePoint(id){
     body.appendChild(linkSec);
   }
   drawer.appendChild(body);
-  drawer.appendChild(btn('删除知识点','ghost sm knowledge-delete',()=>confirmDialog('删除这个知识点？','将删除节点、关联的AI记录和连线；本人笔记会保留在笔记页。',async()=>{await api('/api/knowledge/delete',{id});drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';await refreshKnowledgeNetwork();refitKnowledgeNetworkSoon();})));
+  drawer.appendChild(btn('删除知识点','ghost sm knowledge-delete',()=>confirmDialog('删除这个知识点？','将删除节点、关联的AI记录和连线；本人笔记会保留在笔记页。',async()=>{await api('/api/knowledge/delete',{id});drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';await refreshKnowledgeNetwork();refitKnowledgeNetworkSoon();},{confirmLabel:'删除',busyLabel:'正在删除…',errorPrefix:'删除失败：'})));
   knowledgeNet.draw?.();paintKnowledgePill();
 }
 function knowledgeAct(act,label,cls,fn){

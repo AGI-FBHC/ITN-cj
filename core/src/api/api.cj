@@ -1096,6 +1096,48 @@ public class Api {
             return
         }
 
+        // ---------- 顶部通知中心的持久化 ----------
+        // 通知是界面历史，但必须跟数据目录走：内核端口每次启动会变化，
+        // 若只写 localStorage，重启后历史与已读状态就会消失。
+        if (path == "/api/notifications/get" && method == "POST") {
+            let db = DbHub.open(store.dataDir)
+            let raw = db.getKv("settings", "ui_notifications", "[]")
+            let items = match (JsonValue.fromStr(raw)) {
+                case a: JsonArray => a
+                case _ => JsonArray()
+            }
+            let o = JsonObject()
+            o.put("items", items)
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/notifications/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let items = match (b.get("items")) {
+                        case Some(a: JsonArray) => a
+                        case _ => JsonArray()
+                    }
+                    if (items.size() > 60) {
+                        fail(ctx, 400, "通知历史最多保留 60 条")
+                        return
+                    }
+                    let raw = items.toString()
+                    if (raw.size > 262144) {
+                        fail(ctx, 400, "通知历史过大")
+                        return
+                    }
+                    let db = DbHub.open(store.dataDir)
+                    db.putKv("settings", "ui_notifications", raw)
+                    let o = JsonObject()
+                    o.put("items", items)
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // ---------- 联网搜索（Tavily） ----------
         // 和模型配置并列的一类"外部服务"：密钥只写进本机数据库，读回来只给掩码，
         // 不给前端回传完整密钥。enabled 用 "0"/"1" 字符串，和界面偏好保持同一种约定。
@@ -3223,7 +3265,7 @@ func speechJson(store: Store, cfg: ModelConfig, text: String, voice: String): Js
 /* 界面静态资源白名单：serveStatic 校验与静态路由注册共用这一份。
    曾经是两份清单（白名单一份、路由注册一份），新增 studyplayer.js 时只改了一份 → 页面 404。
    只留一个来源，杜绝再次走偏。 */
-let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "team-panel.js", "team-panel.css", "mascot.js", "mascot.css", "release.json",
+let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "notifications.js", "notifications.css", "team-panel.js", "team-panel.css", "mascot.js", "mascot.css", "release.json",
     "logo-mark.png", "logo-light.png", "logo-dark.png",
     "mascot/xiaoyuanlong-idle.png", "mascot/xiaoyuanlong-breathe.png", "mascot/xiaoyuanlong-blink.png",
     "mascot/xiaoyuanlong-wake.png", "mascot/xiaoyuanlong-listen-1.png", "mascot/xiaoyuanlong-listen-2.png",
@@ -3462,6 +3504,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/agent/cancel",
         "/api/prefs/get",
         "/api/prefs/save",
+        "/api/notifications/get",
+        "/api/notifications/save",
         // 联网搜索（Tavily）：新增接口一定要在这里登记，否则分发器按精确路径匹配会直接 404
         "/api/websearch/get",
         "/api/websearch/save",

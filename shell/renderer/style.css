@@ -636,15 +636,118 @@ body.chat-mode .view {
 }
 .seg-item.active { background: var(--panel); color: var(--brand); font-weight: 600; box-shadow: var(--shadow-sm); }
 
-/* ---------- 生成过程 ---------- */
-.progress-card { border-color: var(--brand-line); background: linear-gradient(180deg, var(--panel), var(--panel-soft)); }
-.pipe { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.pipe-step { font-size: calc(13px * var(--fs, 1)); color: var(--ink-2); background: var(--panel-sunk); border-radius: 999px; padding: 3px 10px; }
-.pipe-step + .pipe-step::before { content: "→ "; color: var(--muted); }
-
 /* ---------- 弹层 ---------- */
 .card.dialog { border-color: var(--brand); box-shadow: 0 18px 40px rgba(20, 41, 31, .13); }
 .card.ok-dialog { border-color: var(--brand-line); background: linear-gradient(180deg, var(--panel), var(--brand-soft)); }
+
+/* 全局模态框：确认、重命名等不能嵌在页面内容流里。 */
+.app-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(10, 18, 14, .38);
+}
+
+.app-modal {
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(82vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 28px 80px -26px rgba(0, 0, 0, .58);
+}
+
+.app-modal.wide {
+  width: min(760px, calc(100vw - 48px));
+}
+
+.app-modal-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 22px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.app-modal-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.app-modal-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 20px;
+  line-height: 28px;
+  cursor: pointer;
+}
+
+.app-modal-close:hover {
+  border-color: var(--line);
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+
+.app-modal-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.app-modal-body > :first-child {
+  margin-top: 0;
+}
+
+.app-modal-body > :last-child {
+  margin-bottom: 0;
+}
+
+.app-modal-actions {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.app-modal-actions .btn {
+  min-width: 76px;
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .app-modal-layer {
+    padding: 14px;
+  }
+
+  .app-modal,
+  .app-modal.wide {
+    width: min(100%, calc(100vw - 28px));
+    max-height: calc(100vh - 28px);
+  }
+}
+
 .artifact-preview {
   max-height: 340px; overflow: auto; margin: 10px 0;
   border: 1px solid var(--line); border-radius: var(--radius-sm);

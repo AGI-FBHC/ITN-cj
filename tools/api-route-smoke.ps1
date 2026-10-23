@@ -1,4 +1,4 @@
-# 145 条已注册路由的入口烟雾：逐条发空 JSON / 坏 JSON，断言无 5xx、无未注册路由。
+# 162 条已注册路由的入口烟雾：逐条发空 JSON / 坏 JSON，断言无 5xx、无未注册路由。
 # 不读取真实数据；行为测试由 smoke / api-feature-check / 各专项脚本负责。
 param(
     [string]$Exe = "$PSScriptRoot\..\dist\core\itn-desktop-core.exe",
@@ -17,7 +17,7 @@ try {
     $match = [regex]::Match($source, 'let routes = \[(?<body>[\s\S]*?)\]\s*for \(r in routes\)')
     if (-not $match.Success) { throw '无法从 api.cj 解析路由表' }
     $routes = @([regex]::Matches($match.Groups['body'].Value, '"(/[^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
-    if ($routes.Count -ne 145) { throw ('路由数不是预期的 145：' + $routes.Count) }
+    if ($routes.Count -ne 162) { throw ('路由数不是预期的 162：' + $routes.Count) }
     try { Remove-Item -LiteralPath $portFile -Force -ErrorAction SilentlyContinue } catch {}
     $core = Start-Process -FilePath $Exe -ArgumentList @("--data-dir=$data", "--port-file=$portFile", "--ui-dir=$UiDir", "--skills-dir=$SkillsDir") -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $data 'core.out') -RedirectStandardError (Join-Path $data 'core.err')
     for ($i = 0; $i -lt 120 -and -not (Test-Path $portFile); $i++) { Start-Sleep -Milliseconds 100 }
@@ -35,7 +35,7 @@ try {
         $rows += [pscustomobject]@{ route = $route; method = $method; emptyStatus = [int]$empty.StatusCode; badStatus = $badStatus; emptyBytes = ([string]$empty.Content).Length }
     }
     $bad5xx = @($rows | Where-Object { $_.emptyStatus -ge 500 -or ($null -ne $_.badStatus -and $_.badStatus -ge 500) })
-    $unknown = @($rows | Where-Object { $_.emptyStatus -eq 404 -and $_.route -notin @('/api/models/test','/api/models/diagnose','/api/kb/build','/api/kb/stats','/api/kb/document','/api/web/cache/delete','/api/skills/read','/api/knowledge/node','/api/personal/read','/api/learning/resource','/api/sessions/reveal','/api/study/tree') })
+    $unknown = @($rows | Where-Object { $_.emptyStatus -eq 404 -and $_.route -notin @('/api/models/test','/api/models/diagnose','/api/kb/build','/api/kb/stats','/api/kb/document','/api/kb/image','/api/web/cache/delete','/api/skills/read','/api/knowledge/node','/api/personal/read','/api/learning/resource','/api/sessions/reveal','/api/study/tree') })
     $health = $rows | Where-Object { $_.route -eq '/health' }
     $settings = $rows | Where-Object { $_.route -eq '/api/settings' }
     $reportDir = Join-Path $PSScriptRoot '..\tmp\audit'

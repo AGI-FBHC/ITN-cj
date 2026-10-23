@@ -509,7 +509,8 @@ function btn(label, cls, onClick) {
  * 不拦住的话每次点击都是一次真实请求 —— 十秒后就会突然多出好几份资源。
  */
 const busyActions = new Set();
-async function runGuarded(key, button, busyLabel, task) {
+async function runGuarded(key, button, busyLabel, task, options) {
+  const opts = options || {};
   if (busyActions.has(key)) { toast("正在处理，请稍候…"); return undefined; }
   busyActions.add(key);
   // 图标按钮（正文下面那排 icon）没有文字，改文案会毁掉里面的 svg，只能换 title。
@@ -521,8 +522,20 @@ async function runGuarded(key, button, busyLabel, task) {
     button.setAttribute("aria-busy", "true");
     if (busyLabel) { if (iconOnly) button.title = busyLabel; else button.textContent = busyLabel; }
   }
+  const noticeId = opts.notice && window.LuminNotifications
+    ? window.LuminNotifications.start({
+      title: opts.notice.title || busyLabel || "正在处理",
+      detail: opts.notice.detail || "",
+      page: opts.notice.page || current || "",
+    })
+    : "";
   try {
-    return await task();
+    const result = await task();
+    if (noticeId) window.LuminNotifications.finish(noticeId, "success", opts.notice.success || "操作已完成");
+    return result;
+  } catch (error) {
+    if (noticeId) window.LuminNotifications.finish(noticeId, "failed", opts.notice.failure || error.message);
+    throw error;
   } finally {
     busyActions.delete(key);
     if (button && button.isConnected && prev) {
@@ -531,7 +544,31 @@ async function runGuarded(key, button, busyLabel, task) {
       button.removeAttribute("aria-busy");
       if (busyLabel) { if (iconOnly) button.title = prev.title; else button.textContent = prev.text; }
     }
+    for (const managed of document.querySelectorAll("[data-busy-key]")) {
+      if (managed.dataset.busyKey !== String(key)) continue;
+      managed.disabled = false;
+      managed.classList.remove("is-busy");
+      managed.removeAttribute("aria-busy");
+      if (managed.dataset.idleLabel) managed.textContent = managed.dataset.idleLabel;
+    }
   }
+}
+
+/** 按钮可能在长任务期间被页面重绘；新建时先从共享 busyActions 恢复忙碌态。 */
+function managedButton(label, cls, key, busyLabel, task) {
+  const button = btn(label, cls, null);
+  if (typeof key === "string") {
+    button.dataset.busyKey = key;
+    button.dataset.idleLabel = label;
+  }
+  if (typeof key === "string" && busyActions.has(key)) {
+    button.disabled = true;
+    button.classList.add("is-busy");
+    button.setAttribute("aria-busy", "true");
+    if (busyLabel) button.textContent = busyLabel;
+  }
+  button.onclick = () => Promise.resolve(task(button)).catch(error => toast(error.message));
+  return button;
 }
 
 function tag(text, cls) {
@@ -628,28 +665,6 @@ function copyButton(getText, label) {
   });
 }
 
-/** 生成类任务的过程卡：只报真实耗时 + 说明流水线，不假装进度。 */
-function progressCard(title, steps) {
-  const c = el("div", "card progress-card");
-  const head = el("div", "card-head");
-  head.innerHTML = '<span class="spinner"></span><h2>' + esc(title) + "</h2>";
-  head.appendChild(spacer());
-  const timer = el("span", "muted sm", "0.0 秒");
-  head.appendChild(timer);
-  c.appendChild(head);
-  const box = el("div", "pipe");
-  for (const s of steps) box.appendChild(el("span", "pipe-step", s));
-  c.appendChild(box);
-  
-  c._timer = setInterval(() => {
-    const t = (Date.now() - c._start) / 1000;
-    timer.textContent = t.toFixed(1) + " 秒";
-  }, 100);
-  c._start = Date.now();
-  c._stop = () => clearInterval(c._timer);
-  return c;
-}
-
 function citationBox(citations, report) {
   const box = el("div", "cites");
   if (report) {
@@ -688,6 +703,19 @@ const state = {
 
 let current = "home";
 let ttsPreviewAudio = null;
+const navigationLoads = new Map();
+
+/** 同一次页面导航内共享读取；Panel 与 Page 不再各自重复请求同一份数据。 */
+function navigationLoad(key, loader, force) {
+  const token = (state.navigationGeneration || 0) + ":" + key;
+  if (!force && navigationLoads.has(token)) return navigationLoads.get(token);
+  const promise = Promise.resolve().then(loader).catch(error => {
+    if (navigationLoads.get(token) === promise) navigationLoads.delete(token);
+    throw error;
+  });
+  navigationLoads.set(token, promise);
+  return promise;
+}
 
 /** 桌宠只接收“状态摘要”，不参与业务；没有桌宠时事件也不会影响页面。 */
 function mascotActivity(activityState, busyCount) {
@@ -699,7 +727,8 @@ function mascotActivity(activityState, busyCount) {
 // 独立脚本（导学页、任务面板）也能上报同一套状态，不复制桌宠逻辑。
 window.luminMascotActivity = mascotActivity;
 
-async function loadCfg() {
+async function loadCfg(force) {
+  return navigationLoad("cfg", async () => {
   const previousReasoningSignature = reasoningSignature();
   state.cfg = await api("/api/settings");
   // /api/settings 里没有界面与智能体偏好：用最近一次读到的合回来，别把设置页上的开关冲掉
@@ -711,14 +740,19 @@ async function loadCfg() {
     const indexed = state.cfg.knowledgeBases.find((k) => (k.chunkCount || 0) > 0);
     state.kb = (indexed || state.cfg.knowledgeBases[0] || {}).id || "";
   }
+  return state.cfg;
+  }, force);
 }
 /** 项目清单（一个项目 = 一个本机文件夹，对齐 Codex 的"一个项目一个文件夹"）。 */
-async function loadProjects() {
+async function loadProjects(force) {
+  return navigationLoad("projects", async () => {
   try {
     state.projects = (await api("/api/projects/list", {})).projects || [];
   } catch (e) {
     state.projects = [];
   }
+  return state.projects;
+  }, force);
 }
 
 function projectName(id) {
@@ -726,7 +760,12 @@ function projectName(id) {
   return p ? (p.name || p.root || id) : "";
 }
 
-async function loadProfile() { state.profile = (await api("/api/profile/get", {})) || {}; }
+async function loadProfile(force) {
+  return navigationLoad("profile", async () => {
+    state.profile = (await api("/api/profile/get", {})) || {};
+    return state.profile;
+  }, force);
+}
 
 /**
  * 保存档案。
@@ -748,10 +787,18 @@ async function saveProfile(patch) {
   state.profile = d || state.profile;
   return state.profile;
 }
-async function loadReport() { state.report = (await api("/api/study/report", { kbId: state.kb || "" })) || {}; }
-async function loadArtifacts() {
-  try { state.artifacts = (await api("/api/artifacts/list", {})).artifacts || []; }
-  catch (e) { state.artifacts = []; }
+async function loadReport(force) {
+  return navigationLoad("report:" + (state.kb || ""), async () => {
+    state.report = (await api("/api/study/report", { kbId: state.kb || "" })) || {};
+    return state.report;
+  }, force);
+}
+async function loadArtifacts(force) {
+  return navigationLoad("artifacts", async () => {
+    try { state.artifacts = (await api("/api/artifacts/list", {})).artifacts || []; }
+    catch (e) { state.artifacts = []; }
+    return state.artifacts;
+  }, force);
 }
 /* 会话列表的短窗缓存：切一次页面 Panel 与 Page 会各读一次，之前每次切换打 1–3 个
    重复请求（列表接口慢时就是"卡住 0.5 秒+"的来源之一）。被动读取 1.5s 内复用；
@@ -857,10 +904,10 @@ async function loadSessions(force) {
 }
 
 /** 一次性把首页/侧栏需要的四类数据拉齐。 */
-async function loadOverview() {
-  await loadCfg();
+async function loadOverview(force) {
+  await loadCfg(force);
   // 四份数据互不依赖：并发取，别让页面切换按 4 个串行来回等
-  await Promise.all([loadProfile(), loadReport(), loadArtifacts(), loadSessions()]);
+  await Promise.all([loadProfile(force), loadReport(force), loadArtifacts(force), loadSessions(force)]);
 }
 
 function hasChatModel() { return state.cfg.models.length > 0 && !!state.cfg.chatModelId; }
@@ -1066,7 +1113,7 @@ function mountGuidedReasoning() {
     for (const m of state.cfg.models) {
       const b = btn(m.name || m.id, 'composer-menu-item', null);
       b.onclick = () => runGuarded('model:roles', b, '正在切换…', async () => {
-        try { await api('/api/models/roles', {chatModelId:m.id, embedModelId:state.cfg.embedModelId, chunkModelId:state.cfg.chunkModelId, ttsModelId:state.cfg.ttsModelId}); await loadCfg(); sync(); models.hidden = true; model.setAttribute('aria-expanded', 'false'); model.focus(); }
+        try { await api('/api/models/roles', {chatModelId:m.id, embedModelId:state.cfg.embedModelId, chunkModelId:state.cfg.chunkModelId, ttsModelId:state.cfg.ttsModelId}); await loadCfg(true); sync(); models.hidden = true; model.setAttribute('aria-expanded', 'false'); model.focus(); }
         catch (e) { toast('切换失败：' + e.message); }
       }); models.appendChild(b);
     }
@@ -1272,7 +1319,11 @@ function clearRouteUi() {
   closePopover();
   closePalette();
   window.LuminTeamPanel?.close({immediate: true});
-  document.querySelectorAll('.course-modal-overlay, .task-modal').forEach(node => node.remove());
+  document.querySelectorAll('.course-modal-overlay, .task-modal, .app-modal-layer').forEach(node => {
+    node.__unbindEscape?.();
+    node.remove();
+  });
+  window.LuminNotifications?.close?.();
   document.querySelector('.course-stage')?._courseObserver?.disconnect();
   document.querySelector('.wb-toolbar')?.remove();
   if (typeof workbench !== 'undefined') {
@@ -1301,6 +1352,7 @@ async function go(page, section, opts) {
   if(page==="settings"&&section==="kb"){page="kb";section="manage";}
   if(page==="resources"&&section==="files")section="";
   const navigation = state.navigationGeneration = (state.navigationGeneration || 0) + 1;
+  navigationLoads.clear();
   clearRouteUi();
   state.guidedReasoningCleanup?.();
   state.knowledgeObserver?.disconnect();state.knowledgeObserver=null;
@@ -1726,29 +1778,36 @@ async function askAboutChunk(chunk) {
 
 /** 出题或生成讲义前先确认主题（默认取章节名）。 */
 function askTopic(kind, defaultTopic) {
-  const v = $("view");
   const title = kind === "lecture" ? "生成讲义" : "生成练习册";
-  const dlg = el("div", "card dialog");
-  const head = el("div", "card-head");
-  head.appendChild(el("h2", null, title));
-  head.appendChild(spacer());
-  head.appendChild(tag(state.chapter || kbName(state.kb)));
-  dlg.appendChild(head);
   const input = inputOf("topic-input", "例如：提示词工程", defaultTopic || "");
-  dlg.appendChild(fieldOf("主题", input));
-  const row = el("div", "row");
-  const goBtn = btn(kind === "lecture" ? "开始生成讲义" : "开始生成练习册", "primary", async () => {
-    const topic = input.value.trim();
-    if (!topic) { toast("请填写主题"); return; }
-    dlg.remove();
-    await generateArtifact(kind, topic);
+  const body = document.createDocumentFragment();
+  body.append(el("p", "muted", "资料范围：" + (state.chapter || kbName(state.kb))), fieldOf("主题", input));
+  const modal = openAppModal({
+    title,
+    body,
+    initialFocus: input,
+    selectText: true,
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {
+        label: kind === "lecture" ? "生成讲义" : "生成练习册",
+        cls: "primary",
+        onClick: async () => {
+          const topic = input.value.trim();
+          if (!topic) { toast("请填写主题"); input.focus(); return false; }
+          modal.close();
+          await generateArtifact(kind, topic);
+        },
+      },
+    ],
   });
-  row.appendChild(goBtn);
-  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  input.focus();
-  input.onkeydown = (e) => { if (e.key === "Enter") goBtn.click(); };
+  input.onkeydown = event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      modal.actions.querySelector(".btn.primary")?.click();
+    }
+  };
+  return modal;
 }
 
 /**
@@ -3108,7 +3167,7 @@ function calibrationCard() {
           text: calibrationNoteText(),
         });
       }
-      await loadReport();
+      await loadReport(true);
       state.calibOpen = false;
       state.calibStep = 0;
       toast(state.calibWantNote ? "已保存，并记了一条校准笔记" : "已保存");
@@ -3248,13 +3307,11 @@ function artifactItem(a, clickable) {
     row.appendChild(btn("重命名", "sm ghost", () => renameArtifactDialog(a)));
     row.appendChild(btn("删除", "sm ghost", () => {
       confirmDialog("删除这份产物？", "会从本机 artifacts 目录里删掉「" + a.name + "」，同时清掉它的播放进度。这一步不可撤销。", async () => {
-        try {
-          await api("/api/artifacts/delete", { name: a.name });
-          toast("已删除：" + a.name);
-          await loadArtifacts();
-          go("resources");
-        } catch (e) { toast("删除失败：" + e.message); }
-      });
+        await api("/api/artifacts/delete", { name: a.name });
+        toast("已删除：" + a.name);
+        await loadArtifacts(true);
+        go("resources");
+      }, {confirmLabel: "删除", busyLabel: "正在删除…", errorPrefix: "删除失败："});
     }));
   }
   it.appendChild(row);
@@ -3262,57 +3319,193 @@ function artifactItem(a, clickable) {
   return it;
 }
 
-/** 通用确认弹层。用于删除这类不可撤销的动作（不用 window.confirm：桌面壳里观感差）。 */
-function confirmDialog(title, text, onOk) {
-  const v = $("view");
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly(title));
-  dlg.appendChild(el("p", "muted", text));
-  const row = el("div", "row");
-  row.appendChild(btn("确认删除", "primary", async () => {
-    dlg.remove();
-    await onOk();
-  }));
-  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  dlg.scrollIntoView({ block: "start" });
+/**
+ * 全局模态框。页面内容流里不再插入确认/重命名卡片。
+ * 支持 Esc、点击遮罩、焦点限制、关闭后回到触发控件。
+ */
+function openAppModal(options) {
+  const opts = options || {};
+  const trigger = document.activeElement;
+  const overlay = el("div", "app-modal-layer");
+  const modal = el("section", "app-modal" + (opts.wide ? " wide" : ""));
+  const titleId = "app-modal-title-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", titleId);
+  const head = el("header", "app-modal-head");
+  const title = el("h2", null, opts.title || "确认");
+  title.id = titleId;
+  const closeBtn = el("button", "app-modal-close", "×");
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "关闭弹窗");
+  head.append(title, closeBtn);
+  const body = el("div", "app-modal-body");
+  if (typeof opts.body === "string") body.textContent = opts.body;
+  else if (opts.body) body.appendChild(opts.body);
+  const actions = el("footer", "app-modal-actions");
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    document.removeEventListener("keydown", modalKeyHandler, true);
+    overlay.remove();
+    if (trigger?.isConnected) trigger.focus();
+    opts.onClose?.();
+  };
+  closeBtn.onclick = close;
+  for (const action of opts.actions || []) {
+    const b = btn(action.label || "确认", action.cls || "", null);
+    if (action.id) b.id = action.id;
+    if (action.dismiss) {
+      b.onclick = close;
+    } else {
+      b.onclick = async () => {
+        if (b.disabled) return;
+        const idle = b.textContent;
+        b.disabled = true;
+        b.classList.add("is-busy");
+        b.setAttribute("aria-busy", "true");
+        if (action.busyLabel) b.textContent = action.busyLabel;
+        try {
+          const result = await action.onClick?.(b, close);
+          if (!closed && result !== false) close();
+        } catch (error) {
+          toast(action.errorPrefix ? action.errorPrefix + error.message : error.message);
+        } finally {
+          if (!closed && b.isConnected) {
+            b.disabled = false;
+            b.classList.remove("is-busy");
+            b.removeAttribute("aria-busy");
+            b.textContent = idle;
+          }
+        }
+      };
+    }
+    actions.appendChild(b);
+  }
+  modal.append(head, body);
+  if (actions.childNodes.length) modal.appendChild(actions);
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = [...modal.querySelectorAll("button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]")];
+    if (!controls.length) return;
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  const modalKeyHandler = event => {
+    if (event.key !== "Escape" || closed) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    close();
+  };
+  document.addEventListener("keydown", modalKeyHandler, true);
+  overlay.__unbindEscape = () => document.removeEventListener("keydown", modalKeyHandler, true);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => {
+    const first = opts.initialFocus?.isConnected ? opts.initialFocus : modal.querySelector("input:not(:disabled),textarea:not(:disabled),button:not(:disabled)");
+    first?.focus();
+    if (opts.selectText && first?.select) first.select();
+  });
+  return {overlay, modal, body, actions, close};
+}
+
+/** 给旧的 fixed overlay 补同样的全局 Esc 行为；返回时移除监听。 */
+function bindModalEscape(overlay, close) {
+  const handler = event => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    close();
+  };
+  document.addEventListener("keydown", handler, true);
+  const dispose = () => {
+    document.removeEventListener("keydown", handler, true);
+    if (overlay.__unbindEscape === dispose) overlay.__unbindEscape = null;
+  };
+  overlay.__unbindEscape = dispose;
+  return dispose;
+}
+
+/** 通用确认弹窗。action 抛错时弹窗保持打开，成功后才关闭。 */
+function confirmDialog(title, text, onOk, options) {
+  const opts = options || {};
+  return openAppModal({
+    title,
+    body: el("p", "muted", text),
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {
+        label: opts.confirmLabel || "确认",
+        cls: opts.danger === false ? "primary" : "primary danger",
+        busyLabel: opts.busyLabel || "正在处理…",
+        errorPrefix: opts.errorPrefix || "操作失败：",
+        onClick: onOk,
+      },
+    ],
+    onClose: opts.onClose,
+  });
 }
 
 function renameArtifactDialog(a) {
-  const v = $("view");
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("重命名产物"));
   const base = String(a.name || "").replace(/\.md$/i, "");
   const input = inputOf("rename-input", "新的文件名", base);
-  dlg.appendChild(fieldOf("文件名（不写 .md 会自动补上）", input));
-  const row = el("div", "row");
+  let modal;
   const submit = async () => {
     const next = input.value.trim();
-    if (!next) { toast("名字不能为空"); return; }
-    if (next === base) { dlg.remove(); return; }
-    try {
-      const r = await api("/api/artifacts/rename", { name: a.name, newName: next });
-      toast("已改名为：" + r);
-      dlg.remove();
-      await loadArtifacts();
-      go("resources");
-    } catch (e) { toast("改名失败：" + e.message); }
+    if (!next) {
+      toast("名字不能为空");
+      input.focus();
+      return false;
+    }
+    if (next === base) {
+      modal.close();
+      return true;
+    }
+    const result = await api("/api/artifacts/rename", { name: a.name, newName: next });
+    toast("已改名为：" + result);
+    await loadArtifacts(true);
+    go("resources");
+    return true;
   };
-  row.appendChild(btn("改名", "primary", submit));
-  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  dlg.scrollIntoView({ block: "start" });
-  input.focus();
-  input.select();
-  input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+  modal = openAppModal({
+    title: "重命名产物",
+    body: fieldOf("文件名（不写 .md 会自动补上）", input),
+    initialFocus: input,
+    selectText: true,
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {label: "改名", cls: "primary", busyLabel: "正在改名…", errorPrefix: "改名失败：", onClick: submit},
+    ],
+  });
+  input.onkeydown = event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      modal.actions.querySelector(".btn.primary")?.click();
+    }
+  };
+  return modal;
 }
 
 PAGES.resources = {
   async render() {
     const renderingGeneration = state.navigationGeneration;
-    await loadArtifacts();
+    await loadArtifacts(true);
     if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view");
     v.innerHTML = "";
@@ -3487,53 +3680,64 @@ function toggleTheme() {
  * 抓完立刻把这一页的摘要贴进对话里当一条记录，并落本机缓存——不静默，也不假装读到了。
  */
 async function openUrlFetchDialog() {
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("读取网页"));
   const row = el("div", "row");
   const input = inputOf("web-url", "https://…");
   input.className = "grow";
   row.appendChild(input);
-  dlg.appendChild(fieldOf("网页地址", row));
-  dlg.appendChild(el("p", "muted sm", "正文落到本机，引用时写成 [W1]。"));
-  const acts = el("div", "row");
-  const goBtn = btn("读取", "primary", async () => {
-    const url = input.value.trim();
-    if (!url) { toast("先贴一个链接"); return; }
-    goBtn.disabled = true;
-    goBtn.textContent = "读取中…";
-    try {
-      const r = await api("/api/web/fetch", { url: url });
-      dlg.remove();
-      toast("已读取《" + r.title + "》");
-      // 当成一条"用户给了资料"的消息塞进对话，方便接着提问
-      const thread = $("chat-thread");
-      if (thread) {
-        const box = el("div", "turn-block");
-        box.appendChild(el("div", "msg-who", "已读取网页"));
-        const body = el("div", "note-body");
-        body.innerHTML = md("**《" + r.title + "》**\n\n" + (r.excerpt || "") +
-          "\n\n[来源](" + r.url + ") · 抓取于 " + r.fetchedAt + " · 已落本机");
-        box.appendChild(body);
-        thread.appendChild(box);
-        thread.scrollTop = thread.scrollHeight;
-      }
-      const ta = $("chat-input");
-      if (ta) {
-        ta.value = "就我刚给你的这个网页（" + r.url + "）";
-        ta.focus();
-      }
-    } catch (e) {
-      toast("读取失败：" + e.message);
-      goBtn.disabled = false;
-      goBtn.textContent = "读取";
-    }
+  const body = document.createDocumentFragment();
+  body.append(fieldOf("网页地址", row), el("p", "muted sm", "正文落到本机，引用时写成 [W1]。"));
+  const modal = openAppModal({
+    title: "读取网页",
+    body,
+    initialFocus: input,
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {
+        label: "读取",
+        cls: "primary",
+        busyLabel: "读取中…",
+        errorPrefix: "读取失败：",
+        onClick: async () => {
+          const url = input.value.trim();
+          if (!url) { toast("先贴一个链接"); input.focus(); return false; }
+          const noticeId = window.LuminNotifications?.start({title: "读取网页", detail: url, page: current || ""});
+          try {
+            const r = await api("/api/web/fetch", { url: url });
+            if (noticeId) window.LuminNotifications.finish(noticeId, "success", "已读取《" + r.title + "》");
+            toast("已读取《" + r.title + "》");
+            modal.close();
+            const thread = $("chat-thread");
+            if (thread) {
+              const box = el("div", "turn-block");
+              box.appendChild(el("div", "msg-who", "已读取网页"));
+              const content = el("div", "note-body");
+              content.innerHTML = md("**《" + r.title + "》**\n\n" + (r.excerpt || "") +
+                "\n\n[来源](" + r.url + ") · 抓取于 " + r.fetchedAt + " · 已落本机");
+              box.appendChild(content);
+              thread.appendChild(box);
+              thread.scrollTop = thread.scrollHeight;
+            }
+            const ta = $("chat-input");
+            if (ta) {
+              ta.value = "就我刚给你的这个网页（" + r.url + "）";
+              ta.focus();
+            }
+            return true;
+          } catch (error) {
+            if (noticeId) window.LuminNotifications.finish(noticeId, "failed", error.message);
+            throw error;
+          }
+        },
+      },
+    ],
   });
-  acts.appendChild(goBtn);
-  acts.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(acts);
-  const view = $("view");
-  view.insertBefore(dlg, view.firstChild);
-  input.focus();
+  input.onkeydown = event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      modal.actions.querySelector(".btn.primary")?.click();
+    }
+  };
+  return modal;
 }
 
 /**
@@ -3591,6 +3795,7 @@ function clampFont(v) { return Math.max(0.85, Math.min(1.4, Number(v) || 1)); }
 function applyZoom(v) {
   state.uiZoom = clampZoom(v);
   document.body.style.zoom = String(state.uiZoom);
+  window.dispatchEvent(new CustomEvent("lumin:ui-zoom", { detail: { zoom: state.uiZoom } }));
 }
 
 function applyFont(v) {
@@ -3841,20 +4046,18 @@ function slashHintShow(on, text) {
 }
 
 function showSlashHelp() {
-  const v = $("view");
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("窗口里的命令"));
   const ul = el("ul", "about-list");
   for (const c of SLASH_COMMANDS) {
     ul.appendChild(el("li", null, c.cmd + (c.args ? " " + c.args : "") + " — " + c.desc));
   }
-  dlg.appendChild(ul);
-  dlg.appendChild(el("p", "muted sm", "命令改的就是设置页里那份状态：模型、联网、权限、技能、工作目录。"));
-  const row = el("div", "row");
-  row.appendChild(btn("知道了", "primary", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  dlg.scrollIntoView({ block: "start" });
+  const body = document.createDocumentFragment();
+  body.append(ul, el("p", "muted sm", "命令改的就是设置页里那份状态：模型、联网、权限、技能、工作目录。"));
+  return openAppModal({
+    title: "窗口里的命令",
+    body,
+    wide: true,
+    actions: [{label: "知道了", cls: "primary", dismiss: true}],
+  });
 }
 
 async function slashModel(arg) {
@@ -3868,7 +4071,7 @@ async function slashModel(arg) {
     || (m.model || "").toLowerCase() === arg.toLowerCase());
   if (!hit) { toast("没有这个模型：" + arg + "（用 /model 不带参数看清单）"); return; }
   await api("/api/models/roles", { chatModelId: hit.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: state.cfg.ttsModelId });
-  await loadCfg();
+  await loadCfg(true);
   toast("对话模型已切到「" + (hit.name || hit.id) + "」");
   renderPanel();
   go("chat");
@@ -3929,8 +4132,6 @@ function slashSessionInfo() {
   const turns = (state.chatTurns || []);
   let usageIn = 0, usageOut = 0;
   for (const t of turns) { usageIn += Number(t.usageIn || 0); usageOut += Number(t.usageOut || 0); }
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("这一段会话"));
   const ul = el("ul", "about-list");
   ul.appendChild(el("li", null, "名字：" + ((meta.title) || "（还没有名字）")));
   ul.appendChild(el("li", null, "会话 id：" + sid + "（链接：lumin://thread/" + sid + "）"));
@@ -3941,13 +4142,18 @@ function slashSessionInfo() {
   ul.appendChild(el("li", null, "累计（本窗口看到的）：输入 " + usageIn + " · 输出 " + usageOut));
   const lastUsage = turns.at(-1);
   if (lastUsage?.usageReasoning != null) ul.appendChild(el('li', null, '上一轮思考 token：' + lastUsage.usageReasoning + '（已含在输出中）'));
-  dlg.appendChild(ul);
-  const row = el("div", "row");
-  row.appendChild(btn("复制会话链接", "", () => copyText("lumin://thread/" + sid)));
-  row.appendChild(btn("知道了", "primary", () => dlg.remove()));
-  dlg.appendChild(row);
-  $("view").insertBefore(dlg, $("view").firstChild);
-  dlg.scrollIntoView({ block: "start" });
+  return openAppModal({
+    title: "这一段会话",
+    body: ul,
+    actions: [
+      {
+        label: "复制会话链接",
+        cls: "ghost",
+        onClick: () => { copyText("lumin://thread/" + sid); return false; },
+      },
+      {label: "知道了", cls: "primary", dismiss: true},
+    ],
+  });
 }
 
 /** /name [名字]：不带参数就报当前名字（与 pi 的 /name 一致）。 */
@@ -3989,7 +4195,7 @@ async function slashExport() {
     new Date().toISOString().slice(0, 10) + ".md";
   try {
     const r = await api("/api/artifacts/save", { name: name, content: lines.join("\n") });
-    await loadArtifacts();
+    await loadArtifacts(true);
     toast("已导出到成果：" + (r && r.path ? r.path.split(/[\\/]/).pop() : name));
     if (typeof refreshWorkbenchState === "function") refreshWorkbenchState().catch(() => {});
   } catch (e) { toast("导出失败：" + e.message); }
@@ -3998,9 +4204,9 @@ async function slashExport() {
 /** /reload：改了设置/技能/新建项目之后不用重启（pi 的 /reload 同义）。 */
 async function slashReload() {
   try {
-    await loadCfg();
-    await loadProjects();
-    await loadSessions();
+    await loadCfg(true);
+    await loadProjects(true);
+    await loadSessions(true);
     await loadSkills(state.chatSessionId || "");
     renderPanel();
     if (typeof refreshChatHeader === "function") refreshChatHeader();
@@ -4010,8 +4216,6 @@ async function slashReload() {
 
 /** /hotkeys：把窗口里真正可用的键位列出来（不是抄一份用不上的清单）。 */
 function slashHotkeys() {
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("快捷键"));
   const ul = el("ul", "about-list");
   [
     "Enter 发送 · Shift+Enter 换行（跑着的时候 Enter 是插话）",
@@ -4022,12 +4226,11 @@ function slashHotkeys() {
     "输入 / 出命令表 · /help 看全部命令",
     "空格键悬停…（不必）",
   ].forEach((x) => { if (x.indexOf("不必") < 0) ul.appendChild(el("li", null, x)); });
-  dlg.appendChild(ul);
-  const row = el("div", "row");
-  row.appendChild(btn("知道了", "primary", () => dlg.remove()));
-  dlg.appendChild(row);
-  $("view").insertBefore(dlg, $("view").firstChild);
-  dlg.scrollIntoView({ block: "start" });
+  return openAppModal({
+    title: "快捷键",
+    body: ul,
+    actions: [{label: "知道了", cls: "primary", dismiss: true}],
+  });
 }
 
 /** /copy：复制最后一条回答（pi 的 /copy 同义）。 */
@@ -5792,7 +5995,7 @@ function projectMenu(project, key) {
       menu.appendChild(item(project.pinned ? "取消置顶" : "置顶", "pin", "", async () => {
         try {
           await api("/api/projects/pin", { id: project.id, pinned: project.pinned ? "0" : "1" });
-          await loadProjects();
+          await loadProjects(true);
           renderPanel();
           toast(project.pinned ? "已取消置顶" : "已置顶");
         } catch (e) { toast("失败：" + e.message); }
@@ -5805,14 +6008,16 @@ function projectMenu(project, key) {
       }));
       menu.appendChild(el("div", "rail-menu-sep"));
       menu.appendChild(item("移除项目", "close", "danger", async () => {
-        if (!window.confirm("移除项目「" + (project.name || project.root) + "」？\n\n只把它从列表里拿掉，对话与文件都不动 —— 那些对话会回到「普通对话」。")) return;
-        try {
+        confirmDialog("移除项目？",
+          "会从列表里拿掉「" + (project.name || project.root) + "」。对话与文件都不动，那些对话会回到「普通对话」。",
+          async () => {
           await api("/api/projects/delete", { id: project.id });
-          await loadProjects();
+          await loadProjects(true);
           await reloadSessions();
           renderPanel();
           toast("已移除项目");
-        } catch (e) { toast("失败：" + e.message); }
+          },
+          {confirmLabel: "移除", danger: false, busyLabel: "正在移除…", errorPrefix: "移除失败："});
       }));
     }
     }, { side: "panel", cls: "project-menu" });
@@ -5823,30 +6028,40 @@ function projectMenu(project, key) {
 
 /** 编辑项目：改名（文件夹不动；改工作目录是另一件事）。 */
 function editProjectDialog(project) {
-  const v = $("view");
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("编辑项目"));
   const input = inputOf("project-name", "项目名字", project.name || "");
-  dlg.appendChild(fieldOf("名字", input));
-  dlg.appendChild(el("p", "muted sm", "文件夹不变：" + project.root));
-  const row = el("div", "row");
-  const projSave = btn("保存", "primary", null);
-  projSave.onclick = () => runGuarded("project:save:" + project.id, projSave, "正在保存…", async () => {
-    const next = input.value.trim();
-    if (!next) { toast("名字不能为空"); return; }
-    try {
-      await api("/api/projects/save", { id: project.id, name: next, root: project.root });
-      dlg.remove();
-      await loadProjects();
-      renderPanel();
-      toast("已改名");
-    } catch (e) { toast("失败：" + e.message); }
+  const body = document.createDocumentFragment();
+  body.append(fieldOf("名字", input), el("p", "muted sm", "文件夹不变：" + project.root));
+  const modal = openAppModal({
+    title: "编辑项目",
+    body,
+    initialFocus: input,
+    selectText: true,
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {
+        label: "保存",
+        cls: "primary",
+        busyLabel: "正在保存…",
+        errorPrefix: "保存失败：",
+        onClick: async () => {
+          const next = input.value.trim();
+          if (!next) { toast("名字不能为空"); input.focus(); return false; }
+          await api("/api/projects/save", { id: project.id, name: next, root: project.root });
+          await loadProjects(true);
+          renderPanel();
+          toast("已改名");
+          return true;
+        },
+      },
+    ],
   });
-  row.appendChild(projSave);
-  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  dlg.scrollIntoView({ block: "start" });
+  input.onkeydown = event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      modal.actions.querySelector(".btn.primary")?.click();
+    }
+  };
+  return modal;
 }
 
 /**
@@ -5903,7 +6118,7 @@ function buildNewChatMenu(menu) {
     if (!dir) return;
     try {
       const project = await api("/api/projects/save", { root: dir });
-      await loadProjects();
+      await loadProjects(true);
       await newChat(project.id, "work");
       toast("新项目 · " + (project.name || project.root));
     } catch (e) {
@@ -6008,9 +6223,6 @@ function moveSessionDialog(s) {
     toast("还没有项目：先在「新建对话」里点「新建项目…」");
     return;
   }
-  const v = $("view");
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("移到项目"));
   const sel = el("select");
   const none = el("option", null, "未归档（不属于任何项目）");
   none.value = "";
@@ -6021,50 +6233,58 @@ function moveSessionDialog(s) {
     sel.appendChild(o);
   }
   sel.value = s.projectId || "";
-  dlg.appendChild(fieldOf("项目", sel));
-  const row = el("div", "row");
-  const bindSave = btn("保存", "primary", null);
-  bindSave.onclick = () => runGuarded("session:bind:" + s.sessionId, bindSave, "正在保存…", async () => {
-    try {
-      await api("/api/sessions/bind", { sessionId: s.sessionId, projectId: sel.value });
-      dlg.remove();
-      await reloadSessions();
-      toast(sel.value ? ("已归到 " + projectName(sel.value)) : "已移回未归档");
-    } catch (e) { toast("失败：" + e.message); }
+  return openAppModal({
+    title: "移到项目",
+    body: fieldOf("项目", sel),
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {
+        label: "保存",
+        cls: "primary",
+        busyLabel: "正在保存…",
+        errorPrefix: "保存失败：",
+        onClick: async () => {
+          await api("/api/sessions/bind", { sessionId: s.sessionId, projectId: sel.value });
+          await reloadSessions();
+          toast(sel.value ? ("已归到 " + projectName(sel.value)) : "已移回未归档");
+        },
+      },
+    ],
   });
-  row.appendChild(bindSave);
-  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  dlg.scrollIntoView({ block: "start" });
 }
 
 /** 重命名会话：只改列表里的名字，事件与内容一条不动。 */
 function renameSessionDialog(s) {
-  const v = $("view");
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("重命名会话"));
   const input = inputOf("session-rename-input", "新的名字", s.title || "新对话");
-  dlg.appendChild(fieldOf("名字", input));
-  const row = el("div", "row");
-  const submit = async () => {
-    const next = input.value.trim();
-    if (!next) { toast("名字不能为空"); return; }
-    try {
-      await api("/api/sessions/rename", { sessionId: s.sessionId, title: next });
-      dlg.remove();
-      await reloadSessions();
-      toast("已重命名");
-    } catch (e) { toast("重命名失败：" + e.message); }
+  const modal = openAppModal({
+    title: "重命名会话",
+    body: fieldOf("名字", input),
+    initialFocus: input,
+    selectText: true,
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {
+        label: "保存",
+        cls: "primary",
+        busyLabel: "正在保存…",
+        errorPrefix: "重命名失败：",
+        onClick: async () => {
+          const next = input.value.trim();
+          if (!next) { toast("名字不能为空"); input.focus(); return false; }
+          await api("/api/sessions/rename", { sessionId: s.sessionId, title: next });
+          await reloadSessions();
+          toast("已重命名");
+        },
+      },
+    ],
+  });
+  input.onkeydown = event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      modal.actions.querySelector(".btn.primary")?.click();
+    }
   };
-  row.appendChild(btn("保存", "primary", submit));
-  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  dlg.scrollIntoView({ block: "start" });
-  input.focus();
-  input.select();
-  input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+  return modal;
 }
 
 /** 删除会话：删掉这段对话自己的记录，删前说清"别的东西都不动"。 */
@@ -6073,19 +6293,20 @@ function deleteSessionDialog(s) {
     toast("这段会话正在跑，先停止或等它跑完");
     return;
   }
-  const v = $("view");
-  const dlg = el("div", "card dialog");
-  dlg.appendChild(cardHeadOnly("删除这段会话？"));
-  dlg.appendChild(el("p", "muted", "只删这一段对话的记录（" + (s.eventCount || 0) +
-    " 条事件）；知识库、笔记、错题、产物都不动。"));
-  const row = el("div", "row");
-  row.appendChild(btn("删除", "primary danger", async () => {
-    try {
+  return openAppModal({
+    title: "删除这段会话？",
+    body: el("p", "muted", "只删这一段对话的记录（" + (s.eventCount || 0) + " 条事件）；知识库、笔记、错题、产物都不动。"),
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {
+        label: "删除",
+        cls: "primary danger",
+        busyLabel: "正在删除…",
+        errorPrefix: "删除失败：",
+        onClick: async () => {
       await api("/api/sessions/delete", { sessionId: s.sessionId });
       sessionLocalChanges.delete(s.sessionId);
-      dlg.remove();
       if (state.chatSessionId === s.sessionId) {
-        // 删的正是现在打开的这一段：清空并回到新会话空态
         state.chatSessionId = "";
         state.chatTurns = [];
         state.chatEvents = [];
@@ -6095,12 +6316,10 @@ function deleteSessionDialog(s) {
         await reloadSessions();
       }
       toast("已删除");
-    } catch (e) { toast("删除失败：" + e.message); }
-  }));
-  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  dlg.scrollIntoView({ block: "start" });
+        },
+      },
+    ],
+  });
 }
 
 /**
@@ -6932,7 +7151,7 @@ async function branchFromTurn(t, trigger, sid = state.chatSessionId) {
         const d = await api("/api/sessions/branch", { sessionId: sid, turnId });
         state.chatTitleHint = state.chatTitleHint || {};
         if (d.title) state.chatTitleHint[d.sessionId] = d.title;
-        await loadProjects();
+        await loadProjects(true);
         await reloadSessions();
         // A background result must not pull the user away from their current work.
         if (state.chatSessionId === sid && current === "chat" && currentSection !== "overview" &&
@@ -7014,7 +7233,7 @@ PAGES.chat = {
     const renderingGeneration = state.navigationGeneration;
     // 会话总览（原「会话记录」页）并进来的入口：同一个页面，两种视图
     if (currentSection === "overview") { await renderSessionsOverview(); return; }
-    await loadCfg();
+          await loadCfg(true);
     if (renderingGeneration !== state.navigationGeneration) return;
     await loadWebMode(state.chatSessionId);
     if (renderingGeneration !== state.navigationGeneration) return;
@@ -7329,7 +7548,7 @@ PAGES.chat = {
           closeMenu();
           try {
             await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: state.cfg.ttsModelId });
-            await loadCfg();
+          await loadCfg(true);
             paintModelChip();
             state.chatRepaintChips();
             toast("对话模型已切到「" + (m.name || m.id) + "」");
@@ -8245,7 +8464,7 @@ function fillModelForm(m, options = {}) {
 }
 
 async function settingsModels() {
-  await loadCfg();
+          await loadCfg(true);
   // 先用 DocumentFragment 攒起来，设置页再整体塞进右侧内容区
   const v = document.createDocumentFragment();
 
@@ -8722,7 +8941,7 @@ const SETTINGS_SECTIONS = [
 PAGES.settings = {
   async render() {
     const renderingGeneration = state.navigationGeneration;
-    await loadCfg();
+    await loadCfg(true);
     if (renderingGeneration !== state.navigationGeneration) return;
     const sec = SETTINGS_SECTIONS.filter((x) => x.id === currentSection)[0] || SETTINGS_SECTIONS[0];
     if (sec.id === "general") await loadProfile();
@@ -9070,7 +9289,7 @@ async function importKbMaterial(withIndex) {
     const info = (r && r.imported) || {};
     const id = info.id || "";
     state.kb = id || state.kb;
-    await loadCfg();
+    await loadCfg(true);
     if (!id) { toast("导入完成"); if (generation === state.navigationGeneration) await go("settings", "kb"); return; }
     if (withIndex) {
       await buildIndex(id);
@@ -9101,7 +9320,7 @@ function renameKnowledgeBase(kb) {
     save.disabled = true;
     try {
       await api("/api/kb/rename", { id: kb.id, name: name.value.trim() });
-      await loadCfg();
+      await loadCfg(true);
       dialog.close();
       await go("settings", "kb");
       toast("已重命名");
@@ -9178,10 +9397,10 @@ function settingsKb() {
       if (state.kb === k.id) row.appendChild(tag("当前"));
       it.appendChild(row);
       const acts = el("div", "row item-actions");
-      acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", event => buildIndex(k.id, event.currentTarget)));
+      acts.appendChild(managedButton((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", "kb:build:" + k.id, "正在准备…", button => buildIndex(k.id, button)));
       acts.appendChild(btn("重命名", "sm ghost", () => renameKnowledgeBase(k)));
       // 资料散乱时让模型读一遍、给出一份教学目录；建索引时按它组织（结果可清除）
-      acts.appendChild(btn("整理", "sm", event => organizeKb(k.id, event.currentTarget)));
+      acts.appendChild(managedButton("整理", "sm", "kb:organize:" + k.id, "正在整理…", button => organizeKb(k.id, button)));
       if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
       acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
       acts.appendChild(btn("删除", "sm ghost", () => {
@@ -9190,13 +9409,11 @@ function settingsKb() {
           "会把「" + (k.name || k.id) + "」的登记从本机删掉，索引与这一章的学习进度也会一起消失。\n" +
           "你目录里的原始资料不会被删，之后可以重新登记并建立索引。",
           async () => {
-            try {
-              await api("/api/kb/delete", { id: k.id });
-              toast("已删除登记（本机原文件不会被删）");
-              await loadCfg();
-              go("settings", "kb");
-            } catch (e) { toast("删除失败：" + e.message); }
-          });
+            await api("/api/kb/delete", { id: k.id });
+            toast("已删除登记（本机原文件不会被删）");
+            await loadCfg(true);
+            go("settings", "kb");
+          }, {confirmLabel: "删除", busyLabel: "正在删除…", errorPrefix: "删除失败："});
       }));
       it.appendChild(acts);
       kbox.appendChild(it);
@@ -9280,12 +9497,10 @@ async function settingsData() {
       }));
       row.appendChild(btn("删除", "sm ghost", () => {
         confirmDialog("删除这份备份？", "会删掉 " + b.name + "。它只是一份副本，删了不影响当前数据。", async () => {
-          try {
-            await api("/api/maintenance/backups/delete", { name: b.name });
-            toast("已删除备份");
-            go("settings", "data");
-          } catch (e) { toast("删除失败：" + e.message); }
-        });
+          await api("/api/maintenance/backups/delete", { name: b.name });
+          toast("已删除备份");
+          go("settings", "data");
+        }, {confirmLabel: "删除", busyLabel: "正在删除…", errorPrefix: "删除失败："});
       }));
       it.appendChild(row);
       bl.appendChild(it);
@@ -9497,7 +9712,7 @@ async function openQuiz(container, chapter) {
             // 把原题也存下来：以后在错题本里"重做"给的是同一道题，而不是只能对着答案自评
             options: opts, answerIndex: q.answerIndex, explain: q.explain || "", source: q.source || "",
           });
-          await loadReport();
+          await loadReport(true);
           buildNav();
         } catch (e) { /* 记录失败不影响答题 */ }
       };
@@ -9516,44 +9731,49 @@ async function openQuiz(container, chapter) {
 }
 
 function openNoteEditor(note, kbId, chapter, chunk) {
-  const v = $("view");
-  const dlg = el("div", "card dialog");
-  const head = cardHeadOnly(note ? "编辑笔记" : "写笔记");
-  if (chapter) head.appendChild(tag(chapter));
-  if (kbId) head.appendChild(tag(kbName(kbId)));
-  dlg.appendChild(head);
   // 从某个切片进来时，把原文摘录一起带上：笔记以后能追回它到底是哪一段的
   const quote = chunk ? String(chunk.text || "").replace(/\s+/g, " ").slice(0, 160) : "";
   const srcName = chunk ? String(chunk.headingPath || chunk.docTitle || "").split(" > ").pop() : "";
   const title0 = note ? note.title : (chunk ? srcName : "");
   const text0 = note ? (note.text || "")
     : (chunk ? "> 原文摘录（" + (chunk.headingPath || chunk.docTitle || "") + "）：" + quote + "\n\n我的想法：\n" : "");
-  dlg.appendChild(fieldOf("标题", inputOf("nt-title", "这一段的要点", title0)));
+  const titleInput = inputOf("nt-title", "这一段的要点", title0);
   const ta = el("textarea");
   ta.id = "nt-text";
   ta.rows = 8;
   ta.value = text0;
-  dlg.appendChild(fieldOf("内容（支持 Markdown）", ta));
-  const row = el("div", "row");
-  const noteSave = btn("保存", "primary", null);
-  noteSave.onclick = () => runGuarded("note:save:" + (note ? note.id : "new"), noteSave, "正在保存…", async () => {
-    try {
+  const body = document.createDocumentFragment();
+  if (chapter || kbId) {
+    const tags = el("div", "row");
+    if (chapter) tags.appendChild(tag(chapter));
+    if (kbId) tags.appendChild(tag(kbName(kbId)));
+    body.appendChild(tags);
+  }
+  body.append(fieldOf("标题", titleInput), fieldOf("内容（支持 Markdown）", ta));
+  return openAppModal({
+    title: note ? "编辑笔记" : "写笔记",
+    body,
+    wide: true,
+    initialFocus: titleInput,
+    actions: [
+      {label: "取消", cls: "ghost", dismiss: true},
+      {
+        label: "保存",
+        cls: "primary",
+        busyLabel: "正在保存…",
+        errorPrefix: "保存失败：",
+        onClick: async () => {
       await api("/api/study/notes/save", {
         id: note ? note.id : "", kbId: kbId || "", chapter: chapter || "",
-        title: $("nt-title").value.trim(), text: $("nt-text").value,
+        title: titleInput.value.trim(), text: ta.value,
       });
       toast("笔记已保存");
-      dlg.remove();
-      await loadReport();
+      await loadReport(true);
       if (current === "notes") go("notes"); else buildNav();
-    } catch (e) { toast("保存失败：" + e.message); }
+        },
+      },
+    ],
   });
-  row.appendChild(noteSave);
-  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
-  dlg.appendChild(row);
-  v.insertBefore(dlg, v.firstChild);
-  dlg.scrollIntoView({ block: "start" });
-  $("nt-title").focus();
 }
 
 /**
@@ -9565,45 +9785,54 @@ function openNoteEditor(note, kbId, chapter, chunk) {
 async function organizeKb(kbId, trigger) {
   if (!kbId) { toast("先选择一个知识库"); return; }
   return runGuarded("kb:organize:" + kbId, trigger, "正在整理…", async () => {
-  const v = $("view");
-  const card = progressCard("正在整理：「" + kbName(kbId) + "」", ["读资料清单", "让模型给出目录", "校验并落盘"]);
-  v.insertBefore(card, v.firstChild);
-  card.scrollIntoView({ block: "start" });
+  const noticeId = window.LuminNotifications?.start({
+    title: "整理资料",
+    detail: "正在整理「" + kbName(kbId) + "」的章节目录",
+    page: "kb",
+  });
   try {
     const r = await api("/api/kb/organize", { id: kbId });
-    card._stop();
-    card.remove();
-    const box = cardOf({ cls: "dialog ok-dialog", title: "整理好了", tag: r.chapters + " 章", tagCls: "ok" });
-    box.appendChild(el("p", "muted", r.note || ""));
-    box.appendChild(el("p", "muted sm", "章节：" + r.chapters + " · 归入文档：" + r.docs + " 篇" +
+    if (noticeId) window.LuminNotifications.finish(noticeId, "success", "已整理 " + r.chapters + " 章，归入 " + r.docs + " 篇资料");
+    const body = document.createDocumentFragment();
+    body.appendChild(el("p", "muted", r.note || ""));
+    body.appendChild(el("p", "muted sm", "章节：" + r.chapters + " · 归入文档：" + r.docs + " 篇" +
       (r.missing > 0 ? " · 模型没提到的 " + r.missing + " 篇已接在「其他资料」里" : "") +
       (r.dropped > 0 ? " · 丢掉了 " + r.dropped + " 条无效路径" : "")));
-    const row = el("div", "row");
-    const rebuildBtn = btn("重建索引", "primary", null);
-    rebuildBtn.onclick = () => runGuarded("kb:rebuild:" + kbId, rebuildBtn, "正在重建…", async () => { box.remove(); await buildIndex(kbId); });
-    row.appendChild(rebuildBtn);
-    const clearOrg = btn("清除整理", "ghost", null);
-    clearOrg.onclick = () => runGuarded("kb:clear-organize:" + kbId, clearOrg, "正在清除…", async () => {
-      try {
-        await api("/api/kb/organize", { id: kbId, clear: true });
-        toast("已清除，回到按材料标题分章");
-        box.remove();
-        go("settings", "kb");
-      } catch (e) { toast("清除失败：" + e.message); }
+    let modal;
+    modal = openAppModal({
+      title: "整理好了",
+      body,
+      actions: [
+        {
+          label: "重建索引",
+          cls: "primary",
+          busyLabel: "正在重建…",
+          onClick: async () => { modal.close(); await buildIndex(kbId); },
+        },
+        {
+          label: "清除整理",
+          cls: "ghost",
+          busyLabel: "正在清除…",
+          errorPrefix: "清除失败：",
+          onClick: async () => {
+            await api("/api/kb/organize", { id: kbId, clear: true });
+            toast("已清除，回到按材料标题分章");
+            modal.close();
+            go("settings", "kb");
+          },
+        },
+        {label: "关闭", cls: "ghost", dismiss: true},
+      ],
     });
-    row.appendChild(clearOrg);
-    row.appendChild(btn("收起", "ghost", () => box.remove()));
-    box.appendChild(row);
-    v.insertBefore(box, v.firstChild);
     toast("整理完成：" + r.chapters + " 章");
   } catch (e) {
-    card._stop();
-    card.remove();
-    const box = cardOf({ cls: "dialog", title: "整理失败" });
-    box.appendChild(el("p", "muted", e.message));
-    box.appendChild(el("p", "muted sm", "失败不影响原有索引，可以直接重建索引或重试。"));
-    box.appendChild(btn("关闭", "ghost", () => box.remove()));
-    v.insertBefore(box, v.firstChild);
+    if (noticeId) window.LuminNotifications.finish(noticeId, "failed", e.message);
+    const body = el("div");
+    body.append(
+      el("p", "muted", e.message),
+      el("p", "muted sm", "失败不影响原有索引，可以直接重建索引或重试。"),
+    );
+    openAppModal({title: "整理失败", body, actions: [{label: "关闭", cls: "ghost", dismiss: true}]});
     toast("整理失败：" + e.message);
   }
   });
@@ -9612,63 +9841,68 @@ async function organizeKb(kbId, trigger) {
 async function buildIndex(kbId, trigger) {
   if (!kbId) { toast("先选择一个知识库"); return; }
   return runGuarded("kb:build:" + kbId, trigger, "正在准备…", async () => {
-  const v = $("view");
-  const card = progressCard("正在准备资料：「" + kbName(kbId) + "」", ["扫描目录", "按章节整理内容片段", "识别图片（需要视觉模型）", "建立语义搜索（可选）", "写入本机数据库"]);
-  v.insertBefore(card, v.firstChild);
-  card.scrollIntoView({ block: "start" });
+  const noticeId = window.LuminNotifications?.start({
+    title: "准备资料",
+    detail: "正在扫描并索引「" + kbName(kbId) + "」",
+    page: "kb",
+  });
   try {
     const st = await api("/api/kb/build", { id: kbId });
-    card._stop();
-    card.remove();
-    await loadCfg();
-    await loadReport();
-    const box = cardOf({ cls: "dialog ok-dialog", title: "资料准备完成", tag: "已就绪", tagCls: "ok" });
+    if (noticeId) window.LuminNotifications.finish(noticeId, "success", "已就绪：" + (st.docCount || 0) + " 篇资料 / " + (st.chunkCount || 0) + " 个片段");
+    await loadCfg(true);
+    await loadReport(true);
+    const body = document.createDocumentFragment();
     const grid = el("div", "grid grid-4");
     grid.appendChild(statCard("文档", st.docCount || 0, "篇"));
     grid.appendChild(statCard("内容片段", st.chunkCount || 0, "片"));
     grid.appendChild(statCard("图片", st.imageCount || 0, "张"));
     grid.appendChild(statCard("图片描述", st.captioned || 0, "条"));
-    box.appendChild(grid);
+    body.appendChild(grid);
     if (st.embedError) {
       // 向量服务不给 /embeddings 是"少了一种检索方式"，不是"资料准备失败"——用琥珀色说清楚
       const warn = el("div", "skip-note");
       warn.appendChild(el("div", "skip-title", "索引已准备好，暂未开启语义搜索"));
       warn.appendChild(el("div", "muted sm", "原因：" + shortReason(st.embedError) + "（关键词检索照常）"));
-      box.appendChild(warn);
+      body.appendChild(warn);
     } else if (!st.embedded) {
-      box.appendChild(el("p", "muted sm", "没有绑定向量模型，用关键词检索（不影响正常使用）。"));
+      body.appendChild(el("p", "muted sm", "没有绑定向量模型，用关键词检索（不影响正常使用）。"));
     }
     if (st.skippedTotal > 0) {
       // 用户最可能遇到的情况：把 PDF/Word 放进目录却没被读到。静默跳过等于让他以为软件坏了。
       const warn = el("div", "skip-note");
       warn.appendChild(el("div", "skip-title", "有 " + st.skippedTotal + " 个文件没纳入：" + (st.skippedSummary || "")));
       warn.appendChild(el("div", "muted sm", "内核读 Markdown / 文本 / CSV / HTML / 日志 / JSON；PDF、Word、PPT 请先转成 Markdown 或文本。"));
-      box.appendChild(warn);
+      body.appendChild(warn);
     }
-    const row = el("div", "row");
-    row.appendChild(btn("去学 · 练", "primary", () => go("learn")));
-    row.appendChild(btn("去检索", "", () => go("kb")));
-    row.appendChild(btn("收起", "ghost", () => box.remove()));
-    box.appendChild(row);
-    v.insertBefore(box, v.firstChild);
+    openAppModal({
+      title: "资料准备完成",
+      body,
+      actions: [
+        {label: "去学 · 练", cls: "primary", onClick: () => go("learn")},
+        {label: "去检索", cls: "ghost", onClick: () => go("kb")},
+        {label: "关闭", cls: "ghost", dismiss: true},
+      ],
+    });
     toast("资料准备完成：" + st.docCount + " 篇 / " + st.chunkCount + " 片");
     return true;
   } catch (e) {
-    card._stop();
-    card.remove();
-    const box = cardOf({ cls: "dialog", title: "准备资料失败" });
-    box.appendChild(el("p", "muted", e.message));
+    if (noticeId) window.LuminNotifications.finish(noticeId, "failed", e.message);
+    const body = el("div");
+    body.appendChild(el("p", "muted", e.message));
     // 只有"看起来像目录问题"的失败才给目录相关的排查提示；
     // 模型/网络类错误挂一句"目录路径写错"只会把人带偏。
     const dirish = !/模型|接口|embeddings|联网|超时|TLS|connect/i.test(e.message);
-    box.appendChild(el("p", "muted sm", dirish
+    body.appendChild(el("p", "muted sm", dirish
       ? "常见原因：目录路径写错、目录里没有可读的文件、目录不可读。"
       : "这一条不是目录的问题：先按上面的原因处理（例如换成提供该接口的模型，或先取消绑定）。"));
-    const row = el("div", "row");
-    row.appendChild(btn("去检查目录", "primary", () => go("settings", "kb")));
-    row.appendChild(btn("关闭", "ghost", () => box.remove()));
-    box.appendChild(row);
-    v.insertBefore(box, v.firstChild);
+    openAppModal({
+      title: "准备资料失败",
+      body,
+      actions: [
+        {label: "检查目录", cls: "primary", onClick: () => go("kb", "manage")},
+        {label: "关闭", cls: "ghost", dismiss: true},
+      ],
+    });
     toast("资料准备失败：" + e.message);
     return false;
   }

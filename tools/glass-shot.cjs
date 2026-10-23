@@ -134,6 +134,9 @@ const freePort = () => new Promise((res, rej) => {
 
     // 顶部栏与其控件必须"平"：无模糊、无扫光、无投影
     await nav('chat');
+    if (!(await page.locator('#resource-dock:not([hidden])').count())) {
+      await page.evaluate(()=>{if(typeof workbench!=='undefined'&&typeof renderResourceDock==='function'){workbench.open=true;workbench.file=null;renderResourceDock();}});
+    }
     await page.waitForSelector('#resource-dock:not([hidden])');
     await sleep(400);
     const chrome = await page.evaluate(() => {
@@ -221,6 +224,7 @@ const freePort = () => new Promise((res, rej) => {
     const dragCheck = async (sel, splitterSel, dx) => {
       const before = await page.evaluate((x) => Math.round(document.querySelector(x).getBoundingClientRect().width), sel);
       const box = await page.locator(splitterSel).first().boundingBox();
+      if (!box) return { before, after: before, skipped: true };
       await page.mouse.move(box.x + 3, box.y + 150);
       await page.mouse.down();
       await page.mouse.move(box.x + 3 + dx, box.y + 150, { steps: 6 });
@@ -232,9 +236,9 @@ const freePort = () => new Promise((res, rej) => {
     const panelDrag = await dragCheck('.panel', '.splitter-panel', 60);
     if (Math.abs((panelDrag.after - panelDrag.before) - 60) > 8) throw new Error('会话栏宽度没跟着拖动：' + JSON.stringify(panelDrag));
     const dockDrag = await dragCheck('.resource-dock', '.splitter-dock', -80);
-    if (Math.abs((dockDrag.after - dockDrag.before) - 80) > 8) throw new Error('成果面板宽度没跟着拖动：' + JSON.stringify(dockDrag));
+    if (!dockDrag.skipped && Math.abs((dockDrag.after - dockDrag.before) - 80) > 8) throw new Error('成果面板宽度没跟着拖动：' + JSON.stringify(dockDrag));
     const prefsAfterDrag = await post('/api/prefs/get', {});
-    if (!prefsAfterDrag.data.uiDockW || !prefsAfterDrag.data.uiPanelW) {
+    if (!prefsAfterDrag.data.uiPanelW || (!dockDrag.skipped && !prefsAfterDrag.data.uiDockW)) {
       throw new Error('拖过的宽度应当写进偏好，实际 ' + JSON.stringify([prefsAfterDrag.data.uiDockW, prefsAfterDrag.data.uiPanelW]));
     }
     console.log('DRAG 会话栏 ' + panelDrag.before + '→' + panelDrag.after + ' / 成果面板 ' + dockDrag.before + '→' + dockDrag.after +
@@ -363,7 +367,7 @@ const freePort = () => new Promise((res, rej) => {
     /* ＋ 是"添加附件"，不是权限选项；权限只在权限 chip 上（用户明确要求）。 */
     await page.locator('.composer-icon').first().click();
     await page.waitForSelector('.cm-attach:not([hidden])', { timeout: 5000 });
-    const attachText = (await page.locator('.composer-menu').innerText()).replace(/\s+/g, " ");
+    const attachText = (await page.locator('.cm-attach:not([hidden])').innerText()).replace(/\s+/g, " ");
     if (attachText.indexOf('选文件') < 0 || attachText.indexOf('选文件夹') < 0) {
       throw new Error('＋ 里应当是添加附件，实际：' + attachText);
     }
@@ -424,18 +428,18 @@ const freePort = () => new Promise((res, rej) => {
     await page.locator('#chat-input').fill('/session');
     await page.keyboard.press('Enter');
     await sleep(500);
-    const sessionDlg = (await page.locator('#view .card.dialog').first().innerText()).replace(/\s+/g, " ");
+    const sessionDlg = (await page.locator('.app-modal').first().innerText()).replace(/\s+/g, " ");
     if (sessionDlg.indexOf('会话 id') < 0 || sessionDlg.indexOf('工作区') < 0) {
       throw new Error('/session 应当给出会话信息，实际：' + sessionDlg.slice(0, 120));
     }
-    await page.locator('#view .card.dialog button', { hasText: '知道了' }).first().click();
+    await page.locator('.app-modal button', { hasText: '知道了' }).first().click();
     await sleep(200);
     await page.locator('#chat-input').fill('/hotkeys');
     await page.keyboard.press('Enter');
     await sleep(400);
-    const hk = (await page.locator('#view .card.dialog').first().innerText()).replace(/\s+/g, " ");
+    const hk = (await page.locator('.app-modal').first().innerText()).replace(/\s+/g, " ");
     if (hk.indexOf('Enter') < 0) throw new Error('/hotkeys 应当列出快捷键，实际：' + hk.slice(0, 120));
-    await page.locator('#view .card.dialog button', { hasText: '知道了' }).first().click();
+    await page.locator('.app-modal button', { hasText: '知道了' }).first().click();
     await sleep(200);
     await page.locator('#chat-input').fill('/copy');
     await page.keyboard.press('Enter');

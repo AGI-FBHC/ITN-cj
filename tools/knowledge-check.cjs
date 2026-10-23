@@ -90,6 +90,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('counts live in a single pill',pill.includes('1 个知识点')&&pill.includes('0 条手动连接'));
   check('the graph view fills the page without a scrollbar',await page.locator('#view').evaluate(e=>e.scrollHeight<=e.clientHeight+1&&e.scrollWidth<=e.clientWidth+1));
   const samplePos=async(id)=>page.evaluate(nid=>{const p=knowledgeNet.projected.find(x=>x.id===nid);return p?{x:p.x,y:p.y}:null;},id);
+  await sleep(900);
   const drift0=await samplePos(nodeId);await sleep(1300);const drift1=await samplePos(nodeId);
   check('nodes drift slowly while untouched',!!drift0&&!!drift1&&Math.hypot(drift1.x-drift0.x,drift1.y-drift0.y)>0.18);
 
@@ -324,7 +325,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await post('/api/knowledge/note',{id:second,text:'MANUAL-NOTE-2211 删除节点后仍保留'});
   await openNode(second);
   await page.getByRole('button',{name:'删除知识点',exact:true}).click();
-  await page.getByRole('button',{name:'确认删除',exact:true}).click();
+  await page.getByRole('button',{name:'删除',exact:true}).click();
   await until(async()=>(await post('/api/knowledge/graph',{})).nodes.length===2);
   g=await post('/api/knowledge/graph',{});
   check('deleting a node removes it and its links in one step',g.nodes.length===2&&g.links.length===0);
