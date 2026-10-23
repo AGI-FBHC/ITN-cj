@@ -5492,3 +5492,5 @@ read_chunk 读得到原文并带回库标识与正文。
 - 前端子Agent使用ui-ux-pro-max检查规范；真实Edge+隔离仓颉夹具37/37，旧HEAD相同用例在缺少思考菜单处失败，已查看普通/导学浅深主题截图。此类测试验证操作和请求体，不冒充真实计费/模型质量验证。最终复跑与包验收另行追加。
 
 - 最终复验：前端真实Edge37/37第二轮通过；共57项不同核心用例通过，其中19项思考用例在最终代码连续两轮通过。最终release构建成功。最新dist/core真实deepseek复跑通过：low/off并发约3.3s，high续聊约2.4s；新增真实set_reasoning_mode调用把会话下一轮保存off，该轮所有上游请求仍high，证明工具不会中途改变模式。此轮high续聊上游实际上报reasoning=0，按0展示，不假定高档每轮一定产生思考正文。
+
+- 0.8.35 本地交付：功能提交 b96ebba；dist/Lumin-0.8.35/Lumin.exe、dist/Lumin-0.8.35.zip，保留历版、不追加命名后缀。38项发布资产SHA256逐项通过，真实便携EXE在空TEMP数据目录原生启动PRELOAD/TITLEBAR=ok、RESULT=OK；未运行无关Office样张生成。ZIP清单有Lumin.exe及release.json，版本0.8.35/sourceCommit=b96ebba逐项一致。ZIP=231371946 bytes，SHA256=AEF5EE1652C82B915A5228162BD9A382DCD40DA949FBCCE5B6CCE6AA8C753717。仅本地便携目录/ZIP，未制作安装器、推送或发布天翼云。用户原有.taste-skill未修改。
