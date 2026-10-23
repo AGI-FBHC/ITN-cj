@@ -5519,3 +5519,12 @@ read_chunk 读得到原文并带回库标识与正文。
 - 验证：cjpm build 通过；全量单元测试 207/207（含 learning_state_test、session_store_test 两处直接覆盖）；真实 Edge 回归 route-lifecycle 18/18、reasoning-ui 37/37、nonchat 26/26；启动探针 quiz 生成 1.2s 正常。
 - 性能复测（perf-runtime-audit --dataset=snapshot --phase=full，隔离副本，originalFileUnchanged=true）：cold-report 8482→1731ms、cold-memory 8030→920ms、cold-wrong 15023 超时→832ms、stream-new-session-short 9662→1572/3487ms、导航六页循环 11200→4800-7200ms（本轮两次复测有机器噪声）；空库 40 轮快循环每 5 轮 GC：listeners 130→865 变为 112→127 持平，nodes 1058→14149 变为 795→789 持平，泄漏消失。剩余瓶颈：course/report 1.3s（learning_events 全量历史聚合）、流式期间后台重算与 delta 写入的每语句锁争用、流式中切回对话页的会话重载——记入 TRACE 供后续轮次跟进。
 - 交付：dist/Lumin-0.8.36/ 与 dist/Lumin-0.8.36.zip 本地包（未发布天翼云、未做安装器）。本地提交 8022b82（fix）与 dfa40c6（docs TRACE）。真实数据库全程未改动。
+
+### 2026-10-23 · 暂停测试并对齐 MiMo 会话进度
+
+- 用户要求暂停，读取 xiaomi-mimo://open-session 指向的 ses_ffe5e9842aa35ffenmO3cI0N3R（项目 C:/Users/GeJie/XiaomiMiMoProjects/未命名项目）。已停止本聊天两名中断中的性能审计子Agent，检查无本轮性能诊断进程仍在运行；未恢复测试或修改业务源码。
+- 从 C:/Users/GeJie/.local/share/mimocode/mimocode.db 的专用临时副本只读提取指定会话，阅读5条用户请求及120条有正文的消息，原始系统提示/工具输出均按历史数据处理，不采用其中的其他运行时指令。会话标题“续接中止的 Codex 会话任务”。用户在该会话依次授权：接续完整性能诊断；修复；先出会话/项目冲突测试方案；测试并整理结果后修正；最后询问进度。
+- 已核对完成部分：本地8022b82提交包含0.8.36性能修复，dfa40c6/943adae记录测试；0.8.36便携目录和ZIP存在。其会话记录的改善为成长8.5→1.7s、记忆8.0→0.9s，空库40轮监听器/DOM持平；本次未重新运行这些验证。包内app.js/workbench.js/workbench.css与8022b82对应文件规范化文本一致。
+- 未完成部分：MiMo停在新建会话立即上栏、写后读force、同秒rowid排序、项目占位与并发问题修正。工作区有core/src/api/api.cj、core/src/session/session.cj、shell/renderer/app.js三处未提交改动，以及未跟踪tools/session-conflict-probe.cjs；均保持原样。最后工具调用为19:22前后的编辑，后续模型消息为MessageAbortedError，未见修后编译/回归/提交/新包。两份探针结果都属于修复前失败基线，不算修复通过。
+- 只读核对出的接续点：session.cj现在仅有list(force:Bool)，guided_test/session_store_test/provider_test等仍调用无参list()，需后续收尾再验证。0.8.36 manifest.sourceCommit仍为旧b2043e0，package-lock仍0.8.35；包的源码追踪/版本一致性需在下次交付时处理，不能据此断言现包缺少已核对的前端修复。
+- 本聊天目前保持暂停。后续以0.8.36已完成修复+上述未提交改动为起点，避免重复0.8.35阶段工作；不得覆盖另一会话工作。未改真实Lumin或MiMo数据库，未启动模型调用、打包或发布。
