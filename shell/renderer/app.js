@@ -1187,7 +1187,7 @@ function railButton(item) {
   b.onclick = () => {
     if (item.id === "home" && typeof knowledgeNet !== "undefined") {
       state.knowledgeView = "graph";
-      knowledgeNet.introSpinRequested = true;
+      knowledgeNet.introMotionRequested = true;
     }
     go(item.id);
   };

@@ -1048,14 +1048,25 @@ PAGES.notes.render = async function() {
 
 boot();
 
-/* Main-node knowledge network: visual language adapted from the existing web KnowledgeGraph3D.
-   The desktop projection keeps its soft purple orbs and spatial orbit, with no inferred edges.
-   这一页现在是"知识网络"主页：网络图 / 时间线两种视图共用右侧宽抽屉与编辑弹层。 */
-const knowledgeNet={data:{nodes:[],links:[]},selected:'',yaw:.28,pitch:.12,zoom:1,canvas:null,draw:null,projected:[],visible:null,showLinkLabels:true,linkLabels:[],view:'graph',range:0,timeline:null,timelineQuery:'',introSpinRequested:false,autoSpinStart:0,autoSpinUntil:0,userInteracted:false};
+/* Main-node knowledge network.
+   视觉和交互参考 Obsidian Graph view 的克制关系图语言：小型节点、低对比连线、
+   标签渐隐、力导向布局、悬停突出关联；不复制品牌外观，也不自动推断业务连线。
+   网络图 / 时间线两种视图仍共用右侧检查器与编辑弹层。 */
+const knowledgeNet={data:{nodes:[],links:[]},selected:'',hover:'',camera:{x:0,y:0,zoom:1},layout:new Map(),canvas:null,draw:null,fit:null,rebuild:null,projected:[],visible:null,showLinkLabels:true,linkLabels:[],view:'graph',range:0,timeline:null,timelineQuery:'',introMotionRequested:false,introMotionStart:0,introMotionUntil:0,userInteracted:false,alpha:0,reducedMotion:false,pan:null,dragNode:null};
 const KNOWLEDGE_SWATCHES=['#8B7DA8','#5A8DEE','#2FB8A6','#E4B363','#E07A5F','#C77DFF','#7BC96F','#E5679B'];
 function normalizeKnowledgeColor(v){const m=/^#?([0-9a-f]{6})$/i.exec(String(v||'').trim());return m?('#'+m[1].toUpperCase()):'';}
 function knowledgeRgb(node){const c=normalizeKnowledgeColor(node?.color);if(!c)return null;const n=parseInt(c.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255];}
 function knowledgePhase(id){let h=0;const s=String(id||'');for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return (h%1000)/1000*Math.PI*2;}
+function knowledgeHash(value){let h=2166136261;const s=String(value||'');for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function knowledgeParseCssColor(value,fallback){
+  const text=String(value||'').trim(),hex=/^#([0-9a-f]{6})$/i.exec(text);
+  if(hex){const n=parseInt(hex[1],16);return[(n>>16)&255,(n>>8)&255,n&255];}
+  const rgb=/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(text);
+  return rgb?[Number(rgb[1]),Number(rgb[2]),Number(rgb[3])]:fallback;
+}
+function knowledgeRgba(rgb,alpha){return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+alpha+')';}
+function knowledgeScaleRgb(rgb,scale){return rgb.map(v=>Math.max(0,Math.min(255,Math.round(v*scale))));}
+function knowledgeMixRgb(a,b,t){return a.map((v,i)=>Math.round(v+(b[i]-v)*t));}
 function knowledgeQuestion(q){const t=String(q||'');const i=t.indexOf('\n\n知识点背景');return i>0?t.slice(0,i):t;}
 function knowledgeHM(at){const d=new Date(at);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function knowledgeDay(at){const d=new Date(at),t=new Date(),y=new Date(Date.now()-864e5);const same=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();if(same(d,t))return '今天';if(same(d,y))return '昨天';return (d.getMonth()+1)+' 月 '+d.getDate()+' 日';}
@@ -1101,7 +1112,7 @@ async function openKnowledgeLinkSuggestions(button){
 }
 async function refreshKnowledgeNetwork(){
   knowledgeNet.data=await api('/api/knowledge/graph',{});knowledgeNet.visible=null;
-  if(current==='home'){knowledgeNet.draw?.();paintKnowledgePill();}
+  if(current==='home'){knowledgeNet.rebuild?.();knowledgeNet.fit?.(true);knowledgeNet.draw?.();paintKnowledgePill();}
 }
 function knowledgeSwatchRow(picked,onPick){
   const row=el('div','knowledge-color-row'),swatches=[],mark=()=>swatches.forEach(b=>b.classList.toggle('active',b.dataset.color===picked()));
@@ -1112,7 +1123,7 @@ function knowledgeSwatchRow(picked,onPick){
 function knowledgeQuickColor(node,anchor){
   const menu=popoverAt(anchor,(box)=>{
     box.appendChild(el('div','knowledge-pop-title','节点颜色'));
-    const native=el('input');native.type='color';native.className='knowledge-pop-picker';native.value=normalizeKnowledgeColor(node.color)||'#8B7DA8';
+    const native=el('input');native.type='color';native.className='knowledge-pop-picker';native.value=normalizeKnowledgeColor(node.color)||'#6F877E';
     const save=(color)=>runGuarded('knowledge:save:'+node.id,null,null,async()=>{const controls=[...box.querySelectorAll('button,input')];controls.forEach(b=>b.disabled=true);box.setAttribute('aria-busy','true');try{await api('/api/knowledge/save',{id:node.id,title:node.title,definition:node.definition,aliases:node.aliases||[],color});closePopover();await refreshKnowledgeNetwork();await openKnowledgePoint(node.id);toast(color?'已换色 '+color:'已恢复默认色');}catch(e){toast(e.message);}finally{controls.forEach(b=>b.disabled=false);box.removeAttribute('aria-busy');}});
     const row=knowledgeSwatchRow(()=>normalizeKnowledgeColor(node.color),(color)=>{save(color);});
     box.appendChild(row);
@@ -1128,9 +1139,9 @@ function editKnowledgePoint(node){
     const cols=el('div','knowledge-edit-cols'),left=el('div','knowledge-edit-col'),right=el('div','knowledge-edit-col');
     left.append(fieldOf('名称',title),fieldOf('简明定义',definition),fieldOf('确切别名',aliases));
     const orb=el('div','knowledge-preview-orb'),orbName=el('span',null,node?.title || '知识点'),preview=el('div','knowledge-preview');orb.appendChild(orbName);preview.appendChild(orb);
-    const paintOrb=()=>{const rgb=knowledgeRgb({color:picked});orb.style.background=rgb?('radial-gradient(circle at 35% 32%,rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',.95),rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',.5) 62%,rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0))'):'radial-gradient(circle at 35% 32%,rgba(181,170,205,.95),rgba(155,141,184,.5) 62%,rgba(155,141,184,0))';orbName.textContent=title.value.trim()||'知识点';};
-    const native=el('input');native.type='color';native.id='knowledge-color-picker';native.value=picked||'#8B7DA8';native.title='调色盘：选一个自定义颜色';native.setAttribute('aria-label','自定义节点颜色');
-    const row=knowledgeSwatchRow(()=>picked,(color)=>{picked=color;native.value=color||'#8B7DA8';paintOrb();});
+    const paintOrb=()=>{orb.style.background=picked||'#6F877E';orbName.textContent=title.value.trim()||'知识点';};
+    const native=el('input');native.type='color';native.id='knowledge-color-picker';native.value=picked||'#6F877E';native.title='调色盘：选一个自定义颜色';native.setAttribute('aria-label','自定义节点颜色');
+    const row=knowledgeSwatchRow(()=>picked,(color)=>{picked=color;native.value=color||'#6F877E';paintOrb();});
     right.append(fieldOf('节点颜色',row),preview,fieldOf('调色盘',native));
     native.oninput=()=>{picked=native.value.toUpperCase();row.querySelectorAll('.knowledge-swatch').forEach(b=>b.classList.toggle('active',b.dataset.color===picked));paintOrb();};
     title.oninput=paintOrb;paintOrb();
@@ -1178,15 +1189,21 @@ async function askKnowledgePoint(node){
     const validate=()=>{const deleted=!!source.selectedOptions[0]?.disabled;start.disabled=deleted;info.textContent=deleted?'原工作区已删除，请明确选择新的去向。':origin?.workspaceRoot?'来源记录中的目录：'+origin.workspaceRoot:'会建立一段新会话，原对话保持原样。';};source.onchange=validate;validate();panel.append(start,btn('取消','ghost',close));question.focus();
   });
 }
+function refitKnowledgeNetworkSoon(){
+  const fit=()=>{knowledgeNet.fit?.(true);knowledgeNet.draw?.();};
+  requestAnimationFrame(fit);setTimeout(fit,240);
+}
 async function openKnowledgePoint(id){
   if(current!=='home')await go('home');
   const generation=state.navigationGeneration,node=await api('/api/knowledge/node',{id});if(generation!==state.navigationGeneration||current!=='home')return;
   knowledgeNet.selected=id;const drawer=$('knowledge-detail');if(!drawer)return;
+  const selectedLayout=knowledgeNet.layout.get(id);if(selectedLayout){selectedLayout.vx=0;selectedLayout.vy=0;}
   drawer.hidden=false;const workspace=$('knowledge-workspace');workspace?.classList.add('has-detail');drawer.replaceChildren();
+  refitKnowledgeNetworkSoon();
   // 节点色作为抽屉的主题色：头部柔光、色点光环、主操作按钮都跟着它走
-  drawer.style.setProperty('--k-aura',node.color || '#B5AACD');
+  drawer.style.setProperty('--k-aura',node.color || '#6F877E');
   const head=el('div','knowledge-detail-head'),dot=el('button','knowledge-color-dot'+(node.color?'':' hollow'));dot.type='button';dot.title=node.color?('节点颜色 '+node.color+'（点击换色）'):'未设颜色（点击换色）';dot.setAttribute('aria-label','换节点颜色');if(node.color)dot.style.background=node.color;dot.onclick=()=>knowledgeQuickColor(node,dot);
-  const h2=el('h2',null,node.title);const closeBtn=btn('','ghost sm knowledge-close',()=>{drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';knowledgeNet.draw?.();});closeBtn.innerHTML=icon('close');closeBtn.title='收起';closeBtn.setAttribute('aria-label','收起');
+  const h2=el('h2',null,node.title);const closeBtn=btn('','ghost sm knowledge-close',()=>{drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';refitKnowledgeNetworkSoon();});closeBtn.innerHTML=icon('close');closeBtn.title='收起';closeBtn.setAttribute('aria-label','收起');
   head.append(dot,h2,closeBtn);drawer.appendChild(head);
   const sub=el('div','knowledge-detail-sub');sub.appendChild(el('span',null,(node.userEdited?'含本人编辑':'AI 记录')+' · '+node.recordCount+' 次相关讨论'));
   for(const a of (node.aliases || []))sub.appendChild(el('span','knowledge-alias',a));drawer.appendChild(sub);
@@ -1203,7 +1220,7 @@ async function openKnowledgePoint(id){
   if(!node.records?.length)recSec.appendChild(el('p','muted sm','这个知识点由你添加，还没有关联对话。'));
   for(const record of node.records || []){
     const item=el('article','knowledge-record');item.dataset.record=record.id;
-    const rh=el('div','knowledge-record-head');if(record.color||true){const rd=el('span','knowledge-record-dot');rd.style.background=node.color||'#B5AACD';rh.appendChild(rd);}
+    const rh=el('div','knowledge-record-head');if(record.color||true){const rd=el('span','knowledge-record-dot');rd.style.background=node.color||'#6F877E';rh.appendChild(rd);}
     rh.append(el('strong','grow',knowledgeQuestion(record.question)),el('span','muted sm',knowledgeHM(record.at)));item.appendChild(rh);
     item.appendChild(el('p',null,record.note));
     const rf=el('div','knowledge-record-foot');rf.append(el('span','muted sm',record.workspaceName || '普通对话'),el('span','muted grow',record.workspaceRoot || ''));
@@ -1223,7 +1240,7 @@ async function openKnowledgePoint(id){
     body.appendChild(linkSec);
   }
   drawer.appendChild(body);
-  drawer.appendChild(btn('删除知识点','ghost sm knowledge-delete',()=>confirmDialog('删除这个知识点？','将删除节点、关联的AI记录和连线；本人笔记会保留在笔记页。',async()=>{await api('/api/knowledge/delete',{id});drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';await refreshKnowledgeNetwork();})));
+  drawer.appendChild(btn('删除知识点','ghost sm knowledge-delete',()=>confirmDialog('删除这个知识点？','将删除节点、关联的AI记录和连线；本人笔记会保留在笔记页。',async()=>{await api('/api/knowledge/delete',{id});drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';await refreshKnowledgeNetwork();refitKnowledgeNetworkSoon();})));
   knowledgeNet.draw?.();paintKnowledgePill();
 }
 function knowledgeAct(act,label,cls,fn){
@@ -1235,78 +1252,230 @@ function paintKnowledgePill(){
   const pill=$('knowledge-count');if(!pill)return;
   const matched=knowledgeNet.visible?knowledgeNet.visible.length:0;
   const base=knowledgeNet.data.nodes.length+' 个知识点 · '+knowledgeNet.data.links.length+' 条手动连接';
-  pill.textContent=(knowledgeNet.visible?matched+' / '+base:base)+' · 拖动旋转 · 滚轮缩放';
+  const hint=knowledgeNet.view==='graph'?' · 拖动空白处移动 · 滚轮缩放':'';
+  pill.textContent=(knowledgeNet.visible?matched+' / '+base:base)+hint;
 }
 function installKnowledgeCanvas(canvas){
-  const ctx=canvas.getContext('2d'),host=canvas.parentElement;knowledgeNet.canvas=canvas;let hovered='',drag=null;
-  const project=()=>{
-    const nodes=knowledgeNet.visible || knowledgeNet.data.nodes,n=Math.max(1,nodes.length),w=host.clientWidth,h=host.clientHeight,scale=Math.min(w*.34,h*.36)*knowledgeNet.zoom;
-    const tick=performance.now()/1000;
-    knowledgeNet.offsets=knowledgeNet.offsets||{};
-    return nodes.map((node,i)=>{
-      const y=n===1?0:1-2*(i+.5)/n,r=Math.sqrt(Math.max(0,1-y*y)),angle=i*Math.PI*(3-Math.sqrt(5));let x=Math.cos(angle)*r,z=Math.sin(angle)*r;
-      const cy=Math.cos(knowledgeNet.yaw),sy=Math.sin(knowledgeNet.yaw),cp=Math.cos(knowledgeNet.pitch),sp=Math.sin(knowledgeNet.pitch),xx=x*cy+z*sy,zz=z*cy-x*sy,yy=y*cp-zz*sp,depth=y*sp+zz*cp,perspective=3.4/(3.4-depth*.45);
-      // 漂浮：每个节点按自己的相位缓慢浮动；选中的节点冻结在当前偏移（不再动）
-      let off=knowledgeNet.offsets[node.id];
-      if(node.id===knowledgeNet.selected){if(!off){off={x:0,y:0};knowledgeNet.offsets[node.id]=off;}}
-      else{const ph=knowledgePhase(node.id);off={x:Math.sin(tick*.22+ph)*7+Math.sin(tick*.09+ph*2.1)*3,y:Math.cos(tick*.19+ph*1.7)*6+Math.cos(tick*.07+ph*3.3)*2.5};knowledgeNet.offsets[node.id]=off;}
-      return {...node,x:w/2+xx*scale*perspective+off.x,y:h/2+yy*scale*perspective+off.y,z:depth,r:(23+Math.min(7,node.recordCount||0))*perspective,labelW:0};
-    }).sort((a,b)=>a.z-b.z);
-  };
-  const draw=()=>{
-    if(!canvas.isConnected)return;const w=host.clientWidth,h=host.clientHeight,dpr=Math.min(2,devicePixelRatio || 1);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
-    const css=getComputedStyle(document.body),ink=css.getPropertyValue('--ink').trim() || '#203C35',panel=css.getPropertyValue('--panel').trim() || '#ffffff',line=css.getPropertyValue('--line').trim() || '#dddddd',points=project();knowledgeNet.projected=points;
-    const dimmed=knowledgeNet.visible?new Set(knowledgeNet.visible.map(n=>n.id)):null;
-    for(const link of knowledgeNet.data.links){const a=points.find(n=>n.id===link.from),b=points.find(n=>n.id===link.to);if(!a||!b)continue;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle='rgba(139,125,168,.4)';ctx.lineWidth=1.2;ctx.stroke();}
-    knowledgeNet.linkLabels=[];
-    if(knowledgeNet.showLinkLabels){
-      ctx.font='500 11px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-      for(const link of knowledgeNet.data.links){const a=points.find(n=>n.id===link.from),b=points.find(n=>n.id===link.to);if(!a||!b)continue;const text=String(link.label || '关联') || '关联',mx=(a.x+b.x)/2,my=(a.y+b.y)/2,tw=ctx.measureText(text).width+14,th=18;
-        ctx.beginPath();if(ctx.roundRect){ctx.roundRect(mx-tw/2,my-th/2,tw,th,9);}else{ctx.rect(mx-tw/2,my-th/2,tw,th);}ctx.fillStyle=panel;ctx.fill();ctx.strokeStyle=line;ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=ink;ctx.fillText(text,mx,my);knowledgeNet.linkLabels.push({text,from:link.from,to:link.to,x:Math.round(mx),y:Math.round(my)});
+  const ctx=canvas.getContext('2d'),host=canvas.parentElement;knowledgeNet.canvas=canvas;
+
+  const physicsTick=()=>{
+    const nodes=[...knowledgeNet.layout.values()],alpha=knowledgeNet.alpha;
+    if(alpha<.004)return;
+    const n=nodes.length,repel=n>160?620:920;
+    for(let i=0;i<n;i++){
+      const a=nodes[i];
+      for(let j=i+1;j<n;j++){
+        const b=nodes[j];let dx=b.x-a.x,dy=b.y-a.y,d2=dx*dx+dy*dy;
+        if(d2<.01){dx=.1+((knowledgeHash(a.id+b.id)%17)/100);dy=.1;d2=dx*dx+dy*dy;}
+        if(d2>260000)continue;
+        const d=Math.sqrt(d2),force=repel/d2;
+        const fx=dx/d*force,fy=dy/d*force;
+        a.vx-=fx;a.vy-=fy;b.vx+=fx;b.vy+=fy;
       }
     }
-    for(const p of points){const selected=p.id===knowledgeNet.selected,hover=p.id===hovered,r=p.r*(selected||hover?1.16:1),gradient=ctx.createRadialGradient(p.x-r*.2,p.y-r*.2,0,p.x,p.y,r);
-      const base=knowledgeRgb(p)||[169,155,196],deepen=selected?.72:1,ce=[Math.round(base[0]*deepen),Math.round(base[1]*deepen),Math.round(base[2]*deepen)];
-      if(knowledgeRgb(p)||selected){const[cr,cg,cb]=ce;gradient.addColorStop(0,`rgba(${cr},${cg},${cb},${selected?.96:.92})`);gradient.addColorStop(.35,`rgba(${cr},${cg},${cb},.78)`);gradient.addColorStop(.55,`rgba(${cr},${cg},${cb},.56)`);gradient.addColorStop(.72,`rgba(${cr},${cg},${cb},.3)`);gradient.addColorStop(.88,`rgba(${cr},${cg},${cb},.12)`);gradient.addColorStop(1,`rgba(${cr},${cg},${cb},0)`);}
-      else{gradient.addColorStop(0,'rgba(181,170,205,.9)');gradient.addColorStop(.35,'rgba(169,155,196,.78)');gradient.addColorStop(.55,'rgba(155,141,184,.56)');gradient.addColorStop(.72,'rgba(155,141,184,.3)');gradient.addColorStop(.88,'rgba(155,141,184,.12)');gradient.addColorStop(1,'rgba(155,141,184,0)');}
-      ctx.globalAlpha=dimmed&&!dimmed.has(p.id)?0.22:1;
-      ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();
-      if(selected){ctx.beginPath();ctx.arc(p.x,p.y,r*.65,0,Math.PI*2);ctx.strokeStyle='rgba(184,146,70,.8)';ctx.lineWidth=1.5;ctx.stroke();}
-      if(points.length<80||selected||hover||(dimmed&&dimmed.has(p.id))){ctx.fillStyle=ink;ctx.font=(selected||hover?'600 ':'500 ')+(selected?15:13)+'px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';let label=p.title;while(ctx.measureText(label).width>160&&label.length>3)label=label.slice(0,-2)+'…';p.labelW=ctx.measureText(label).width;ctx.fillText(label,p.x,p.y);}
-      ctx.globalAlpha=1;
+    for(const link of knowledgeNet.data.links){
+      const a=knowledgeNet.layout.get(link.from),b=knowledgeNet.layout.get(link.to);if(!a||!b)continue;
+      const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,target=92+Math.min(26,(a.degree+b.degree)*2),force=(d-target)*.00125*alpha;
+      const fx=dx/d*force,fy=dy/d*force;
+      a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;
+    }
+    for(const node of nodes){
+      node.vx-=node.x*.00075*alpha;node.vy-=node.y*.00075*alpha;
+      if(node.id===knowledgeNet.selected||node.id===knowledgeNet.dragNode?.id){node.vx=0;node.vy=0;continue;}
+      node.vx=Math.max(-6,Math.min(6,node.vx*.88));node.vy=Math.max(-6,Math.min(6,node.vy*.88));
+      node.x=Math.max(-2200,Math.min(2200,node.x+node.vx));node.y=Math.max(-2200,Math.min(2200,node.y+node.vy));
+    }
+    knowledgeNet.alpha*=.975;
+  };
+
+  const rebuild=()=>{
+    const old=knowledgeNet.layout instanceof Map?knowledgeNet.layout:new Map(),nodes=knowledgeNet.data.nodes;
+    const degree=new Map(nodes.map(node=>[node.id,0]));
+    for(const link of knowledgeNet.data.links){if(degree.has(link.from))degree.set(link.from,degree.get(link.from)+1);if(degree.has(link.to))degree.set(link.to,degree.get(link.to)+1);}
+    const next=new Map();
+    nodes.forEach((node,index)=>{
+      let item=old.get(node.id);
+      if(!item){
+        const neighbours=knowledgeNet.data.links.flatMap(link=>{
+          if(link.from===node.id&&old.has(link.to))return [old.get(link.to)];
+          if(link.to===node.id&&old.has(link.from))return [old.get(link.from)];
+          return [];
+        });
+        let x,y;
+        if(neighbours.length){x=neighbours.reduce((sum,p)=>sum+p.x,0)/neighbours.length;y=neighbours.reduce((sum,p)=>sum+p.y,0)/neighbours.length;}
+        else{const angle=index*2.399963229728653,radius=34*Math.sqrt(index+1);x=Math.cos(angle)*radius;y=Math.sin(angle)*radius;}
+        const phase=knowledgePhase(node.id);x+=Math.cos(phase)*8;y+=Math.sin(phase)*8;
+        item={id:node.id,x,y,vx:0,vy:0};
+      }
+      item.degree=degree.get(node.id)||0;
+      item.radius=4.6+Math.min(7.5,Math.sqrt(item.degree)*2.45)+Math.min(2.8,Number(node.recordCount||0)*.32);
+      if(node.id===knowledgeNet.selected){item.vx=0;item.vy=0;}
+      next.set(node.id,item);
+    });
+    knowledgeNet.layout=next;knowledgeNet.alpha=1;
+    const settleIterations=nodes.length>160?42:nodes.length>80?68:110;
+    for(let i=0;i<settleIterations;i++)physicsTick();
+    if(knowledgeNet.introMotionRequested){
+      const now=performance.now();knowledgeNet.introMotionRequested=false;knowledgeNet.introMotionStart=now;knowledgeNet.introMotionUntil=now+1700;knowledgeNet.alpha=.72;
+      for(const node of next.values()){const phase=knowledgePhase(node.id);node.vx+=Math.cos(phase)*.42;node.vy+=Math.sin(phase)*.42;}
     }
   };
-  // 命中区 = 光球（比可见半径再放宽一点）∪ 文字标签的包围盒。
-  // 用户经常直接点节点名字：此前只有 24px 光圈算命中，点文字两端就会"点空/点偏"。
+
+  const fit=(force=false)=>{
+    if(knowledgeNet.userInteracted&&!force)return;
+    const nodes=[...knowledgeNet.layout.values()],w=host.clientWidth,h=host.clientHeight;
+    if(!nodes.length||w<2||h<2)return;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const node of nodes){minX=Math.min(minX,node.x-node.radius);minY=Math.min(minY,node.y-node.radius);maxX=Math.max(maxX,node.x+node.radius);maxY=Math.max(maxY,node.y+node.radius);}
+    const spanX=Math.max(80,maxX-minX),spanY=Math.max(80,maxY-minY),padX=Math.min(96,Math.max(48,w*.075)),padY=Math.min(84,Math.max(46,h*.08));
+    const zoom=Math.max(.32,Math.min(1.55,(w-padX*2)/spanX,(h-padY*2)/spanY));
+    knowledgeNet.camera.zoom=zoom;
+    knowledgeNet.camera.x=-((minX+maxX)/2)*zoom;
+    knowledgeNet.camera.y=-((minY+maxY)/2)*zoom;
+  };
+
+  const project=()=>{
+    const nodes=knowledgeNet.visible||knowledgeNet.data.nodes,n=Math.max(1,nodes.length),w=host.clientWidth,h=host.clientHeight,now=performance.now(),zoom=knowledgeNet.camera.zoom;
+    const idle=!knowledgeNet.reducedMotion&&(knowledgeNet.alpha<.9||now>knowledgeNet.introMotionStart+450);
+    return nodes.flatMap(node=>{
+      const item=knowledgeNet.layout.get(node.id);if(!item)return [];
+      const phase=knowledgePhase(node.id),frozen=node.id===knowledgeNet.selected||node.id===knowledgeNet.dragNode?.id;
+      const driftX=idle&&!frozen?Math.sin(now*.00023+phase)*2+Math.sin(now*.00009+phase*2.3)*.6:0;
+      const driftY=idle&&!frozen?Math.cos(now*.0002+phase*1.7)*1.75+Math.cos(now*.000075+phase*3.1)*.5:0;
+      return [{...node,x:w/2+knowledgeNet.camera.x+item.x*zoom+driftX,y:h/2+knowledgeNet.camera.y+item.y*zoom+driftY,r:Math.max(3.8,item.radius*Math.pow(zoom,.34)),degree:item.degree,labelAlpha:0,labelW:0,labelRect:null}];
+    }).sort((a,b)=>a.y-b.y||a.x-b.x);
+  };
+
+  const draw=()=>{
+    if(!canvas.isConnected)return;
+    const w=host.clientWidth,h=host.clientHeight,dpr=Math.min(2,devicePixelRatio||1);
+    if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+    const css=getComputedStyle(document.body),ink=knowledgeParseCssColor(css.getPropertyValue('--ink'),[35,57,51]),panel=knowledgeParseCssColor(css.getPropertyValue('--panel'),[255,255,255]),line=knowledgeParseCssColor(css.getPropertyValue('--line'),[214,222,218]),brand=knowledgeParseCssColor(css.getPropertyValue('--brand'),[64,111,93]);
+    const points=project(),byId=new Map(points.map(point=>[point.id,point])),activeId=knowledgeNet.hover||knowledgeNet.selected,nodes=knowledgeNet.data.nodes.length,visibleSet=knowledgeNet.visible?new Set(knowledgeNet.visible.map(node=>node.id)):null;
+    const neighbours=new Set();if(activeId){neighbours.add(activeId);for(const link of knowledgeNet.data.links){if(link.from===activeId)neighbours.add(link.to);if(link.to===activeId)neighbours.add(link.from);}}
+    knowledgeNet.linkLabels=[];
+    for(const link of knowledgeNet.data.links){
+      const a=byId.get(link.from),b=byId.get(link.to);if(!a||!b)continue;
+      const dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy)||1,bend=(knowledgeHash(link.from+':'+link.to)%2?1:-1)*(9+Math.min(34,distance*.075));
+      const cx=(a.x+b.x)/2+(-dy/distance)*bend,cy=(a.y+b.y)/2+(dx/distance)*bend;
+      const active=!!activeId&&(link.from===activeId||link.to===activeId),searchMuted=visibleSet&&!visibleSet.has(link.from)&&!visibleSet.has(link.to),focusMuted=!!activeId&&!active;
+      const aColor=knowledgeRgb(a)||knowledgeRgb(b)||brand,bColor=knowledgeRgb(b)||aColor,edgeColor=knowledgeMixRgb(aColor,bColor,.45);
+      ctx.save();ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.quadraticCurveTo(cx,cy,b.x,b.y);
+      const passiveEdge=knowledgeMixRgb(line,ink,.18);
+      ctx.strokeStyle=knowledgeRgba(active?edgeColor:passiveEdge,searchMuted?.035:active?.78:focusMuted?.075:.24);
+      ctx.lineWidth=active?1.9:.95;ctx.stroke();
+      if(active){ctx.beginPath();ctx.arc((a.x+2*cx+b.x)/4,(a.y+2*cy+b.y)/4,1.65,0,Math.PI*2);ctx.fillStyle=knowledgeRgba(edgeColor,.9);ctx.fill();}
+      ctx.restore();
+      const labelAllowed=knowledgeNet.showLinkLabels&&!searchMuted&&(active||(knowledgeNet.camera.zoom>=1.24&&nodes<=60));
+      if(labelAllowed){
+        const text=String(link.label||'关联')||'关联',tx=(a.x+2*cx+b.x)/4,ty=(a.y+2*cy+b.y)/4-8;
+        ctx.save();ctx.font='500 11px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        const width=ctx.measureText(text).width;
+        ctx.lineJoin='round';ctx.lineWidth=4;ctx.strokeStyle=knowledgeRgba(panel,.94);ctx.strokeText(text,tx,ty);
+        ctx.fillStyle=active?knowledgeRgba(edgeColor,.96):knowledgeRgba(ink,.62);ctx.fillText(text,tx,ty);ctx.restore();
+        knowledgeNet.linkLabels.push({text,from:link.from,to:link.to,x:Math.round(tx),y:Math.round(ty),active});
+      }
+    }
+    const threshold=nodes<=24?.5:nodes<=60?.82:nodes<=120?1.06:1.3;
+    const fade=Math.max(0,Math.min(1,(knowledgeNet.camera.zoom-threshold)/.22+.28));
+    const importantDegree=Math.max(3,Math.ceil(Math.sqrt(Math.max(1,nodes))));
+    for(const p of points){
+      const selected=p.id===knowledgeNet.selected,hover=p.id===knowledgeNet.hover,searchHit=visibleSet?.has(p.id)||false;
+      const dim=!!activeId&&!neighbours.has(p.id)||!!visibleSet&&!searchHit;
+      const custom=knowledgeRgb(p),base=custom||brand,scale=selected?.8:hover?.9:1,color=knowledgeScaleRgb(base,scale),radius=p.r*(selected?1.38:hover?1.18:1);
+      ctx.save();ctx.globalAlpha=dim?.14:1;
+      if(selected){ctx.beginPath();ctx.arc(p.x,p.y,radius+5,0,Math.PI*2);ctx.strokeStyle=knowledgeRgba(color,.25);ctx.lineWidth=2;ctx.stroke();}
+      ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fillStyle=knowledgeRgba(color,selected?.98:hover?.96:.9);ctx.fill();
+      ctx.strokeStyle=knowledgeRgba(panel,.82);ctx.lineWidth=1.25;ctx.stroke();
+      if(selected||hover){ctx.beginPath();ctx.arc(p.x,p.y,radius+2.2,0,Math.PI*2);ctx.strokeStyle=knowledgeRgba(color,.68);ctx.lineWidth=1.2;ctx.stroke();}
+      const labelAlpha=selected||hover||searchHit?1:dim?0:Math.max(fade,p.degree>=importantDegree?.72:0);
+      if(labelAlpha>.04){
+        let label=String(p.title||'知识点');ctx.font=(selected?'600 13px':'500 12px')+' "Microsoft YaHei",sans-serif';
+        while(ctx.measureText(label).width>170&&label.length>3)label=label.slice(0,-2)+'…';
+        const labelW=ctx.measureText(label).width,toLeft=p.x+radius+9+labelW>w-10,lx=toLeft?p.x-radius-9-labelW:p.x+radius+9,ly=p.y;
+        ctx.globalAlpha=(dim?.1:1)*labelAlpha;ctx.textAlign='left';ctx.textBaseline='middle';ctx.lineJoin='round';ctx.lineWidth=4;
+        ctx.strokeStyle=knowledgeRgba(panel,.92);ctx.strokeText(label,lx,ly);ctx.fillStyle=knowledgeRgba(ink,selected?.98:hover?.94:.78);ctx.fillText(label,lx,ly);
+        p.labelW=labelW;p.labelAlpha=labelAlpha;p.labelRect={x:lx-3,y:ly-9,w:labelW+6,h:18};
+      }
+      ctx.restore();
+    }
+    knowledgeNet.projected=points.slice().sort((a,b)=>{
+      const order=p=>(p.id===knowledgeNet.selected?2:p.id===knowledgeNet.hover?1:0);
+      return order(a)-order(b)||a.y-b.y;
+    });
+  };
+
   const hit=e=>{
     const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
-    // clientX/Y 与 rect 是屏幕 CSS 坐标，节点是 ctx 绘图坐标。
-    // 先按显示尺寸还原到位图，再逆变换掉 DPR；同时覆盖 body.zoom、CSS 缩放与位图取整。
-    // 只减 rect.left/top 在页面缩放 != 100% 时会产生随节点位置增大的偏移。
-    const {x,y}=ctx.getTransform().inverse().transformPoint({
-      x:(e.clientX-rect.left)*canvas.width/rect.width,
-      y:(e.clientY-rect.top)*canvas.height/rect.height
-    });
+    const x=(e.clientX-rect.left)*canvas.clientWidth/rect.width,y=(e.clientY-rect.top)*canvas.clientHeight/rect.height;
     return [...knowledgeNet.projected].reverse().find(p=>{
-      const dx=Math.abs(p.x-x),dy=Math.abs(p.y-y),r=Math.max(26,p.r+2);
-      if(dx*dx+dy*dy<r*r){return true;}
-      return p.labelW>0&&dx<=p.labelW/2+8&&dy<=13;
-    });};
-  canvas.onpointerdown=e=>{knowledgeNet.userInteracted=true;knowledgeNet.autoSpinUntil=0;drag={x:e.clientX,y:e.clientY,moved:false,dist:0};canvas.setPointerCapture(e.pointerId);};
-  canvas.onpointermove=e=>{if(drag){
-      const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.dist+=Math.abs(dx)+Math.abs(dy);
-      // 4px 死区：手抖不转相机（否则每次想点节点都会把视角蹭偏，"定位飘"就是这么来的）
-      if(drag.dist>4){drag.moved=true;knowledgeNet.yaw+=dx*.006;knowledgeNet.pitch=Math.max(-1.25,Math.min(1.25,knowledgeNet.pitch+dy*.006));draw();}
-      drag.x=e.clientX;drag.y=e.clientY;
-    }else{const p=hit(e);if((p?.id || '')!==hovered){hovered=p?.id || '';canvas.style.cursor=p?'pointer':'grab';canvas.title=p?.title || '拖动旋转，滚轮缩放';draw();}}};
-  // 6px 以内的抖动仍算"点击"（选节点优先于转视角）；超过 6px 才认定是拖拽
-  canvas.onpointerup=e=>{const wasDrag=drag&&drag.dist>6;drag=null;if(!wasDrag){const node=hit(e);if(node)openKnowledgePoint(node.id).catch(err=>toast(err.message));}};canvas.onpointercancel=()=>{drag=null;};
-  canvas.addEventListener('wheel',e=>{e.preventDefault();knowledgeNet.userInteracted=true;knowledgeNet.autoSpinUntil=0;knowledgeNet.zoom=Math.max(.55,Math.min(1.8,knowledgeNet.zoom*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
-  knowledgeNet.stop?.();
-  state.knowledgeObserver?.disconnect();state.knowledgeObserver=new ResizeObserver(draw);state.knowledgeObserver.observe(host);knowledgeNet.draw=draw;
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(reduced){draw();}
-  else{let raf=0;const frame=()=>{raf=0;if(!canvas.isConnected){return;}const now=performance.now();if(!knowledgeNet.userInteracted && knowledgeNet.autoSpinUntil>now){const progress=Math.max(0,Math.min(1,(now-knowledgeNet.autoSpinStart)/3200));knowledgeNet.yaw+=.0042*Math.pow(1-progress,1.8);}draw();raf=requestAnimationFrame(frame);};raf=requestAnimationFrame(frame);knowledgeNet.stop=()=>{if(raf)cancelAnimationFrame(raf);raf=0;};}
+      const r=Math.max(13,p.r+5);
+      if((p.x-x)**2+(p.y-y)**2<r*r)return true;
+      const label=p.labelRect;
+      return !!label&&x>=label.x&&x<=label.x+label.w&&y>=label.y&&y<=label.y+label.h;
+    });
+  };
+
+  canvas.onpointerdown=e=>{
+    if(e.button!==0)return;
+    knowledgeNet.userInteracted=true;knowledgeNet.introMotionUntil=0;
+    const node=hit(e);canvas.setPointerCapture(e.pointerId);
+    if(node){
+      const item=knowledgeNet.layout.get(node.id);
+      knowledgeNet.dragNode={id:node.id,startX:e.clientX,startY:e.clientY,x:item?.x||0,y:item?.y||0,moved:false};
+      canvas.style.cursor='grabbing';
+    }else{
+      knowledgeNet.pan={x:e.clientX,y:e.clientY,cameraX:knowledgeNet.camera.x,cameraY:knowledgeNet.camera.y,moved:false};
+      canvas.style.cursor='grabbing';
+    }
+  };
+  canvas.onpointermove=e=>{
+    if(knowledgeNet.dragNode){
+      const drag=knowledgeNet.dragNode,dx=e.clientX-drag.startX,dy=e.clientY-drag.startY;
+      if(Math.hypot(dx,dy)>5){drag.moved=true;const item=knowledgeNet.layout.get(drag.id);if(item){item.x=drag.x+dx/knowledgeNet.camera.zoom;item.y=drag.y+dy/knowledgeNet.camera.zoom;item.vx=0;item.vy=0;}draw();}
+      return;
+    }
+    if(knowledgeNet.pan){
+      const pan=knowledgeNet.pan,dx=e.clientX-pan.x,dy=e.clientY-pan.y;
+      if(Math.abs(dx)+Math.abs(dy)>3)pan.moved=true;
+      knowledgeNet.camera.x=pan.cameraX+dx;knowledgeNet.camera.y=pan.cameraY+dy;draw();return;
+    }
+    const node=hit(e),next=node?.id||'';
+    if(next!==knowledgeNet.hover){knowledgeNet.hover=next;canvas.style.cursor=next?'pointer':'grab';canvas.title=next?.title||'拖动空白处移动，滚轮缩放';draw();}
+  };
+  canvas.onpointerup=e=>{
+    const drag=knowledgeNet.dragNode;
+    knowledgeNet.dragNode=null;knowledgeNet.pan=null;canvas.style.cursor=hit(e)?'pointer':'grab';
+    if(drag&&!drag.moved)openKnowledgePoint(drag.id).catch(err=>toast(err.message));
+  };
+  canvas.onpointercancel=()=>{knowledgeNet.dragNode=null;knowledgeNet.pan=null;canvas.style.cursor='grab';};
+  canvas.onpointerleave=()=>{if(!knowledgeNet.dragNode&&!knowledgeNet.pan&&knowledgeNet.hover){knowledgeNet.hover='';canvas.style.cursor='grab';draw();}};
+  canvas.oncontextmenu=e=>e.preventDefault();
+  canvas.addEventListener('wheel',e=>{
+    e.preventDefault();knowledgeNet.userInteracted=true;knowledgeNet.introMotionUntil=0;
+    const rect=canvas.getBoundingClientRect(),sx=(e.clientX-rect.left)*canvas.clientWidth/rect.width,sy=(e.clientY-rect.top)*canvas.clientHeight/rect.height;
+    const oldZoom=knowledgeNet.camera.zoom,newZoom=Math.max(.28,Math.min(2.8,oldZoom*Math.exp(-e.deltaY*.0012)));
+    const worldX=(sx-host.clientWidth/2-knowledgeNet.camera.x)/oldZoom,worldY=(sy-host.clientHeight/2-knowledgeNet.camera.y)/oldZoom;
+    knowledgeNet.camera.zoom=newZoom;knowledgeNet.camera.x=sx-host.clientWidth/2-worldX*newZoom;knowledgeNet.camera.y=sy-host.clientHeight/2-worldY*newZoom;draw();
+  },{passive:false});
+  canvas.ondblclick=e=>{if(!hit(e)){knowledgeNet.userInteracted=false;fit(true);draw();}};
+
+  knowledgeNet.stop?.();state.knowledgeObserver?.disconnect();
+  knowledgeNet.rebuild=rebuild;knowledgeNet.fit=fit;knowledgeNet.draw=draw;
+  knowledgeNet.reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  rebuild();fit(true);draw();
+  state.knowledgeObserver=new ResizeObserver(()=>{fit(false);draw();});state.knowledgeObserver.observe(host);
+  if(!knowledgeNet.reducedMotion){
+    let raf=0,last=performance.now(),physicsAccumulator=0;
+    const frame=now=>{
+      if(!canvas.isConnected)return;
+      const elapsed=Math.min(50,now-last);last=now;physicsAccumulator+=elapsed;
+      if(physicsAccumulator>=32){physicsTick();physicsAccumulator=0;}
+      draw();raf=requestAnimationFrame(frame);
+    };
+    raf=requestAnimationFrame(frame);knowledgeNet.stop=()=>{if(raf)cancelAnimationFrame(raf);raf=0;};
+  }
 }
 function renderKnowledgeGraphStage(stage){
   const scene=el('div','knowledge-scene'),canvas=el('canvas','knowledge-canvas');canvas.setAttribute('aria-hidden','true');scene.appendChild(canvas);
@@ -1384,9 +1553,8 @@ async function setKnowledgeView(view){
 const homeBeforeKnowledgeNetwork=PAGES.home.render;
 PAGES.home.render=async function(){
   const generation=state.navigationGeneration;await homeBeforeKnowledgeNetwork.call(this);if(generation!==state.navigationGeneration)return;
-  if(knowledgeNet.introSpinRequested){
-    state.knowledgeView='graph';knowledgeNet.introSpinRequested=false;knowledgeNet.userInteracted=false;
-    knowledgeNet.yaw=.28;knowledgeNet.autoSpinStart=performance.now();knowledgeNet.autoSpinUntil=knowledgeNet.autoSpinStart+3200;
+  if(knowledgeNet.introMotionRequested){
+    state.knowledgeView='graph';knowledgeNet.introMotionRequested=false;knowledgeNet.userInteracted=false;knowledgeNet.hover='';
   }
   knowledgeNet.view=state.knowledgeView==='timeline'?'timeline':'graph';
   knowledgeNet.showLinkLabels=state.knowledgeLinkLabels!==false;knowledgeNet.linkLabels=[];
@@ -1403,9 +1571,9 @@ PAGES.home.render=async function(){
   const actions=el('div','knowledge-toolbar-actions');
   if(knowledgeNet.view==='graph'){
     const labelToggle=btn('','ghost sm knowledge-labels-toggle',()=>{const next=!knowledgeNet.showLinkLabels;knowledgeNet.showLinkLabels=next;state.knowledgeLinkLabels=next;savePrefs({knowledgeLinkLabels:next?'1':'0'});syncLabelToggle();knowledgeNet.draw?.();});
-    const syncLabelToggle=()=>{const on=knowledgeNet.showLinkLabels;labelToggle.setAttribute('aria-pressed',on?'true':'false');const tip=on?'关系说明：显示中，点击隐藏':'关系说明：已隐藏，点击显示';labelToggle.title=tip;labelToggle.setAttribute('aria-label',tip);};
+    const syncLabelToggle=()=>{const on=knowledgeNet.showLinkLabels;labelToggle.setAttribute('aria-pressed',on?'true':'false');const tip=on?'关系说明：按需显示，点击隐藏':'关系说明：已隐藏，点击显示';labelToggle.title=tip;labelToggle.setAttribute('aria-label',tip);};
     labelToggle.innerHTML=icon('label');syncLabelToggle();
-    const reset=btn('','ghost sm knowledge-reset',()=>{knowledgeNet.yaw=.28;knowledgeNet.pitch=.12;knowledgeNet.zoom=1;knowledgeNet.draw?.();});reset.innerHTML=icon('refresh');reset.title='重置视角';reset.setAttribute('aria-label','重置视角');
+    const reset=btn('','ghost sm knowledge-reset',()=>{knowledgeNet.userInteracted=false;knowledgeNet.fit?.(true);knowledgeNet.draw?.();});reset.innerHTML=icon('refresh');reset.title='适配画布';reset.setAttribute('aria-label','适配画布');
     actions.append(labelToggle,reset);
   }
   const suggestLinks=btn('连线建议','ghost sm',()=>openKnowledgeLinkSuggestions(suggestLinks));

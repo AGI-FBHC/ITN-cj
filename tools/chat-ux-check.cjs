@@ -171,10 +171,8 @@ async function main() {
 
       await page.locator('#rail [data-page="home"]').click();
       await page.waitForSelector('#knowledge-workspace canvas', {timeout: 15000});
-      const yawBefore = await page.evaluate(() => knowledgeNet.yaw);
-      await page.waitForTimeout(500);
-      const yawAfter = await page.evaluate(() => knowledgeNet.yaw);
-      check('learning network uses graph view with an intro camera spin', Math.abs(yawAfter - yawBefore) > .01, String(yawAfter - yawBefore));
+      const graphMode = await page.evaluate(() => ({view:knowledgeNet.view,legacyOrbit:'yaw' in knowledgeNet||'pitch' in knowledgeNet,camera:!!knowledgeNet.camera}));
+      check('learning network opens as a force graph without camera orbit', graphMode.view==='graph'&&!graphMode.legacyOrbit&&graphMode.camera, JSON.stringify(graphMode));
 
       await page.locator('#rail [data-page="kb"]').click();
       await page.waitForSelector('.kb-workspace-tabs', {timeout: 15000});
