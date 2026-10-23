@@ -5461,3 +5461,17 @@ read_chunk 读得到原文并带回库标识与正文。
 - 按既定双下载发布流程，将 ZIP 在安装器压缩时提前上传暂存，安装器构建/验收与上传并行；两个文件上传前后 SHA256 一致才从 incoming 原子移入 releases。发布页/服务代码未改，无需重启下载服务或重新上传大包；公网页面 v0.8.34、安装器和 ZIP 两条 HEAD 均 200。不做整包公网重复下载，也不重做模型/课程/PPT昂贵测试。
 - 下载页仍为 http://113.249.102.41:6025/；安装器 Lumin-Setup-0.8.34.exe、便携包 Lumin-0.8.34.zip，均不加额外命名后缀。更新后需退出旧版再启动新版，原 400 会话可直接输入“继续”使用，无须清空聊天记录。
 - 文件校验：安装器 155778160 bytes，SHA256=5D152D65DFFBCD5DE4EEDE5938AFC3558AB1EBB8D86956F1920AF85832CC6F4C；ZIP 231333302 bytes，SHA256=2BF9D11CC771D2A68A170D11E62C9FBA0CEB50BFED6D9A0A66EA5425FE17FAF3。
+
+### 2026-10-23 · 思考深度模式调研（未实施）
+
+- 用户本轮要求“能否添加思考深度模式，先帮我调研下”；范围为官方资料调研与桌面端只读代码核对，不授权本轮直接增加功能、升级版本、重打包或发布。未运行付费真实模型请求，未访问真实用户学习数据库或输出密钥。
+- 已读取 agent-reach 与 OpenAI Docs 技能。agent-reach 指定的 Exa 路由在本机未配置（Unknown MCP server exa），改用可用搜索服务检索并实际打开厂商官方文档；Jina 对旧 MiMo 文档路径读取未得到正文，不以该空结果作为证据。
+- 官方资料：DeepSeek https://api-docs.deepseek.com/guides/thinking_mode/，当前官方 deepseek-flash 支持 thinking enabled/disabled，reasoning_effort 为 low/high/max；携 tools 的多轮请求须按文档完整回传 reasoning_content。第三方网关同名模型不等于已经验证支持透传。
+- OpenAI https://developers.openai.com/api/docs/guides/reasoning?api-mode=chat：Chat Completions 使用 reasoning_effort，Responses 使用 reasoning.effort，可用档位与关闭能力依具体模型；GPT-6 Astra/6.1 Sol 的工具调用需 Responses。深度、总输出上限、正文长度是不同控制；思考 token 属输出计费与预算，不能把思考用量重复加到已含它的输出总数。
+- Qwen https://www.alibabacloud.com/help/en/model-studio/deep-thinking：支持的混合思考模型有 enable_thinking 与 thinking_budget；预算是思考 token 上限，不保证用足，按模型版本区分支持情况。
+- MiMo https://mimo.mi.com/docs/en-US/api/chat/responses：文档明确当前 none 关闭思考，其余 effort 有效值均启用相同思考行为，暂不区分实际强度。不可据字段接受多个枚举就设计成多个有实质差异的档位；现阶段建议默认/关闭/开启。
+- Claude https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost：新模型以自适应思考与 output_config.effort 调节，档位依模型；当前桌面端只走 OpenAI 兼容协议，Claude 原生接口应作为后续适配范围，不宣称已直连支持。
+- 代码核对：core/src/store/store.cj 的 ModelConfig 暂无 thinking/effort/budget 配置；core/src/model_provider/provider.cj 能读 reasoning_content，默认输出8192，MiMo纯思考客户端字节上限24000，不是 token 预算，恢复路径会扩额度并关闭思考。该逻辑需与显式深度选择协调，不能用户选深度却无提示降级。当前 reasoning_content 回传仅对含 mimo 的工具调用 assistant 做专门处理，需按具体厂商的工具历史规则扩展。
+- 普通聊天、资源/课程生成走 OpenAiChatProvider；学习协作树 core/src/agent/learning_team.cj 和 PPT 子任务等还走 core/src/llm/llm.cj 的 LlmClient。应在仓颉抽取共享请求参数适配，防止主会话设置生效而子任务失效；不能只改 renderer 按钮。现有统计仅输入/输出，单独思考用量需要解析接口提供的 usage 细项，缺失不能由字节/字数伪造。
+- 建议方案：输入区模型选择旁增加简洁“思考”菜单，默认跟随模型且不额外发送参数；按“服务商/网关+协议+具体模型”能力只列真实支持选项。每会话独立，发送时固化设置，工具续接同轮不变，切换会话不互相覆盖。先支持对话与随课导学、明确继承的协作子任务；知识库索引/embedding/TTS不受会话深度影响。同步提供Lumin读取当前模式与经用户明确要求设置模式的工具，沿用权限规则。
+- 后续若用户要求实施：先更新本地接口契约，再做能力识别与两条调用链适配、会话保存及UI；优先真实验证现有模型网关，至少覆盖简单问答、复杂推理、并行工具及续聊、跨会话不同深度、切模型不支持参数、停止/重试。比较首个正文耗时与真实usage，不能仅凭参数返回200认定档位有效。用户当前尚未批准实施，无业务代码/版本/程序包变更。
