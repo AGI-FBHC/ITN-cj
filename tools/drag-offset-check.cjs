@@ -151,7 +151,9 @@ const freePort=()=>new Promise(resolve=>{
 
       await page.evaluate(()=>go('home'));
       await page.waitForSelector('.knowledge-canvas');
-      await page.evaluate(id=>{knowledgeNet.selected=id;knowledgeNet.userInteracted=false;knowledgeNet.fit(true);knowledgeNet.draw();},nodes[0]);
+      // 这是坐标换算回归，不是动效回归。先关闭节点允许的缓慢漂移，
+      // 否则几像素的视觉浮动会混进 80/40px 的指针位移断言。
+      await page.evaluate(id=>{knowledgeNet.reducedMotion=true;knowledgeNet.selected=id;knowledgeNet.userInteracted=false;knowledgeNet.fit(true);knowledgeNet.draw();},nodes[0]);
       await sleep(80);
       const probe=await page.evaluate(id=>{
         const node=knowledgeNet.projected.find(item=>item.id===id),canvas=document.querySelector('.knowledge-canvas').getBoundingClientRect();
