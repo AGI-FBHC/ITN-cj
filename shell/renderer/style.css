@@ -1303,6 +1303,49 @@ body.panel-hidden #rail-toggle { background: var(--rail-hi); color: var(--brand)
 .settings-head h2 { margin: 0 0 4px; font-size: calc(17px * var(--fs, 1)); font-weight: 650; letter-spacing: -.01em; }
 .settings-head p { margin: 0; color: var(--muted); font-size: calc(13px * var(--fs, 1)); }
 
+/* 模型配置：常用三项直接填写，其他能力按需展开。 */
+.model-form .presets { margin: 4px 0 20px; gap: 8px; }
+.model-form .presets-label { margin-right: 4px; color: var(--ink-2); }
+.model-form .chip { border-radius: 8px; font-size: calc(14px * var(--fs, 1)); }
+.model-form .field label, .model-disclosure .field label {
+  color: var(--ink-2); font-size: calc(14px * var(--fs, 1)); margin-bottom: 8px;
+}
+.model-form .field { margin-bottom: 16px; min-width: 0; }
+.model-form input, .model-form select, .model-disclosure input, .model-disclosure select { width: 100%; min-width: 0; }
+.model-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+.model-disclosure > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  color: var(--ink); font-size: calc(14px * var(--fs, 1)); font-weight: 600;
+  list-style: none; cursor: pointer; padding: 4px 0;
+}
+.model-disclosure > summary::-webkit-details-marker, .model-more > summary::-webkit-details-marker { display: none; }
+.model-disclosure > summary::after {
+  content: ''; width: 7px; height: 7px; flex: 0 0 7px; margin-right: 3px;
+  border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+}
+.model-disclosure[open] > summary::after { transform: rotate(45deg); }
+.model-disclosure > summary:focus-visible, .model-more > summary:focus-visible {
+  outline: 2px solid var(--brand); outline-offset: 4px; border-radius: 4px;
+}
+.model-advanced { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 4px; }
+.model-disclosure-body { padding-top: 18px; }
+.model-group-title { margin: 4px 0 16px; font-size: calc(14px * var(--fs, 1)); font-weight: 600; }
+.model-preset-note, .model-field-hint {
+  margin: 0 0 16px; color: var(--muted); font-size: calc(14px * var(--fs, 1)); line-height: 1.6;
+}
+.model-field-hint { margin: 8px 0 0; }
+.model-form-actions { margin-top: 20px; }
+.model-form-error { color: var(--danger); font-size: calc(14px * var(--fs, 1)); margin: 16px 0 0; }
+.model-item .grow { min-width: 0; }
+.model-item .item-title, .model-item .meta { overflow-wrap: anywhere; }
+.model-more > summary { list-style: none; cursor: pointer; }
+.model-more[open] { flex-basis: 100%; }
+.model-more-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+@media (max-width: 700px) {
+  .model-fields { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* 主题三档：每档给一个小色卡，选中的描一圈绿边 */
 .theme-picker { display: flex; gap: 10px; flex-wrap: wrap; }
 .theme-card {

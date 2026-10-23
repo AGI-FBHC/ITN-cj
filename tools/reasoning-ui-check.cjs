@@ -192,16 +192,18 @@ const until = async (fn, label, ms = 10000) => {
     }
     check('both theme surfaces actually differ', colours[0] !== colours[1]);
 
-    await page.evaluate(() => go('settings','models')); await page.waitForSelector('#m-reasoning-profile');
+    await page.evaluate(() => go('settings','models')); await page.waitForSelector('#m-advanced'); await page.locator('#m-advanced > summary').click(); await page.waitForSelector('#m-reasoning-profile', {state:'visible'});
     check('new model form defaults to the safe default profile', await page.locator('#m-reasoning-profile').inputValue() === 'auto' &&
       JSON.stringify(await page.locator('#m-reasoning-profile option').evaluateAll(xs => xs.map(x => x.value))) === JSON.stringify(['auto','deepseek','mimo','qwen-budget','openai','none']) &&
-      JSON.stringify(await page.locator('#m-reasoning-profile option').evaluateAll(xs => xs.map(x => x.textContent))) === JSON.stringify(['默认','DeepSeek','MiMo','Qwen','OpenAI','不启用思考']) &&
-      (await page.locator('#m-reasoning-profile').locator('xpath=following-sibling::p').innerText()).includes('未适配的网关不会额外发送'));
+      JSON.stringify(await page.locator('#m-reasoning-profile option').evaluateAll(xs => xs.map(x => x.textContent))) === JSON.stringify(['默认','DeepSeek','MiMo','Qwen','OpenAI','接口默认']) &&
+      (await page.locator('#m-reasoning-profile').locator('xpath=following-sibling::p').innerText()).includes('不额外发送思考参数'));
     await page.locator('#m-reasoning-profile').selectOption('deepseek');
     check('selecting an adapted vendor explains its actual controls', (await page.locator('#m-reasoning-profile').locator('xpath=following-sibling::p').innerText()).includes('低、高、极深'));
     await page.locator('#m-reasoning-profile').selectOption('none');
-    check('explicitly disabling thinking is distinct from the default profile', (await page.locator('#m-reasoning-profile').locator('xpath=following-sibling::p').innerText()).includes('任何接口都不发送'));
-    await page.locator('.item').filter({hasText:'本地仓颉检查模型'}).getByRole('button',{name:'填到表单',exact:true}).click();
+    check('interface-default profile sends no extra reasoning parameters without claiming vendor reasoning is off', (await page.locator('#m-reasoning-profile').locator('xpath=following-sibling::p').innerText()).includes('由接口决定是否思考'));
+    await page.locator('.item').filter({hasText:'本地仓颉检查模型'}).getByRole('button',{name:'编辑',exact:true}).click();
+    if (!(await page.locator('#m-advanced').evaluate(e => e.open))) await page.locator('#m-advanced > summary').click();
+    await page.waitForSelector('#m-reasoning-profile', {state:'visible'});
     await page.locator('#m-reasoning-profile').selectOption('mimo'); await page.getByRole('button',{name:'保存模型',exact:true}).click();
     await until(() => modelSaves.length > 0, 'model save');
     check('reasoningProfile is submitted in the existing full model save', modelSaves.at(-1).reasoningProfile === 'mimo' && modelSaves.at(-1).model === originalModel.model && modelSaves.at(-1).baseUrl === originalModel.baseUrl);

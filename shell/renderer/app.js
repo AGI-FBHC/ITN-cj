@@ -1011,7 +1011,7 @@ function createReasoningControl(getKey) {
         await go('settings', 'models');
         if (current !== 'settings' || currentSection !== 'models') return;
         const model = state.cfg.models.find(m => m.id === modelId);
-        if (model && $('m-reasoning-profile')) { fillModelForm(model); $('m-reasoning-profile').focus(); }
+        if (model && $('m-reasoning-profile')) { fillModelForm(model, { reasoning: true }); $('m-reasoning-profile').focus(); }
       }); configure.setAttribute('role', 'menuitem'); menu.appendChild(configure);
     }
     if (open && focusedMode != null) menu.querySelectorAll('[data-mode]').forEach(b => { if (b.dataset.mode === focusedMode && !b.disabled) b.focus(); });
@@ -8164,7 +8164,7 @@ const MODEL_PRESETS = [
     vision: "mimo-v2.6-pro",
     embed: "",
     reasoningProfile: "mimo",
-    note: "日常问答与生成用 mimo-v2.6-flash，便宜且快；切片与图片描述走 mimo-v2.6-pro。该服务不提供 /embeddings，向量模型留空即可——知识库会自动退回关键词检索。",
+    note: "填写 MiMo TokenPlan 密钥即可。",
   },
   {
     key: "mimo-pro",
@@ -8176,7 +8176,7 @@ const MODEL_PRESETS = [
     vision: "mimo-v2.6-pro",
     embed: "",
     reasoningProfile: "mimo",
-    note: "全部用 mimo-v2.6-pro：理解更稳、讲义更完整，单次耗时也更长。",
+    note: "填写 MiMo TokenPlan 密钥即可。",
   },
   {
     key: "deepseek",
@@ -8187,7 +8187,7 @@ const MODEL_PRESETS = [
     model: "deepseek-chat",
     vision: "",
     embed: "",
-    note: "DeepSeek 提供对话与推理；要读图里的内容，需要另配一个多模态服务。",
+    note: "填写 DeepSeek API 密钥即可。",
   },
   {
     key: "mimo-tts",
@@ -8202,18 +8202,18 @@ const MODEL_PRESETS = [
     ttsVoice: "苏打",
     ttsFormat: "wav",
     ttsProtocol: "mimo",
-    note: "独立朗读配置：使用 MiMo 语音服务的密钥；不要和 TokenPlan 对话密钥混用。保存后到「用途绑定」设为语音朗读。",
+    note: "使用 MiMo 语音密钥，与 TokenPlan 密钥不同。",
   },
   {
     key: "custom",
-    label: "兼容服务",
+    label: "自定义",
     id: "",
     name: "",
     base: "",
     model: "",
     vision: "",
     embed: "",
-    note: "任何兼容 /chat/completions 的服务都能用；如果它同时提供 /embeddings，把向量模型填上就能用向量检索。",
+    note: "填写兼容 OpenAI 的接口地址与模型名称。",
   },
 ];
 
@@ -8227,14 +8227,21 @@ PAGES.models = {
   async render() { await go("settings", "models", { replace: true }); },
 };
 
-function fillModelForm(m) {
+function fillModelForm(m, options = {}) {
   for (const [id, value] of Object.entries({
     'm-id':m.id, 'm-name':m.name, 'm-base':m.baseUrl, 'm-model':m.model,
     'm-vision':m.visionModel, 'm-embed':m.embeddingModel, 'm-tts-model':m.ttsModel,
     'm-tts-voice':m.ttsVoice, 'm-tts-format':m.ttsFormat, 'm-tts-protocol':m.ttsProtocol,
     'm-reasoning-profile':m.reasoningProfile || 'auto', 'm-key':'',
   })) $(id).value = value || '';
-  $('view').scrollTop = 0;
+  $('model-form-title').textContent = '编辑模型';
+  $('m-key').placeholder = m.hasApiKey ? '已设置，留空保留' : '输入 API 密钥';
+  $('m-reasoning-profile').dispatchEvent(new Event('change'));
+  $('m-advanced').open = !!options.reasoning || !!(m.ttsModel && !m.model);
+  $('model-form-error').hidden = true;
+  $('model-preset-note').hidden = true;
+  document.querySelectorAll('#model-form .chip').forEach(x => x.classList.remove('active'));
+  $('model-form').scrollIntoView({ block: 'start' });
 }
 
 async function settingsModels() {
@@ -8242,16 +8249,25 @@ async function settingsModels() {
   // 先用 DocumentFragment 攒起来，设置页再整体塞进右侧内容区
   const v = document.createDocumentFragment();
 
-    const mcard = el("div", "card");
-    mcard.innerHTML = '<div class="card-head"><h2>添加 / 更新模型</h2><div class="spacer"></div>' +
-      '<span class="card-sub">密钥只写进本机数据库</span></div>';
+    const mcard = el("div", "card model-form");
+    mcard.id = 'model-form';
+    mcard.innerHTML = '<div class="card-head"><h2 id="model-form-title">添加模型</h2></div>';
+    const modelField = (label, input) => {
+      const f = fieldOf(label, input);
+      f.querySelector('label').htmlFor = input.id;
+      return f;
+    };
+    const modelId = inputOf('m-id'); modelId.type = 'hidden'; mcard.appendChild(modelId);
     const presetRow = el("div", "presets");
-    presetRow.appendChild(el("span", "presets-label", "快速填入："));
-    const hint = el("p", "muted sm preset-note", "");
+    presetRow.appendChild(el("span", "presets-label", "快速配置"));
+    const hint = el("p", "model-preset-note", ""); hint.id = 'model-preset-note'; hint.hidden = true;
     for (const p of MODEL_PRESETS) {
       const b = el("button", "chip", p.label);
       b.onclick = () => {
-        $("m-id").value = p.id;
+        // 预设始终填写新配置；不能用固定 id 静默覆盖用户已有的模型。
+        $("m-id").value = '';
+        $('model-form-title').textContent = '添加模型';
+        $('m-key').value = ''; $('m-key').placeholder = '输入 API 密钥';
         $("m-name").value = p.name;
         $("m-base").value = p.base;
         $("m-model").value = p.model;
@@ -8262,8 +8278,11 @@ async function settingsModels() {
         $("m-tts-format").value = p.ttsFormat || "wav";
         $("m-tts-protocol").value = p.ttsProtocol || "";
         $("m-reasoning-profile").value = p.reasoningProfile || "auto";
-        hint.textContent = p.note;
-        document.querySelectorAll(".chip").forEach((x) => x.classList.remove("active"));
+        $('m-reasoning-profile').dispatchEvent(new Event('change'));
+        $('m-advanced').open = !!p.ttsModel;
+        $('model-form-error').hidden = true;
+        hint.textContent = p.note; hint.hidden = false;
+        mcard.querySelectorAll(".chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
       };
       presetRow.appendChild(b);
@@ -8271,36 +8290,32 @@ async function settingsModels() {
     mcard.appendChild(presetRow);
     mcard.appendChild(hint);
 
-    const f1 = el("div", "row");
-    f1.appendChild(fieldOf("标识", inputOf("m-id", "mimo")));
-    f1.appendChild(fieldOf("显示名称", inputOf("m-name", "MiMo TokenPlan")));
-    mcard.appendChild(f1);
-    const f2 = el("div", "row");
-    f2.appendChild(fieldOf("接口地址", inputOf("m-base", "https://token-plan-cn.xiaomimimo.com/v1")));
-    const keyInput = inputOf("m-key", "留空则保留原密钥");
-    keyInput.type = "password";
-    f2.appendChild(fieldOf("密钥", keyInput));
-    mcard.appendChild(f2);
-    const f3 = el("div", "row");
-    f3.appendChild(fieldOf("对话模型", inputOf("m-model", "mimo-v2.6-flash")));
-    f3.appendChild(fieldOf("多模态模型（图片描述，可留空）", inputOf("m-vision", "mimo-v2.6-pro")));
-    f3.appendChild(fieldOf("向量模型（可留空）", inputOf("m-embed", "")));
-    mcard.appendChild(f3);
+    mcard.appendChild(modelField("接口地址", inputOf("m-base", "https://api.example.com/v1")));
+    const basic = el('div', 'model-fields');
+    const keyInput = inputOf("m-key", "输入 API 密钥");
+    keyInput.type = "password"; keyInput.autocomplete = 'new-password'; keyInput.spellcheck = false;
+    basic.appendChild(modelField("API 密钥", keyInput));
+    basic.appendChild(modelField("模型名称", inputOf("m-model", "服务商提供的模型 ID")));
+    mcard.appendChild(basic);
+    const advanced = el('details', 'model-disclosure model-advanced'); advanced.id = 'm-advanced';
+    advanced.appendChild(el('summary', '', '高级设置'));
+    const advancedBody = el('div', 'model-disclosure-body');
+    const identity = el('div', 'model-fields');
+    identity.appendChild(modelField('显示名称', inputOf('m-name', '选填')));
     const reasoningProfile = selectOf('m-reasoning-profile', [
       {value:'auto', label:'默认'}, {value:'deepseek', label:'DeepSeek'},
       {value:'mimo', label:'MiMo'}, {value:'qwen-budget', label:'Qwen'},
-      {value:'openai', label:'OpenAI'}, {value:'none', label:'不启用思考'},
+      {value:'openai', label:'OpenAI'}, {value:'none', label:'接口默认'},
     ], 'auto');
-    const reasoningField = fieldOf('思考适配', reasoningProfile);
-    reasoningField.querySelector('label').htmlFor = reasoningProfile.id;
-    const reasoningHint = el('p', 'muted sm');
+    const reasoningField = modelField('思考适配', reasoningProfile);
+    const reasoningHint = el('p', 'model-field-hint');
     const reasoningHints = {
-      auto: '默认：自动识别官方接口；未适配的网关不会额外发送思考参数。',
-      deepseek: 'DeepSeek：使用思考开关和低、高、极深档位。',
-      mimo: 'MiMo：使用思考开关；当前不区分多个深度档位。',
-      'qwen-budget': 'Qwen：使用思考开关和思考 token 预算。',
-      openai: 'OpenAI：使用 reasoning_effort；具体档位随模型能力。',
-      none: '不启用思考：任何接口都不发送思考参数。',
+      auto: '自动识别已适配接口，其他接口不额外发送思考参数。',
+      deepseek: '支持思考开关及低、高、极深档位。',
+      mimo: '支持思考开关。',
+      'qwen-budget': '使用思考开关与 token 预算。',
+      openai: '可用深度随模型而定。',
+      none: '不发送额外思考参数，由接口决定是否思考。',
     };
     const paintReasoningHint = () => {
       reasoningHint.textContent = reasoningHints[reasoningProfile.value] || reasoningHints.auto;
@@ -8308,12 +8323,17 @@ async function settingsModels() {
     reasoningProfile.onchange = paintReasoningHint;
     paintReasoningHint();
     reasoningField.appendChild(reasoningHint);
-    mcard.appendChild(reasoningField);
-    const f4 = el("div", "row");
-    f4.appendChild(fieldOf("朗读模型（可留空）", inputOf("m-tts-model", "mimo-v2.5-tts")));
+    identity.appendChild(reasoningField); advancedBody.appendChild(identity);
+    const extra = el('div', 'model-fields');
+    extra.appendChild(modelField('图像模型', inputOf('m-vision', '选填')));
+    extra.appendChild(modelField('向量模型', inputOf('m-embed', '选填')));
+    advancedBody.appendChild(extra);
+    advancedBody.appendChild(el('h3', 'model-group-title', '语音朗读'));
+    const f4 = el("div", "model-fields");
+    f4.appendChild(modelField("朗读模型", inputOf("m-tts-model", "选填")));
     const voiceInput = inputOf("m-tts-voice", "苏打 / alloy");
     voiceInput.setAttribute("list", "tts-voices");
-    const voiceField = fieldOf("音色", voiceInput);
+    const voiceField = modelField("音色", voiceInput);
     const voices = el("datalist");
     voices.id = "tts-voices";
     for (const voice of ["冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean", "alloy", "nova", "shimmer"]) {
@@ -8323,27 +8343,33 @@ async function settingsModels() {
     }
     voiceField.appendChild(voices);
     f4.appendChild(voiceField);
-    f4.appendChild(fieldOf("音频格式", selectOf("m-tts-format", [
+    f4.appendChild(modelField("音频格式", selectOf("m-tts-format", [
       { value: "", label: "自动" }, { value: "wav", label: "WAV" }, { value: "mp3", label: "MP3" },
       { value: "opus", label: "Opus" }, { value: "aac", label: "AAC" }, { value: "flac", label: "FLAC" },
     ], "wav")));
-    f4.appendChild(fieldOf("接口协议", selectOf("m-tts-protocol", [
+    f4.appendChild(modelField("语音协议", selectOf("m-tts-protocol", [
       { value: "", label: "自动判断" }, { value: "openai", label: "OpenAI /audio/speech" }, { value: "mimo", label: "MiMo 语音" },
     ], "")));
-    mcard.appendChild(f4);
-    const mact = el("div", "row");
+    advancedBody.appendChild(f4); advanced.appendChild(advancedBody); mcard.appendChild(advanced);
+    const formError = el('p', 'model-form-error'); formError.id = 'model-form-error';
+    formError.setAttribute('role', 'alert'); formError.hidden = true; mcard.appendChild(formError);
+    const invalid = (message, id) => { formError.textContent = message; formError.hidden = false; $(id).focus(); };
+    const mact = el("div", "row model-form-actions");
     const modelSave = btn("保存模型", "primary", null);
     modelSave.onclick = () => runGuarded("model:save", modelSave, "正在保存…", async () => {
-      const id = $("m-id").value.trim();
-      if (!id) { toast("请填写标识"); return; }
+      formError.hidden = true;
       const base = $("m-base").value.trim();
       const model = $("m-model").value.trim();
       const ttsModel = $("m-tts-model").value.trim();
-      if (!base || (!model && !ttsModel)) { toast("接口地址以及对话模型或朗读模型不能为空"); return; }
+      if (!base) { invalid('请填写接口地址', 'm-base'); return; }
+      try { if (!['http:', 'https:'].includes(new URL(base).protocol)) throw Error(); }
+      catch { invalid('请输入完整的 HTTP 或 HTTPS 地址', 'm-base'); return; }
+      if (!model && !ttsModel) { invalid('请填写模型名称', 'm-model'); return; }
+      const id = $('m-id').value.trim() || ('model-' + (globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)));
       try {
-        await api("/api/models/save", {
+        const saved = await api("/api/models/save", {
           id: id,
-          name: $("m-name").value.trim(),
+          name: $("m-name").value.trim() || model || ttsModel,
           baseUrl: base,
           apiKey: $("m-key").value,
           model: model,
@@ -8355,49 +8381,41 @@ async function settingsModels() {
           ttsProtocol: $("m-tts-protocol").value,
           reasoningProfile: $("m-reasoning-profile").value,
         });
-        toast("模型已保存");
-        go("settings", "models");
-      } catch (e) { toast("保存失败：" + e.message); }
+        let message = '模型已保存';
+        if (model && !saved.chatModelId) {
+          try { await api('/api/models/roles', { chatModelId: id }); message = '已保存，可开始对话'; }
+          catch (e) { message = '模型已保存，启用失败：' + e.message; }
+        }
+        toast(message);
+        if (mcard.isConnected) await go("settings", "models");
+      } catch (e) { if (mcard.isConnected) { formError.textContent = '保存失败：' + e.message; formError.hidden = false; } }
     });
     mact.appendChild(modelSave);
-    mact.appendChild(btn("清空表单", "ghost", () => go("settings", "models")));
+    mact.appendChild(btn("重置", "ghost", () => go("settings", "models")));
     mcard.appendChild(mact);
     v.appendChild(mcard);
 
-    const list = cardOf({ title: "已配置的模型", tag: state.cfg.models.length + " 个" });
-    if (!state.cfg.models.length) {
-      list.appendChild(emptyState({
-        inline: true,
-        art: "gear",
-        title: "还没有配置模型",
-        text: "点上面任意一个「快速填入」，地址与模型名会自动写进表单，补一个密钥保存即可。",
-        actions: [btn("填入预设", "primary", () => {
-          const b = document.querySelector(".chip");
-          if (b) b.click();
-          $("view").scrollTop = 0;
-          toast("已填入，请补密钥");
-        })],
-      }));
-    } else {
+    const list = cardOf({ title: "已配置", tag: state.cfg.models.length + " 个" });
+    list.classList.add('model-list');
+    if (state.cfg.models.length) {
       const box = el("div", "list");
       for (const m of state.cfg.models) {
-        const it = el("div", "item");
+        const it = el("div", "item model-item");
         const row = el("div", "row");
         const main = el("div", "grow");
         main.appendChild(el("div", "item-title", m.name || m.id));
-        main.appendChild(el("div", "meta",
-          m.baseUrl + " · " + (m.model || "无对话模型") + (m.visionModel ? " · 多模态 " + m.visionModel : "") +
-          (m.embeddingModel ? " · 向量 " + m.embeddingModel : "") +
-          (m.ttsModel ? " · 朗读 " + m.ttsModel + (m.ttsVoice ? "/" + m.ttsVoice : "") : "") +
-          (m.hasApiKey ? " · 已设置密钥" : " · 未设置密钥")));
+        const meta = el('div', 'meta', m.model || m.ttsModel || m.embeddingModel || m.visionModel || m.baseUrl);
+        meta.title = m.baseUrl; main.appendChild(meta);
         row.appendChild(main);
-        if (state.cfg.chatModelId === m.id) row.appendChild(tag("主模型", "ok"));
+        if (state.cfg.chatModelId === m.id) row.appendChild(tag("对话", "ok"));
         if (state.cfg.ttsModelId === m.id) row.appendChild(tag("朗读", "ok"));
         if (!m.hasApiKey) row.appendChild(tag("缺密钥", "warn"));
         it.appendChild(row);
         const acts = el("div", "row item-actions");
+        const more = el('details', 'model-more'); more.appendChild(el('summary', 'btn ghost sm', '更多'));
+        const moreActions = el('div', 'row model-more-actions'); more.appendChild(moreActions);
         if (m.model) {
-          acts.appendChild(btn("测试连通", "sm primary", async (ev) => {
+          moreActions.appendChild(btn("测试连接", "sm", async (ev) => {
             const b = ev.target;
             b.disabled = true;
             b.textContent = "测试中…";
@@ -8406,28 +8424,30 @@ async function settingsModels() {
               b.textContent = "连通 ✓";
               toast("模型连通");
             } catch (e) {
-              b.textContent = "测试连通";
+              b.textContent = "测试连接";
               toast("失败：" + e.message);
             }
             b.disabled = false;
           }));
-          const bindChat = btn("设为对话模型", "sm", null);
+          const bindChat = btn(state.cfg.chatModelId === m.id ? "使用中" : "启用", "sm", null);
+          bindChat.disabled = state.cfg.chatModelId === m.id;
           bindChat.onclick = () => runGuarded("model:bind-chat:" + m.id, bindChat, "绑定中…", async () => {
-            await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: state.cfg.ttsModelId });
-            toast("已绑定「对话与生成」");
+            await api("/api/models/roles", { chatModelId: m.id });
+            toast("已启用对话模型");
             go("settings", "models");
           });
           acts.appendChild(bindChat);
         }
         if (m.ttsModel) {
-          const bindTts = btn("设为朗读模型", "sm", null);
+          const bindTts = btn(state.cfg.ttsModelId === m.id ? "已启用" : "启用朗读", "sm", null);
+          bindTts.disabled = state.cfg.ttsModelId === m.id;
           bindTts.onclick = () => runGuarded("model:bind-tts:" + m.id, bindTts, "绑定中…", async () => {
-            await api("/api/models/roles", { chatModelId: state.cfg.chatModelId, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: m.id });
-            toast("已绑定「语音朗读」");
+            await api("/api/models/roles", { ttsModelId: m.id });
+            toast("已启用朗读模型");
             go("settings", "models");
           });
-          acts.appendChild(bindTts);
-          if (m.hasApiKey) acts.appendChild(btn("试听", "sm ghost", async (ev) => {
+          (m.model ? moreActions : acts).appendChild(bindTts);
+          if (m.hasApiKey) moreActions.appendChild(btn("试听", "sm ghost", async (ev) => {
             const b = ev.currentTarget;
             b.disabled = true;
             b.textContent = "合成中…";
@@ -8452,11 +8472,11 @@ async function settingsModels() {
             }
           }));
         }
-        acts.appendChild(btn("填到表单", "sm ghost", () => {
+        acts.appendChild(btn("编辑", "sm ghost", () => {
           fillModelForm(m);
         }));
         if (m.hasApiKey && m.model) {
-          acts.appendChild(btn("诊断连接", "sm ghost", async (ev) => {
+          moreActions.appendChild(btn("诊断", "sm ghost", async (ev) => {
             const b = ev.target;
             b.disabled = true;
             b.textContent = "诊断中…";
@@ -8466,7 +8486,7 @@ async function settingsModels() {
               toast(attempts.slice(0, 2).join("；") || "诊断完成");
             } catch (e) { toast("诊断失败：" + e.message); }
             b.disabled = false;
-            b.textContent = "诊断连接";
+            b.textContent = "诊断";
           }));
         }
         const delModel = btn("删除", "sm ghost", null);
@@ -8477,19 +8497,22 @@ async function settingsModels() {
             go("settings", "models");
           } catch (e) { toast("删除失败：" + e.message); }
         });
-        acts.appendChild(delModel);
+        moreActions.appendChild(delModel);
+        acts.appendChild(more);
         it.appendChild(acts);
         box.appendChild(it);
       }
       list.appendChild(box);
     }
-    v.appendChild(list);
+    if (state.cfg.models.length) v.appendChild(list);
 
-    const role = cardOf({ title: "用途绑定", sub: "四个用途可以指向同一个模型，也可以分开" });
-    const rr = el("div", "row");
+    const role = el('details', 'card model-disclosure'); role.id = 'model-roles';
+    role.appendChild(el('summary', '', '用途分配'));
+    const roleBody = el('div', 'model-disclosure-body');
+    const rr = el("div", "model-fields");
     const mk = (id, label, val, desc, candidates) => {
       const f = el("div", "field");
-      f.appendChild(el("label", null, label));
+      const l = el('label', null, label); l.htmlFor = id; f.appendChild(l);
       const options = (candidates || state.cfg.models).map((m) => ({ value: m.id, label: m.name || m.id }));
       // 当前绑定即使不满足筛选条件也要保留，避免打开设置时被静默清空。
       if (val && !options.some((x) => x.value === val)) {
@@ -8498,15 +8521,16 @@ async function settingsModels() {
       }
       const sel = selectOf(id, [{ value: "", label: "（未指定）" }].concat(options), val || "");
       f.appendChild(sel);
-      f.appendChild(el("div", "field-hint", desc));
+      if (desc) f.appendChild(el("div", "model-field-hint", desc));
       return f;
     };
-    rr.appendChild(mk("role-chat", "对话与生成", state.cfg.chatModelId, "主对话模型", state.cfg.models.filter((m) => m.model)));
+    rr.appendChild(mk("role-chat", "对话与生成", state.cfg.chatModelId, "", state.cfg.models.filter((m) => m.model)));
     rr.appendChild(mk("role-embed", "向量检索", state.cfg.embedModelId, "留空则用关键词检索", state.cfg.models.filter((m) => m.embeddingModel)));
-    rr.appendChild(mk("role-chunk", "切片与图片描述", state.cfg.chunkModelId, "用于图片与截图", state.cfg.models.filter((m) => m.model || m.visionModel)));
-    rr.appendChild(mk("role-tts", "语音朗读", state.cfg.ttsModelId, "试听、朗读与 Lumin 语音工具", state.cfg.models.filter((m) => m.ttsModel)));
-    role.appendChild(rr);
-    role.appendChild(btn("保存绑定", "primary", async () => {
+    rr.appendChild(mk("role-chunk", "图像与切片", state.cfg.chunkModelId, "", state.cfg.models.filter((m) => m.model || m.visionModel)));
+    rr.appendChild(mk("role-tts", "语音朗读", state.cfg.ttsModelId, "", state.cfg.models.filter((m) => m.ttsModel)));
+    roleBody.appendChild(rr);
+    const roleSave = btn('保存分配', 'primary', null);
+    roleSave.onclick = () => runGuarded('model:roles', roleSave, '保存中…', async () => {
       try {
         await api("/api/models/roles", {
           chatModelId: $("role-chat").value,
@@ -8517,7 +8541,8 @@ async function settingsModels() {
         toast("已保存");
         go("settings", "models");
       } catch (e) { toast("保存失败：" + e.message); }
-    }));
+    });
+    roleBody.appendChild(roleSave); role.appendChild(roleBody);
     v.appendChild(role);
 
   /* ---------- 联网搜索（Tavily） ----------
@@ -8530,12 +8555,9 @@ async function settingsModels() {
     // 内核没有这个接口时不该整页崩掉：卡片照常显示，只是状态读不到
   }
   const mode = ws.mode || "auto";
-  const wsCard = cardOf({
-    title: "联网",
-    tag: mode === "off" ? "已关闭" : WEB_MODE_LABEL[mode],
-    tagCls: mode === "off" ? "warn" : "ok",
-    sub: "搜索走 Tavily，抓网页落本机",
-  });
+  const search = el('details', 'card model-disclosure'); search.id = 'model-search';
+  search.appendChild(el('summary', '', '联网搜索'));
+  const wsCard = el('div', 'model-disclosure-body');
   // 联网档位：关 / 只在资料不足时 / 总是
   const modeRow = el("div", "row");
   // 这是 agent：默认把决定权交给它；只有用户明确不想要外发请求时才关掉
@@ -8607,8 +8629,7 @@ async function settingsModels() {
   });
   wsActs.appendChild(wsClear);
   wsCard.appendChild(wsActs);
-  wsCard.appendChild(el("p", "muted sm", (ws.hasKey ? "搜索密钥 " + ws.keyHint : "还没有搜索密钥") +
-    " · 搜索" + (ws.enabled ? "已启用" : "未启用") + "。抓网页不需要密钥；开了联网，「伴学助手」的工具里会多出「联网搜索」和「读取网页」。"));
+  wsCard.appendChild(el("p", "model-field-hint", ws.hasKey ? "已设置搜索密钥" : "尚未设置搜索密钥"));
 
   /* 手动抓一页：贴个链接就读，不用等模型自己决定 */
   const fetchRow = el("div", "row");
@@ -8672,7 +8693,7 @@ async function settingsModels() {
     }));
     wsCard.appendChild(crow);
   }
-  v.appendChild(wsCard);
+  search.appendChild(wsCard); v.appendChild(search);
   return v;
 }
 
