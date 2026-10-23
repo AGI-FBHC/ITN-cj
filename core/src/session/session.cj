@@ -55,14 +55,16 @@ public class SessionChain {
  * 指纹没变就把上次结果直接返回。多线程 HTTP 下用锁保护；换数据目录时目录名不匹配自然失效。
  */
 let sessionListCacheLock = Mutex()
+let sessionListBuildLock = Mutex()
 var sessionListCache: ?ArrayList<JsonObject> = None
 var sessionListCacheDir: String = ""
 var sessionListCacheEpoch: Int64 = -1
 // single-flight 与节流标记：流式期间每条 delta 都推纪元，若每个到达的列表请求都各自全量重算，
 // 会轮番占住数据库锁把 state/settings/tasks 等轻接口一起拖死（实测并发 3 个列表共 3.68 秒）。
 var sessionListLastComputeMs: Int64 = -3000
-// >0 表示一次重算已开始（带 3 秒超时自愈：即便重算抛异常也不会永久退回陈旧缓存）
+// Computing is cleared in finally; one rebuild owns the database work at a time.
 var sessionListComputeStartedMs: Int64 = 0
+var sessionListComputeDir: String = ""
 
 func resourceMetaField(raw: String): JsonValue {
     if (raw.size == 0) { return JsonNull() }
@@ -89,6 +91,27 @@ public class SessionStore {
 
     public func newId(): String {
         return "s" + Random().nextUInt64().toString()
+    }
+
+    /** Allocating an id is not creation: empty chats must survive refresh and restart. */
+    public func create(): JsonObject {
+        let sid = newId()
+        let at = DateTime.now().toString()
+        let connection = db()
+        connection.run("INSERT INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)", va([tv(sid), tv(at), tv(at)]))
+        let summary = JsonObject()
+        summary.put("sessionId", JsonString(sid))
+        summary.put("title", JsonString("新对话"))
+        summary.put("projectId", JsonString(""))
+        summary.put("kind", JsonString("ask"))
+        summary.put("kbId", JsonString(""))
+        summary.put("createdAt", JsonString(at))
+        summary.put("lastAt", JsonString(at))
+        summary.put("lastType", JsonString(""))
+        summary.put("eventCount", JsonInt(0))
+        summary.put("rowid", JsonInt(connection.scalarInt("SELECT rowid FROM sessions WHERE id = ?", va([tv(sid)]))))
+        summary.put("resource", JsonNull())
+        return summary
     }
 
     public func newTurnId(): String {
@@ -132,7 +155,10 @@ public class SessionStore {
         let ops = ArrayList<DbOp>()
         ops.add(DbOp("INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
             va([tv(event.sessionId), tv(event.at), tv(event.at)])))
-        ops.add(DbOp("UPDATE sessions SET updated_at = ? WHERE id = ?", va([tv(event.at), tv(event.sessionId)])))
+        // Rank by complete messages, not every token or internal audit event.
+        if (["user/message", "assistant/message", "turn/end"].contains(event.kind)) {
+            ops.add(DbOp("UPDATE sessions SET updated_at = ? WHERE id = ?", va([tv(event.at), tv(event.sessionId)])))
+        }
         ops.add(DbOp("INSERT INTO session_events (session_id, ts, kind, turn_id, payload, parent_id) " +
             "VALUES (?, ?, ?, ?, ?, ?)",
             va([tv(event.sessionId), tv(event.at), tv(event.kind), tv(event.turnId), tv(event.payload.toString()),
@@ -1009,67 +1035,74 @@ public class SessionStore {
      * 注意别把 ②③ 改写成 GROUP BY + MIN 或 id IN (SELECT MAX...)：自研驱动对这些形状没有把握，
      * 实测在 21MB 的真库上直接卡死（这版是回退后重新测过的）。
      */
-    public func list(): ArrayList<JsonObject> {
+    /** Native callers retain read-after-write; passive HTTP reads explicitly pass false. */
+    public func list(): ArrayList<JsonObject> { return list(true) }
+
+    public func list(force: Bool): ArrayList<JsonObject> {
         migrateFromJson()
-        // 纪元命中直接回缓存：凡是写 sessions/session_events/sessions_meta 的 SQL 都会把
-        // 纪元 +1（见 db.cj），没变就是没变。组装一次要 ~1 秒（引擎怕全表聚合），
-        // 聊天期间每轮都会来读，缓存把稳态压到几毫秒。
         let epoch = sessionEpoch()
-        sessionListCacheLock.lock()
-        try {
-            if (sessionListCacheDir == dataDir && sessionListCacheEpoch == epoch) {
+        var immediate: ?ArrayList<JsonObject> = None
+        var background = false
+        synchronized(sessionListCacheLock) {
+            if (sessionListCacheDir == dataDir && sessionListCacheEpoch >= epoch) {
+                match (sessionListCache) { case Some(cached) => immediate = Some(copySessionList(cached)); case None => () }
+            }
+            if (immediate.isNone() && !force && sessionListCacheDir == dataDir) {
                 match (sessionListCache) {
                     case Some(cached) =>
-                        return copySessionList(cached)
+                        immediate = Some(copySessionList(cached))
+                        let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+                        if (sessionListComputeStartedMs == 0 && nowMs - sessionListLastComputeMs >= 1000) {
+                            sessionListComputeStartedMs = nowMs
+                            sessionListComputeDir = dataDir
+                            background = true
+                        }
                     case None => ()
                 }
             }
-            // 过期时回「上一份」并把重算挪去后台（stale-while-revalidate）：流式期间每条 delta 都推纪元，
-            // 若调用线程自己等全量重算，一次切换就要陪跑几秒（实测切回对话页 sessions/list 6.1 秒）。
-            // 有旧结果就先给旧的；距上次算完不足 1 秒也不再重复安排，把重算交给在飞的那个。
-            // 冷启动没有旧结果时才在本线程算（调用方必须拿到数据）。
-            let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
-            let inFlight = sessionListComputeStartedMs > 0 && nowMs - sessionListComputeStartedMs < 15000
-            var stale: ?ArrayList<JsonObject> = None
-            if (sessionListCacheDir == dataDir) {
-                match (sessionListCache) {
-                    case Some(cached) => stale = Some(copySessionList(cached))
-                    case None => ()
+        }
+        if (background) {
+            spawn {
+                try { rebuildSessionList(epoch) } catch (e: Exception) { () }
+            }
+        }
+        match (immediate) { case Some(cached) => return cached; case None => return rebuildSessionList(epoch) }
+    }
+
+    /** Waiters recheck after the single builder, preventing old workers from overwriting fresh data. */
+    private func rebuildSessionList(requiredEpoch: Int64): ArrayList<JsonObject> {
+        synchronized(sessionListBuildLock) {
+            synchronized(sessionListCacheLock) {
+                if (sessionListCacheDir == dataDir && sessionListCacheEpoch >= requiredEpoch) {
+                    match (sessionListCache) {
+                        case Some(cached) =>
+                            if (sessionListComputeDir == dataDir) { sessionListComputeStartedMs = 0; sessionListComputeDir = "" }
+                            return copySessionList(cached)
+                        case None => ()
+                    }
+                }
+                sessionListComputeStartedMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+                sessionListComputeDir = dataDir
+            }
+            try {
+                let readEpoch = sessionEpoch()
+                let out = computeSessionList()
+                synchronized(sessionListCacheLock) {
+                    sessionListCache = Some(out)
+                    sessionListCacheDir = dataDir
+                    sessionListCacheEpoch = readEpoch
+                    sessionListLastComputeMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+                }
+                return copySessionList(out)
+            } finally {
+                synchronized(sessionListCacheLock) {
+                    if (sessionListComputeDir == dataDir) { sessionListComputeStartedMs = 0; sessionListComputeDir = "" }
                 }
             }
-            var needCompute = !inFlight
-            if (needCompute) {
-                match (stale) {
-                    case Some(_) => if (nowMs - sessionListLastComputeMs < 1000) { needCompute = false }
-                    case None => ()
-                }
-            }
-            if (needCompute) {
-                sessionListComputeStartedMs = nowMs
-                if (inFlight) {
-                    // 冷启动撞上在飞重算：极少见，按旧版行为再算一份，后写回者胜。
-                    sessionListCacheLock.unlock()
-                    return computeSessionList(epoch)
-                }
-                let _background = spawn {
-                    this.computeSessionList(epoch)
-                }
-            }
-            match (stale) {
-                case Some(cached) =>
-                    return cached
-                case None =>
-                    // 理论不可达（needCompute 且无旧结果才会走到 spawn 之外），兜底再算一次。
-                    sessionListCacheLock.unlock()
-                    return computeSessionList(epoch)
-            }
-        } finally {
-            sessionListCacheLock.unlock()
         }
     }
 
-    /* 全量组装并写回缓存。后台线程与冷启动共用；抛异常时在飞标记按超时自愈。 */
-    private func computeSessionList(epoch: Int64): ArrayList<JsonObject> {
+    private func computeSessionList(): ArrayList<JsonObject> {
         let out = ArrayList<JsonObject>()
         let dbh = db()
 
@@ -1084,10 +1117,14 @@ public class SessionStore {
            它们同样要出现在侧栏里，否则用户点了"新建分支"就像什么也没发生（实测反馈）。 */
         let ids = ArrayList<String>()
         let createdAt = HashMap<String, String>()
-        for (r in dbh.querySql("SELECT id, created_at FROM sessions ORDER BY updated_at DESC")) {
+        let updatedAt = HashMap<String, String>()
+        let rowidOf = HashMap<String, Int64>()
+        for (r in dbh.querySql("SELECT id, created_at, rowid, updated_at FROM sessions ORDER BY updated_at DESC, rowid DESC")) {
             let sid = r.text(0)
             ids.add(sid)
             createdAt[sid] = r.text(1)
+            rowidOf[sid] = r.int(2)
+            updatedAt[sid] = r.text(3)
         }
         for ((sid, _) in counts) {
             if (!createdAt.contains(sid)) {
@@ -1171,6 +1208,7 @@ public class SessionStore {
             } else if (title.size > 60) {
                 title = byteSafePrefix(title, 60) + "…"
             }
+            if (title.size == 0) { title = "新对话" }
             var lastAt = ""
             var lastType = ""
             let leaf = match (leafMap.get(sid)) {
@@ -1184,24 +1222,19 @@ public class SessionStore {
                 case None =>
                     lastAt = createdAt.get(sid) ?? ""
             }
+            let activityAt = updatedAt.get(sid) ?? ""
+            if (activityAt.size > 0) { lastAt = activityAt }
             o.put("title", JsonString(title))
             o.put("lastType", JsonString(lastType))
             o.put("lastAt", JsonString(lastAt))
-            o.put("kind", JsonString(kinds.get(sid) ?? ""))
+            let emptyKind = if ((projectOf.get(sid) ?? "").size > 0) { "work" } else { "ask" }
+            o.put("kind", JsonString(kinds.get(sid) ?? (if ((counts.get(sid) ?? 0) == 0) { emptyKind } else { "" })))
             o.put("kbId", JsonString(kbs.get(sid) ?? ""))
             o.put("projectId", JsonString(projectOf.get(sid) ?? ""))
+            o.put("rowid", JsonInt(rowidOf.get(sid) ?? 0))
+            o.put("createdAt", JsonString(createdAt.get(sid) ?? ""))
             o.put("resource", resourceOf.get(sid) ?? JsonNull())
             out.add(o)
-        }
-        sessionListCacheLock.lock()
-        try {
-            sessionListCache = Some(out)
-            sessionListCacheDir = dataDir
-            sessionListCacheEpoch = epoch
-            sessionListLastComputeMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
-            sessionListComputeStartedMs = 0
-        } finally {
-            sessionListCacheLock.unlock()
         }
         return copySessionList(out)
     }

@@ -6,7 +6,9 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),http=require('node:http');
 const {spawn}=require('node:child_process'),{DatabaseSync}=require('node:sqlite');
 const {_electron}=require(require.resolve('playwright',{paths:['D:/Desktop/ITN/ITN/src/frontend/agent-demo',path.resolve(__dirname,'..')]}));
-const root=path.resolve(__dirname,'..'),pack=path.join(root,'dist/Lumin-0.8.36');
+const root=path.resolve(__dirname,'..');
+const packOption=process.argv.find(a=>a.startsWith('--pack='))?.slice(7)||process.env.LUMIN_PERF_PACK;
+const pack=packOption?path.resolve(packOption):path.join(root,'dist','Lumin-'+JSON.parse(fs.readFileSync(path.join(root,'shell/package.json'),'utf8')).version);
 const dataset=(process.argv.find(a=>a.startsWith('--dataset='))||'--dataset=snapshot').split('=')[1];
 const cycles=Number((process.argv.find(a=>a.startsWith('--cycles='))||'--cycles=8').split('=')[1]);
 const phase=(process.argv.find(a=>a.startsWith('--phase='))||'--phase=full').split('=')[1];
@@ -14,7 +16,8 @@ const runDir=path.join(root,'tmp','perf-runtime-'+dataset+'-'+new Date().toISOSt
 fs.mkdirSync(runDir,{recursive:true});
 const home=path.join(runDir,'home'),data=path.join(home,'Lumin');fs.mkdirSync(data,{recursive:true});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
-const report={dataset,version:'0.8.35',started:new Date().toISOString(),scope:'shipped Electron and Cangjie; isolated DB; controlled local SSE; no product fixes',stages:[],errors:[],network:[],modelRequests:[]};
+const releaseInfo=JSON.parse(fs.readFileSync(path.join(pack,'release.json'),'utf8'));
+const report={dataset,pack,version:releaseInfo.version,sourceCommit:releaseInfo.sourceCommit,started:new Date().toISOString(),scope:'shipped Electron and Cangjie; isolated DB; controlled local SSE; no product fixes',stages:[],errors:[],network:[],modelRequests:[]};
 const flush=()=>fs.writeFileSync(path.join(runDir,'result.json'),JSON.stringify(report,null,2));
 const source=path.join(process.env.LOCALAPPDATA,'Lumin','itn.db');
 let setupCore,app,page,cdp,mock;

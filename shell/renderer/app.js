@@ -61,6 +61,9 @@ async function api(path, body, signal) {
       }
     }
   }
+  if (path === '/api/sessions/new' && json.data?.sessionId) {
+    rememberCreatedSession(json.data, body?.projectId);
+  }
   return json.data;
 }
 
@@ -753,33 +756,99 @@ async function loadArtifacts() {
 /* 会话列表的短窗缓存：切一次页面 Panel 与 Page 会各读一次，之前每次切换打 1–3 个
    重复请求（列表接口慢时就是"卡住 0.5 秒+"的来源之一）。被动读取 1.5s 内复用；
    显式 reloadSessions()（新建/改名/删除后）强制刷新，绝不吞掉刚发生的变化。 */
-let sessionsCache = { at: 0, promise: null };
+let sessionsCache = { at: 0, promise: null, forceVersion: 0, forceDone: 0 };
+let sessionRevision = 0;
+const sessionLocalChanges = new Map();
+
+/** 请求自带归属与问题摘要，后台会话不借用当前会话的全局镜像。 */
+function sessionSummaryFor(sessionId, patch = {}) {
+  const saved = (state.sessions || []).find(x => x.sessionId === sessionId) || sessionLocalChanges.get(sessionId)?.summary || {};
+  const request = state.chatRequests.get(sessionId) || {};
+  const stamp = new Date().toISOString();
+  return {
+    sessionId, title: request.title || request.question || '新对话',
+    projectId: request.projectId || '', kind: request.kind || 'ask',
+    lastAt: stamp, createdAt: stamp, eventCount: 0, rowid: Number.MAX_SAFE_INTEGER,
+    ...request.summary, ...saved, ...patch,
+  };
+}
+
+function rememberSessionChange(summary) {
+  sessionLocalChanges.set(summary.sessionId, {
+    revision: ++sessionRevision, summary: { ...summary },
+  });
+}
+
+function rememberCreatedSession(data, projectId) {
+  const meta = data.session || {};
+  const pid = meta.projectId ?? data.projectId ?? projectId ?? '';
+  const summary = sessionSummaryFor(meta.sessionId || data.sessionId, {
+    title: '新对话', projectId: pid, kind: pid ? 'work' : 'ask', ...meta,
+  });
+  const index = state.sessions.findIndex(x => x.sessionId === summary.sessionId);
+  if (index < 0) state.sessions.unshift(summary);
+  else state.sessions[index] = summary;
+  rememberSessionChange(summary);
+  return summary;
+}
+
+function mergeSessionSummaries(sessions, revision, forced) {
+  const merged = new Map();
+  for (const remote of sessions) {
+    const local = sessionLocalChanges.get(remote.sessionId);
+    // 被动列表可以来自内核旧缓存；只有写入之后发出的 force 才能确认本地改动。
+    const protect = local && (local.revision > revision || !forced);
+    const summary = protect ? { ...remote, ...local.summary } : { ...remote };
+    // MAX_SAFE_INTEGER 仅在没有真实创建顺序时占位，不能盖住服务端 rowid。
+    if (remote.rowid != null && Number.isFinite(Number(remote.rowid)) && Number(remote.rowid) !== Number.MAX_SAFE_INTEGER) summary.rowid = remote.rowid;
+    merged.set(remote.sessionId, summary);
+    if (local) {
+      if (protect) local.summary = { ...summary };
+      else sessionLocalChanges.delete(remote.sessionId);
+    }
+  }
+  for (const [sid, local] of sessionLocalChanges) {
+    if (!merged.has(sid)) {
+      if (forced && local.revision <= revision && !isSessionRunning(sid)) sessionLocalChanges.delete(sid);
+      else merged.set(sid, { ...local.summary });
+    }
+  }
+  for (const sid of state.chatRequests.keys()) {
+    if (!merged.has(sid)) merged.set(sid, sessionSummaryFor(sid));
+  }
+  state.sessions = [...merged.values()];
+}
+
 async function loadSessions(force) {
+  const requiredForce = force ? ++sessionsCache.forceVersion : 0;
   const fresh = sessionsCache.at > 0 && Date.now() - sessionsCache.at < 1500;
-  if (force || !fresh) {
+  let needsRead = force || !fresh;
+  while (needsRead) {
     if (!sessionsCache.promise) {
+      const version = sessionsCache.forceVersion;
+      const forced = version > sessionsCache.forceDone;
+      const revision = sessionRevision;
       sessionsCache.promise = (async () => {
-        try { state.sessions = (await api("/api/sessions/list", {})).sessions || []; }
-        catch (e) { state.sessions = []; }
-        sessionsCache.at = Date.now();
-        sessionsCache.promise = null;
+        try {
+          const data = await api('/api/sessions/list', forced ? { force: true } : {});
+          if (!Array.isArray(data?.sessions)) throw new Error('会话列表暂不可用');
+          mergeSessionSummaries(data.sessions, revision, forced);
+          sessionsCache.at = Date.now();
+        } catch (e) {
+          // 断网保留上次成功列表，也不把失败当成一次新鲜读取。
+          sessionsCache.at = 0;
+        } finally {
+          sessionsCache.forceDone = version;
+          sessionsCache.promise = null;
+        }
       })();
     }
     await sessionsCache.promise;
+    // force 撞上在飞的读取（包括更早的 force）时，必须再发写入后的对账。
+    needsRead = requiredForce > sessionsCache.forceDone;
   }
-  /* 正在跑、但还没出现在列表里的会话（新建的会话要等第一条事件落库才进列表接口）
-     先补一行：转圈必须马上看得见，不能等这一轮跑完才冒出来。真实数据一到自然顶掉。 */
   for (const running of state.chatRequests.keys()) {
-    if (!state.sessions.some((x) => x.sessionId === running)) {
-      state.sessions.unshift({
-        sessionId: running,
-        title: state.lastQuestion || "新对话",
-        projectId: state.chatSessionId === running ? (state.chatProject || "") : "",
-        kind: "ask",
-        lastAt: new Date().toISOString(),
-        eventCount: 0,
-      });
-    }
+    if (!state.sessions.some(x => x.sessionId === running)) state.sessions.unshift(sessionSummaryFor(running));
   }
   /* 列表是"会话元信息"的唯一来源：顶栏那条面包屑（工作区 | 会话名）也吃这份数据。
      标题是模型异步起好的、跑完一轮时间会变 —— 读一次列表就把顶栏一起对齐，
@@ -4232,7 +4301,7 @@ async function maybeGenerateTitle(sid) {
   try {
     const d = await api("/api/sessions/title", { sessionId: sid });
     if (!d || !d.generated) return;
-    await loadSessions();
+    await loadSessions(true);
     if (current === "chat" && currentSection !== "overview") {
       await renderPanel();
       if (typeof refreshChatHeader === "function") refreshChatHeader();
@@ -5077,24 +5146,24 @@ function panelItem(opt) {
 /** 每一段会话自己跑自己的：按会话记正在执行的轮次（同会话最多一轮，跨会话可以同时跑）。
  * 列表行转圈、删除保护、“Enter 是插话”都看这份状态，不再用一个全局布尔碰全部。 */
 function isSessionRunning(sid) { return !!sid && state.chatRequests.has(sid); }
+function isCurrentSessionCreating() {
+  if (!state.chatSessionId) return !!state.chatStarting || busyActions.has('session:new');
+  return busyActions.has('session:new') &&
+    state.chatNewSelection === (state.chatSelectionGeneration || 0) &&
+    state.chatNewNavigation === state.navigationGeneration;
+}
 /** 用户一发出内容，先在本地把该会话推到组内首位；真实数据回来后由内核时间覆盖。 */
-function markSessionActivity(sessionId, at) {
+function markSessionActivity(sessionId, at, meta = {}) {
   if (!sessionId) return;
   const stamp = at || new Date().toISOString();
-  let item = (state.sessions || []).find((x) => x.sessionId === sessionId);
-  if (!item) {
-    item = {
-      sessionId,
-      title: state.lastQuestion || "新对话",
-      projectId: sessionId === state.chatSessionId ? (state.chatProject || "") : "",
-      kind: "ask",
-      lastAt: stamp,
-      eventCount: 0,
-    };
-    state.sessions.unshift(item);
-  } else {
-    item.lastAt = stamp;
-  }
+  const item = sessionSummaryFor(sessionId, { ...meta, lastAt: stamp });
+  const index = state.sessions.findIndex(x => x.sessionId === sessionId);
+  if (index < 0) state.sessions.unshift(item);
+  else state.sessions[index] = item;
+  rememberSessionChange(item);
+  const request = state.chatRequests.get(sessionId);
+  if (request) request.summary = { ...item };
+  return item;
 }
 
 /** 把"当前会话是否正在跑"同步到全局镜像：busyTurn/chatRequest 只代表当前会话。 */
@@ -5137,7 +5206,7 @@ function panelSeg(items, activeKey, onPick) {
 let panelSig = "";
 let panelSigFor = "";
 
-async function renderPanel(force) {
+async function renderPanel(force, local = false) {
   const renderingGeneration = state.navigationGeneration;
   const def = PANELS[current];
   const body = $("panel-body");
@@ -5146,7 +5215,7 @@ async function renderPanel(force) {
   const key = current + "/" + (currentSection || "");
   /* 指纹必须在**取完数**之后算：否则外部新建的项目/会话还没进 state，
      指纹与上次一样 → 直接跳过渲染 → 侧栏里永远看不到它（踩过）。 */
-  if (def && typeof def.load === "function") {
+  if (!local && def && typeof def.load === "function") {
     try { await def.load(); } catch (e) { /* 取数失败就按现有 state 画 */ }
   }
   if (renderingGeneration !== state.navigationGeneration) return;
@@ -5173,7 +5242,7 @@ async function renderPanel(force) {
   const nextBody = document.createDocumentFragment();
   const nextFoot = document.createDocumentFragment();
   const scrollTop = body.scrollTop;
-  const ui = { foot: (node) => nextFoot.appendChild(node) };
+  const ui = { foot: (node) => nextFoot.appendChild(node), local };
   await def.render(nextBody, ui);
   if (renderingGeneration !== state.navigationGeneration) return;
   body.replaceChildren(nextBody);
@@ -5197,7 +5266,12 @@ async function renderPanel(force) {
 function railSessionCompare(a, b) {
   const ta = Date.parse(a.lastAt || ""), tb = Date.parse(b.lastAt || "");
   const byTime = (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-  return byTime || String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
+  if (byTime) return byTime;
+  // 同秒并列按内核返回的 rowid（创建序）定先后，再退回 id：否则"刚回复完的旧会话
+  // 和刚新建的会话同秒"时顺序随机（实测踩过）。本地占位行 rowid 取最大，排最前。
+  const ra = Number(a.rowid) || 0, rb = Number(b.rowid) || 0;
+  if (ra !== rb) return rb - ra;
+  return String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
 }
 /** 只把“组内顺序”纳入结构指纹：时间文字变化仍走 refresh，顺序变了才重建。 */
 function railSessionOrderSig(sessions) {
@@ -5555,7 +5629,7 @@ PANELS.chat = {
     panelBtn("search", "全部会话", () => go("chat", "overview"), "rail-all"),
   ],
   async render(body, ui) {
-    await loadCfg();
+    if (!ui.local) await loadCfg();
 
     /* 会话栏的骨架照 Codex：项目是一行可折叠的标题（文件夹 + 名字 + 计数，悬停时右侧
        出现 ⋯ 与"新建会话"），会话缩进列在它下面；没挂项目的会话归到"普通对话"。
@@ -5866,6 +5940,7 @@ PANELS.settings = {
  * 去问「语文」的会话，答出来的东西自然对不上。
  */
 async function openChatSession(id) {
+  state.chatSelectionGeneration = (state.chatSelectionGeneration || 0) + 1;
   const meta = (state.sessions || []).filter((x) => x.sessionId === id)[0];
   // 归属哪个项目跟着会话走；检索范围始终是全部知识库
   state.chatProject = meta ? (meta.projectId || "") : "";
@@ -6007,6 +6082,7 @@ function deleteSessionDialog(s) {
   row.appendChild(btn("删除", "primary danger", async () => {
     try {
       await api("/api/sessions/delete", { sessionId: s.sessionId });
+      sessionLocalChanges.delete(s.sessionId);
       dlg.remove();
       if (state.chatSessionId === s.sessionId) {
         // 删的正是现在打开的这一段：清空并回到新会话空态
@@ -6037,19 +6113,33 @@ async function newChat(projectId, mode, trigger) {
   if (state.chatStarting) { toast("正在新建会话…"); return; }
   return runGuarded("session:new", trigger, "新建中…", async () => {
   const generation = state.navigationGeneration;
+  const selection = state.chatSelectionGeneration || 0;
+  state.chatNewNavigation = generation;
+  state.chatNewSelection = selection;
+  state.chatRepaintBusy?.();
   toast("正在新建会话…");
   try {
     // 新对话只选模式与项目；检索范围不再按知识库切分 —— 永远是本机全部知识库。
     // mode: "chat" = 常规聊天（只写默认工作目录）/ "work" = 指定工作区（权限由 chip 定）
     const d = await api("/api/sessions/new", { projectId: projectId || "" });
-    if (generation !== state.navigationGeneration) { await reloadSessions(); return; }
-    state.chatProject = d.projectId || "";
-    state.chatMode = (mode === "work" || (d.projectId || "")) ? "work" : "chat";
+    // api() 已登记新摘要；导航改变时仍保留该行，但不抢回用户正在看的会话。
+    renderPanel(false, true);
+    if (generation !== state.navigationGeneration || selection !== (state.chatSelectionGeneration || 0)) {
+      await reloadSessions(); return;
+    }
+    const summary = sessionMetaOf(d.sessionId);
+    state.chatProject = summary.projectId || "";
+    state.chatMode = (mode === "work" || summary.kind === "work" || state.chatProject) ? "work" : "chat";
     state.chatKb = "";
     state.chatSessionId = d.sessionId;
+    // 后台向内核强制对账（force 绕过 SWR 陈旧窗），并立即重绘侧栏——
+    // chatOpenSession 路径不会整页重渲染面板，不主动刷的话新行要等下一次导航才出现。
+    reloadSessions().then(() => { if (current === "chat") renderPanel(); }).catch(() => {});
+    renderPanel(false, true);
     state.chatEvents = [];
     state.lastEventId = 0;
     state.chatTurns = [];
+    syncChatBusy();
     window.LuminTeamPanel?.syncSession("", []);
     if (current === "chat" && currentSection !== "overview" && typeof state.chatOpenSession === "function") {
       await state.chatOpenSession(state.chatSessionId);
@@ -6059,7 +6149,7 @@ async function newChat(projectId, mode, trigger) {
   } catch (e) {
     toast("新建会话失败：" + e.message);
   }
-  });
+  }).finally(() => state.chatRepaintBusy?.());
 }
 
 /** 把只追加的事件还原成可渲染的轮次。界面永远以事件为准，不自己编对话。 */
@@ -6500,7 +6590,7 @@ function renderTurnBlock(t, live) {
       const sid = state.chatSessionId;
       const actions = el('div', 'row msg-actions');
       const recover = btn(recovery === 'continue' ? '继续回答' : '重试', 'sm ghost chat-recover', () => state.chatRecover?.(t, sid));
-      recover.disabled = isSessionRunning(sid) || !!state.chatStarting;
+      recover.disabled = isSessionRunning(sid) || isCurrentSessionCreating();
       actions.appendChild(recover);
       e.appendChild(actions);
     }
@@ -7144,7 +7234,7 @@ PAGES.chat = {
       actionBtn.classList.toggle("stop", busy);
       actionBtn.title = stopping ? "正在停止当前任务" : busy ? "停止（Esc）" : "发送（Enter，Shift+Enter 换行）";
       actionBtn.setAttribute("aria-label", stopping ? "正在停止" : busy ? "停止" : "发送");
-      actionBtn.disabled = !!stopping || !!state.chatStarting;
+      actionBtn.disabled = !!stopping || isCurrentSessionCreating();
     };
     actionBtn.onclick = () => {
       if (state.busyTurn) stopTurn();
@@ -7389,7 +7479,7 @@ PAGES.chat = {
         await api("/api/agent/cancel", { sessionId: sid, turnId: state.chatRequest?.turnId || undefined });
         toast("正在停止当前任务…");
       } catch (e) {
-        state.cancelRequested = null;
+        if (state.cancelRequested === sid) state.cancelRequested = null;
         paintActionBtn();
         toast("停止失败：" + e.message);
       }
@@ -7408,7 +7498,8 @@ PAGES.chat = {
       try {
         await api("/api/agent/steer", { sessionId: sid, text: text });
         markSessionActivity(sid);
-        renderPanel();
+        renderPanel(false, true);
+        if (state.chatSessionId !== sid || current !== 'chat' || !thread.isConnected) return;
         // 先在正文里显示出来（内核把它注进这一轮时会再写一条 user/message 事件，正好对上）
         state.chatTurns.push({ id: "steer-" + Date.now(), kind: "ask", user: text, items: [], report: null, citations: [], ok: null, message: "", steer: true });
         paint();
@@ -7455,6 +7546,7 @@ PAGES.chat = {
       try {
         const sid = state.chatSessionId;
         const d = await api("/api/agent/approvals", sid ? { sessionId: sid } : {});
+        if (state.chatSessionId !== sid || current !== 'chat' || !thread.isConnected) return;
         const pend = (d.requests || []).filter((x) => !x.decision && (!sid || x.sessionId === sid));
         const changed = pend.length !== (state.approvals || []).length ||
           pend.some((x, i) => (state.approvals[i] || {}).id !== x.id);
@@ -7599,7 +7691,7 @@ PAGES.chat = {
     // Bound when the chat page opens, including history-only sessions before any send.
     state.chatRecover = (turn, sid) => {
       if (!thread.isConnected || current !== 'chat' || state.chatSessionId !== sid ||
-          isSessionRunning(sid) || state.chatStarting || busyActions.has('session:new')) return;
+          isSessionRunning(sid) || isCurrentSessionCreating()) return;
       const last = state.chatTurns.at(-1);
       if (!last || last.id !== turn.id) return;
       const kind = chatRecoveryKind(last);
@@ -7623,18 +7715,23 @@ PAGES.chat = {
       if (!text) return;
       // 跑着的时候 Enter = 插话，不是"等这一轮跑完再说"
       if (state.busyTurn) { steer(); return; }
-      if (state.chatStarting || busyActions.has("session:new")) return;
+      if (isCurrentSessionCreating()) return;
       const originReasoningKey = reasoningKey(), preference = reasoningEntry(originReasoningKey);
       if (preference.saving) { toast('思考设置正在保存，请稍候发送'); return; }
       const reasoningMode = !preference.loading && preference.signature === reasoningSignature() ? preference.data?.effectiveMode : undefined;
       if (!state.chatSessionId) {
         const generation = state.navigationGeneration;
+        const selection = state.chatSelectionGeneration || 0;
         state.chatStarting = true;
         paintActionBtn();
         try {
           const created = await api("/api/sessions/new", {});
-          if (generation !== state.navigationGeneration || reasoningKey() !== originReasoningKey) return;
+          if (current === 'chat') renderPanel(false, true);
+          reloadSessions().catch(() => {});
+          if (generation !== state.navigationGeneration || selection !== (state.chatSelectionGeneration || 0) || reasoningKey() !== originReasoningKey) return;
           state.chatSessionId = created.sessionId;
+          state.chatProject = sessionMetaOf(created.sessionId)?.projectId || '';
+          state.chatMode = state.chatProject ? 'work' : 'chat';
           if (preference.data) reasoningEntries.set('session:' + created.sessionId, {...preference, data:{...preference.data, mode:'default', effectiveMode:'default'}, seq:0, loading:false, saving:null});
           ++reasoningDraft;
           if (reasoningMode && reasoningMode !== 'default') await saveReasoning('session:' + created.sessionId, reasoningMode);
@@ -7651,11 +7748,13 @@ PAGES.chat = {
       ta.value = "";
       grow();
       state.lastQuestion = text;
-      markSessionActivity(sid);
-      const request = { sessionId: sid, controller: new AbortController(), baseline: (state.chatEvents || []).length, turnId: "", endedByEvents: false, phase: "thinking" };
+      const summary = markSessionActivity(sid, undefined, {
+        projectId: state.chatProject || '', kind: state.chatProject ? 'work' : 'ask',
+      });
+      const request = { sessionId: sid, projectId: summary.projectId, title: summary.title, question: text, kind: summary.kind, summary: { ...summary }, controller: new AbortController(), baseline: (state.chatEvents || []).length, turnId: "", endedByEvents: false, phase: "thinking" };
       state.chatRequests.set(sid, request);
       syncChatBusy();
-      renderPanel();   // 会话列表立刻给这一段挂上"正在回复"的转圈
+      renderPanel(false, true);   // 会话列表立刻给这一段挂上"正在回复"的转圈
       // 允许"已取消"的那一轮一键重问（取消多半是因为问题写错了）
       state.chatResend = (q, attached) => {
         if(attached?.some(a=>a.kind==='image'&&!a.dataUrl)){toast('请重新添加图片后再发送');return;}
@@ -7678,6 +7777,7 @@ PAGES.chat = {
         if(pollInFlight)return;pollInFlight=true;
         try {
           const d = await api("/api/sessions/events", { sessionId: sid, sinceId: request.lastId || 0 });
+          if (state.chatRequests.get(sid) !== request) return;
           if (d.lastId) request.lastId = d.lastId;
           const fresh = d.events || [];
           if (fresh.length) {
@@ -7690,6 +7790,7 @@ PAGES.chat = {
               else if (e.type === "assistant/thinking") request.phase = "thinking";
             }
             mascotActivity(request.phase, state.chatRequests.size);
+            renderPanel(false, true);
           }
           if (state.chatSessionId !== sid) return;
           if(d.lastId)state.lastEventId=d.lastId;
@@ -7719,7 +7820,7 @@ PAGES.chat = {
           kbId: "", question: text, attachments, sessionId: sid, web: "auto",
           reasoningMode,
           // 模式由会话决定：普通对话（没项目）＝ 常规聊天，内核据此锁死"只写默认目录"
-          mode: (state.chatProject ? "work" : "chat"),
+          mode: (request.projectId ? "work" : "chat"),
           skill: state.skill || "", perm: state.cfg.agentPerm || "auto",
           // 界面上下文：用户正在看哪一章——"这一章"才有落点，不用模型反查/反问
           ctxChapter: state.chapter || "",
@@ -7742,14 +7843,17 @@ PAGES.chat = {
           splitBarHide();   // 这一轮已经发出去了，"待分叉"提示可以收了
         }
       } catch (e) {
-        state.chatTurns = state.chatTurns.filter((t) => t.id !== "local" && !String(t.id).startsWith("steer-"));
+        if (state.chatSessionId === sid && state.chatRequests.get(sid) === request) {
+          state.chatTurns = state.chatTurns.filter((t) => t.id !== "local" && !String(t.id).startsWith("steer-"));
+        }
       }
-      if (typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
+      markSessionActivity(sid);
+      if (state.chatSessionId === sid && typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
       if (state.chatRequests.get(sid) === request) state.chatRequests.delete(sid);
       syncChatBusy();
-      renderPanel();   // 跑完了把转圈摘掉（还是就地刷新，不动列表结构）
+      renderPanel(false, true);   // 跑完了把转圈摘掉（还是就地刷新，不动列表结构）
       const stopped = state.cancelRequested === sid;
-      state.cancelRequested = null;
+      if (stopped) state.cancelRequested = null;
       if (stopped && !failure && state.chatSessionId === sid) {
         // 按过停止：这一轮标成"已取消"（正文保留），并把重问入口挂上
         const last = state.chatTurns[state.chatTurns.length - 1];
@@ -7770,9 +7874,11 @@ PAGES.chat = {
          放在轮次收尾之后既不打扰正文，也让"名字只在第一次提问后生成一次"更好解释。
          名字回来之前，列表与顶栏先用第一句话兜着。 */
       maybeGenerateTitle(sid);
-      if (typeof refreshWorkbenchState === "function") await refreshWorkbenchState();
-      if (current === "chat" && !thread.isConnected) await go("chat");
-      else paint();
+      if (state.chatSessionId === sid && current === "chat") {
+        if (typeof refreshWorkbenchState === "function") await refreshWorkbenchState();
+        if (!thread.isConnected) await go("chat");
+        else paint();
+      }
     }
 
     // Enter 发送 / 跑着时 Enter 插话；Shift+Enter 换行；Esc 停止（有弹层时 Esc 先关弹层）
@@ -7828,12 +7934,14 @@ PAGES.chat = {
     state.chatPaint = paint;
     state.chatRepaintBusy = () => {
       paintActionBtn(); updateJumpLatest();
-      for (const b of thread.querySelectorAll('.chat-recover')) b.disabled = state.busyTurn || !!state.chatStarting;
+      for (const b of thread.querySelectorAll('.chat-recover')) b.disabled = state.busyTurn || isCurrentSessionCreating();
     };
     /* 就地换会话：只换对话区那一段正文，不整页重建、也不重拉会话列表。
        会话栏只把高亮挪过去 —— 点一次就闪一次"加载中…"的问题就出在原来走的是整页 go()。 */
     state.chatOpenSession = async (id) => {
+      const selection = state.chatSelectionGeneration = (state.chatSelectionGeneration || 0) + 1;
       state.chatSessionId = id;
+      const requestAtOpen = state.chatRequests.get(id);
       reasoningControl.paint(); reasoningControl.refresh(true);
       // 右侧资源栏属于"这一段对话的产物"：换会话就收起，
       // 否则上一条会话的产物会留在新会话旁边（实测可复现）。
@@ -7852,14 +7960,14 @@ PAGES.chat = {
         /* 慢响应竞态：这期间用户可能已经点了另一条会话、或者切去了别的页面。
            只有"仍然是当前会话且仍在对话页"才落地 —— 否则正文会是 A 的内容、
            面板高亮停在 A，而输入框和后续提问都发往 B（实测可复现）。 */
-        if (state.chatSessionId !== id || current !== "chat") return;
+        if (state.chatSessionId !== id || current !== "chat" || selection !== state.chatSelectionGeneration || !thread.isConnected || state.chatRequests.get(id) !== requestAtOpen) return;
         state.chatEvents = d.events || [];
         state.lastEventId = d.lastId || 0;
         state.chatTree = d.tree || null;
         state.chatTurns = turnsFromEvents(state.chatEvents);
         window.LuminTeamPanel?.syncSession(id, state.chatEvents);
       } catch (e) {
-        if (state.chatSessionId !== id || current !== "chat") return;
+        if (state.chatSessionId !== id || current !== "chat" || selection !== state.chatSelectionGeneration || !thread.isConnected) return;
         toast("读取会话失败：" + e.message);
       }
       state.stickBottom = true;

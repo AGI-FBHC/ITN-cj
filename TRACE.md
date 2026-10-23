@@ -5529,3 +5529,18 @@ read_chunk 读得到原文并带回库标识与正文。
 - 只读核对出的接续点：session.cj现在仅有list(force:Bool)，guided_test/session_store_test/provider_test等仍调用无参list()，需后续收尾再验证。0.8.36 manifest.sourceCommit仍为旧b2043e0，package-lock仍0.8.35；包的源码追踪/版本一致性需在下次交付时处理，不能据此断言现包缺少已核对的前端修复。
 - 本聊天目前保持暂停。后续以0.8.36已完成修复+上述未提交改动为起点，避免重复0.8.35阶段工作；不得覆盖另一会话工作。未改真实Lumin或MiMo数据库，未启动模型调用、打包或发布。
 - 读取范围说明：本次提取了120条有正文的消息，重点核对全部5条用户请求、阶段总结、最后编辑记录与当前Git差异；未重放历史测试或逐条执行历史工具。
+
+### 2026-10-23 · 接替完成会话/项目一致性修复（0.8.37）
+
+- 用户要求接替完成MiMo会话中尚未完成的任务。本轮承接其未提交的api/session/app改动与session-conflict-probe，不覆盖已提交0.8.36性能修复；修复新建上栏、组内排序、项目归属、跨会话并行，以及发布版本/源码追踪。接口增量先追加本地docs/02（仍不提交）。版本目录/ZIP按既有规则递增0.8.37，无额外后缀，旧版保留。
+- 新发现的根因：原/api/sessions/new仅newId，不INSERT sessions，ProjectStore.bind也仅写KV；未发言的会话压根没有持久记录，非单纯SWR陈旧窗。新增SessionStore.create，持久化空会话，响应带真实创建时间/rowid/项目摘要供前端立刻入组；不存在项目先拒绝且不产生孤立行。无参list()兼容原生调用并保留写后读，HTTP被动读取明确传false。
+- 列表：沿用0.8.36被动读取SWR和节流，但force保证请求前成功写入可见。独立build互斥串行化重算，等待者拿锁后再检查纪元，旧后台任务不能晚回来覆盖新快照；所有退出路径清理在飞标志，删除手工unlock/finally双解锁形态。空列表也缓存。列表包含createdAt/rowid，以sessions.updated_at作为活动时间，分支不再被复制的旧事件日期压到下面。同时间按rowid降序，停止使用随机id决定创建先后。
+- 实机补出的排序问题：流式每个delta都更新活动时间、前端每轮轮询markSessionActivity，旧后台会话会反复挤掉新会话；异步命名也会把刚完成的旧会话顶回去。改为user/message、assistant/message、turn/end更新活动时间，流式增量/内部审计只更新内容，命名不改变活动顺序；创建和完整回复仍正常按最新活动排序。新增确定性测试：后台token/迟到命名不挤掉新会话，完整回答完成后可重新排到顶部。
+- 前端由子Agent分域修改app.js：api/new响应摘要即时登记，local revision保护较晚创建/活动不被旧list覆盖；force撞在飞passive或更早force时补一次强制读取；网络错误保留旧列表，成功空列表不留删除残影；真实rowid取代临时占位。后台请求保存自身projectId/title/question/summary，不再借用当前会话字段。新建/隐式创建期间切页、切会话、发送请求各自有navigation/selection代际检查；旧历史不覆盖刚发送的问题；后台完成失败不清理其他会话local消息、busy或取消标志。
+- 仓颉：新增SessionConsistencyTest 8项，覆盖空会话持久化/重开、创建API真实摘要/项目拒绝、写后读创建改名绑定删除、同时间排序、分支时间、12并发创建读取、force API和流式排序。最终cjpm test全量215/215成功；此前7项和全量214也已通过，补实机排序后再完整重跑215，不以旧结果替代。
+- 前端：新增session-rail-consistency-check，真实Edge+手动释放的HTTP门闩，18/18连续复跑通过，覆盖旧list晚到、force补读、双项目占位、删除/断网、新建双击、切页/就地切会话、隐式创建和正在发送的历史响应竞态。现有branch-guard 8/8、chat-network-recovery 11/11、reasoning-ui 37/37均通过。此类夹具不宣称真实模型或数据库语义。
+- 实际Electron候选基于0.8.36复制到独立tmp/session-candidate-0.8.37，再覆盖最新构建的仓颉内核和最终app.js，原0.8.36包未覆盖。session-conflict-probe空库与真实用户库副本均28项功能断言+1项清理断言全过；真实库副本93会话、约5万事件。空库新建上栏153ms，副本187ms；双流短答726/2546ms，流式期间GET settings 85/99ms；项目A/B交错新建、后台P归属、B连续三轮问答、内核确认running后的删除409/停止退出均通过。原始报告分别tmp/session-conflict-2026-10-23T13-35-41-530Z/result.json与13-37-26-459Z/result.json。此为本机单轮测量，不作普遍延迟承诺。
+- 探针修正：MiMo脚本把waitFor返回包装对象当直接值、把projects/save传入id当服务端实际id（创建时会分配p随机id）、被动列表当强一致读、创建防重未结束就连续点击、POST settings、未确认内核开始就检查删除等混作产品失败。本轮逐项校准并补请求发出观测、失败非0退出、失败截图/状态及本测试进程精准清理/副本DB清零。初轮失败记录保留，不算通过；A2/A4的排序问题是校准后实机确认并修复的真实缺陷。父途中误用一个检测函数名导致ReferenceError，仅修测试后重跑，未归咎产品。
+- 真实模型：新增real-session-isolation-smoke，临时凭据副本+空隔离库+真实deepseek-flash+Edge。A在项目甲calc 17*19并长答，B在项目乙短答；两个空会话先持久化、A执行时B可启动、原生calc续聊323、答案/事件不串、侧栏可见、切回B内容正确、项目归属和无JS异常，共9/9。最终复测B约1.6s、两轮总15s。中间一次重跑有一轮返回ok=false，但旧通用断言未记录具体错误且临时库已清零，原因不能追溯；保留initial-failure日志，补双方原始错误摘要（脱敏）后最终9项复验通过，不将该次失败擅自归因模型/网络。本轮未做昂贵PPT或大库生成。
+- 版本/工具：shell/package.json与lock顶层/根包均0.8.37；perf-runtime-audit默认读取当前版本，可用--pack或LUMIN_PERF_PACK选包，报告版本/sourceCommit从实际release.json读取，不再标成旧0.8.35。session-conflict-probe支持--pack/SESSION_CONFLICT_PACK，避免误验旧包。
+- 全程PowerShell7，仓颉业务内核，未新增Python业务或测试夹具；未改真实Lumin/MiMo数据库，不打印密钥，不改Web，原.taste-skill保持未跟踪。功能完成后先本地提交，再用该提交构建正式包，最终包验收另行追加。

@@ -1753,19 +1753,23 @@ public class Api {
             // 界面点「新建对话」时先开一个会话 id，这样提问前就能把它显示在会话栏里，
             // 生成过程中也能按这个 id 轮询事件做流式输出。
             let ss = SessionStore(store.dataDir)
-            let sid = ss.newId()
+            let pid = match (bodyJson(ctx)) { case Some(b) => strOf(b, "projectId"); case None => "" }
+            if (pid.size > 0 && ProjectStore(store.dataDir).find(pid).isNone()) {
+                fail(ctx, 400, "项目不存在，请重新选择工作区")
+                return
+            }
+            let summary = ss.create()
+            let sid = strOf(summary, "sessionId")
             let o = JsonObject()
             o.put("sessionId", JsonString(sid))
             // 新建时可以指定项目：会话一出生就归到那个文件夹下
-            match (bodyJson(ctx)) {
-                case Some(b) =>
-                    let pid = strOf(b, "projectId")
-                    if (pid.size > 0) {
-                        ProjectStore(store.dataDir).bind(sid, pid)
-                    }
-                    o.put("projectId", JsonString(pid))
-                case None => ()
+            if (pid.size > 0) {
+                ProjectStore(store.dataDir).bind(sid, pid)
+                summary.put("projectId", JsonString(pid))
+                summary.put("kind", JsonString("work"))
             }
+            o.put("projectId", JsonString(pid))
+            o.put("session", summary)
             ok(ctx, o)
             return
         }
@@ -2115,8 +2119,14 @@ public class Api {
 
         if (path == "/api/sessions/list" && method == "POST") {
             // 导学会话也是普通会话：仍然出现在侧栏，并带 resource 标签供界面识别。
+            // force=true：前端新建/改名/删除后的显式刷新，必须看到刚落库的变化（绕过 stale-while-revalidate）。
             let arr = JsonArray()
-            for (sm in SessionStore(store.dataDir).list()) { arr.add(sm) }
+            var force = false
+            match (bodyJson(ctx)) {
+                case Some(b) => force = boolOf(b, "force")
+                case None => ()
+            }
+            for (sm in SessionStore(store.dataDir).list(force)) { arr.add(sm) }
             let o = JsonObject()
             o.put("sessions", arr)
             ok(ctx, o)
