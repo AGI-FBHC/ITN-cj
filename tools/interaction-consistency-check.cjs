@@ -90,6 +90,10 @@ const freePort=()=>new Promise(resolve=>{
     await page.getByRole('button',{name:'一键已读',exact:true}).click();
     await until(()=>page.evaluate(()=>window.LuminNotifications.list().filter(n=>n.status!=='running').every(n=>n.read)));
     check('one-click read clears every unread result',await page.locator('.notification-badge').isHidden());
+    await until(async()=>{
+      const data=await post('/api/notifications/get');
+      return data.items.some(n=>n.id==='notice-audit-running'&&n.read);
+    });
     const stored=await post('/api/notifications/get');
     check('notification history is persisted by the Cangjie kernel',stored.items.length>=2&&stored.items.some(n=>n.id==='notice-audit-running'&&n.read));
 

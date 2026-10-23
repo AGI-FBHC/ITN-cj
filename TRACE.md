@@ -5594,3 +5594,9 @@ read_chunk 读得到原文并带回库标识与正文。
 
 - 0.8.41 本地交付核验：功能提交 `bd99d3934757528fd201944ce5f2d90ec67d03ff`，版本目录 `dist/Lumin-0.8.41`，ZIP `dist/Lumin-0.8.41.zip`（220.68 MB，SHA256 `8D5CD6E67B06A625DDB7796824DAB8301D33CA856CFE2F2826738FFC86C72734`）。`release.version=0.8.41`、`build=lumin-0.8.41-bd99d39`、`sourceCommit` 与功能提交一致；包内 package/源码 lock 版本均 0.8.41，ZIP 确认包含 `Lumin.exe`、两份一致的 release 清单及 `notifications.js/css`。
 - 用包内实际 renderer（`dist/Lumin-0.8.41/resources/app/renderer`）+ 原生仓颉内核重跑通知/确认专项 20/20、拖拽缩放专项 25/25；正式 `Lumin.exe` 在全新空用户目录启动 `RESULT=OK`。未做安装器、未发布天翼云、未推送远端；旧版本目录保留，`.taste-skill/` 保持未跟踪。
+
+### 2026-10-24 02:18 +08:00 · 成长页骨架优先与 0.8.42 最终包
+
+- 在 0.8.41 基础上又补了一处感知流畅性：成长页不再把 `/api/course/report` 的重查询阻塞在 `go('report')` 的导航 Promise 里，而是先绘制带真实加载提示的骨架，延迟 250ms 后仅在用户仍停留该页时启动数据请求；用户快速离开页面时请求不再启动，避免重查询抢锁拖慢紧接着的资源页。实测包内 renderer：chat 145ms、home 271ms、report 114ms、resources 40ms、notes 154ms、wrong 182ms、kb 157ms；成长内容加载期间不再阻塞用户切页。
+- 0.8.42 最终交付：功能提交 `0173dc6f81f0a2e8ed6a0a72e7b7b11bb0a0883f`，`dist/Lumin-0.8.42/Lumin.exe`，`dist/Lumin-0.8.42.zip`（220.68 MB，SHA256 `650935E373FCCABE2B0B5AF3AD9556C62CC1B10094891B3E577C9DCD75A6D156`）；release 为 `lumin-0.8.42-0173dc6`，包内版本 0.8.42。包内通知/确认专项 20/20、包内拖拽专项 25/25、包内导航专项 14/14；正式 EXE 空目录启动 `RESULT=OK`。
+- 测试辅助提交 `b1d914a` 仅让三个专项支持 `ITN_UI_DIR`，便于对包内 renderer 复跑；0.8.41 包保留可回滚。`.taste-skill/` 仍未跟踪。
