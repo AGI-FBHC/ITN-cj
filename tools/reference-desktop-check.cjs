@@ -69,6 +69,17 @@ const expectOpen = async (input, expectedPath, kind = 'file') => {
       'global.__referenceProtocolAttempts=0;',
       'app.setAsDefaultProtocolClient=()=>{global.__referenceProtocolAttempts++;return false;};',
       'global.__referenceCalls=[];global.__referenceFailure=null;',
+      // The dev Electron binary has its own immutable resourcesPath. Route only
+      // its kernel fixture to the package; installed startup is checked separately.
+      ...(path.basename(path.dirname(shellDir)) === 'resources'
+        ? [
+          'const fixtureFs=require("fs"),fixtureCp=require("child_process");',
+          'const fixtureFallback=' + JSON.stringify(path.resolve(shellDir, '../dist/core/itn-desktop-core.exe')) + ';',
+          'const fixtureKernel=' + JSON.stringify(path.resolve(shellDir, '../kernel/lumin-core.exe')) + ';',
+          'const fixtureExists=fixtureFs.existsSync,fixtureSpawn=fixtureCp.spawn;',
+          'fixtureFs.existsSync=value=>fixtureExists(value===fixtureFallback?fixtureKernel:value);',
+          'fixtureCp.spawn=(exe,args,options)=>fixtureSpawn(exe===fixtureFallback?fixtureKernel:exe,args,exe===fixtureFallback?{...options,cwd:require("path").dirname(fixtureKernel)}:options);',
+        ] : []),
       'shell.openPath=async value=>{global.__referenceCalls.push({method:"openPath",value});if(global.__referenceFailure?.method==="openPath"){if(global.__referenceFailure.throws)throw Error(global.__referenceFailure.message);return global.__referenceFailure.message;}return "";};',
       'shell.openExternal=async value=>{global.__referenceCalls.push({method:"openExternal",value});if(global.__referenceFailure?.method==="openExternal")throw Error(global.__referenceFailure.message);};',
       'require(' + JSON.stringify(path.join(shellDir, 'main.js')) + ');',
