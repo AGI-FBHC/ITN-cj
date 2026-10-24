@@ -35,3 +35,6 @@ desktop.ini
 
 # Agent instructions stay local; never publish AGENTS.md
 AGENTS.md
+
+# Internal handoff notes stay local; never publish TRACE.md
+TRACE.md

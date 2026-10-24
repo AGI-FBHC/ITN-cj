@@ -2,7 +2,7 @@
 
 ## 当前布局
 
-`main` 作为总仓库入口，包含 `versions/pro`、`versions/lite` 和 `versions/desktop`。各版本内部沿用自己的目录、依赖和配置；根 README 负责版本选择，根 TRACE 记录后续仓库级操作。
+`main` 作为总仓库入口，包含 `versions/pro`、`versions/lite` 和 `versions/desktop`。各版本内部沿用自己的目录、依赖和配置；根 README 负责版本选择。
 
 `archive/legacy-main` 保存整合前 main 的完整文件树。历史文件中的旧路径、旧状态和旧分支名描述当时情况，按原文保留；当前操作入口以根 README 和 [启动指南](GETTING_STARTED.md) 为准。
 
@@ -46,7 +46,7 @@ git rev-list snapshot/20261023/lite --not main
 git diff --exit-code snapshot/20261023/lite^{tree} main:versions/lite
 ```
 
-Pro、Desktop 和归档 main 使用相同检查方法。还需核对各版本的 `TRACE.md`、构建入口、根文档本地链接和原始作者记录。
+Pro、Desktop 和归档 main 使用相同检查方法。还需核对各版本的构建入口、根文档本地链接和原始作者记录。
 
 ## 后续分支约定
 

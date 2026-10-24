@@ -116,8 +116,7 @@ ITN-cj/
 ├── docs/
 │   ├── GETTING_STARTED.md   版本环境与启动入口
 │   └── REPOSITORY.md        分支、导入来源与历史保留说明
-├── archive/legacy-main/     整合前 main 的完整文件快照
-└── TRACE.md                 仓库级变更与交接记录
+└── archive/legacy-main/     整合前 main 的完整文件快照
 ```
 
 ```mermaid
@@ -136,7 +135,7 @@ flowchart LR
 
 - 从 `main` 创建功能分支，一次提交聚焦一个版本；跨版本变更在 PR 中说明影响范围。
 - 在版本目录内构建和测试。环境文件、模型密钥、数据库、依赖和构建产物不提交。
-- 将变更目的、验证结果和交接事项追加到根 [TRACE.md](TRACE.md)。
+- 变更目的、验证结果与交接事项写在提交信息和 PR 描述中。
 - 通过 PR 合并，选择 **Create a merge commit**，保留成员的原始提交与作者记录。
 
 现有 `itn-pro`、`itn-lite`、`desktop` 分支继续保留。整合时的来源提交、快照标签及后续同步规则见 [仓库组织说明](docs/REPOSITORY.md)。
