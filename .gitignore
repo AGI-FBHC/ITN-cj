@@ -32,3 +32,6 @@ DEPLOY.md
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Agent instructions stay local; never publish AGENTS.md
+AGENTS.md

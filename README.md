@@ -99,7 +99,7 @@ npm ci --prefix shell
 npm start --prefix shell
 ```
 
-[产品与使用范围](versions/desktop/PRODUCT.md) · [构建与开发约定](versions/desktop/AGENTS.md)
+[产品与使用范围](versions/desktop/PRODUCT.md) · [构建与使用说明](docs/GETTING_STARTED.md)
 
 </details>
 
@@ -117,7 +117,6 @@ ITN-cj/
 │   ├── GETTING_STARTED.md   版本环境与启动入口
 │   └── REPOSITORY.md        分支、导入来源与历史保留说明
 ├── archive/legacy-main/     整合前 main 的完整文件快照
-├── AGENTS.md                跨版本协作约定
 └── TRACE.md                 仓库级变更与交接记录
 ```
 

@@ -282,3 +282,9 @@ scripts/package-app.ps1原来强制复制两份docs说明，公开检出缺docs�
 - 合并无冲突。合并后 `versions/desktop` 与来源 tip 的唯一树差异仍是之前新增的 `scripts/publish-lumin.ps1` 路径适配（兼容独立检出与 versions/desktop），该适配已在独立夹具中验证。
 - 验证：desktop tip 为 HEAD 祖先且 `rev-list origin/desktop --not HEAD` 为 0；42 个 PowerShell 脚本通过 AST 解析，8 个 Electron/渲染脚本通过 `node --check`，`shell/package.json` 版本为 0.9.3。未执行桌面端完整构建、Electron 打包与真机冒烟（依赖本机 Windows SDK 与桌面运行环境）。
 - 通过 PR 以 merge commit 合入 main；pro/lite 分支与版本目录不受影响。
+
+## 2026-10-24 AGENTS.md 不再入库
+
+- 用户要求 AGENTS.md 不放入仓库。已从当前 tree 移除根 AGENTS.md、归档树中的三份以及 versions/pro、versions/desktop（含 lumin）中的 AGENTS.md，并在 .gitignore 增加 `AGENTS.md`，避免后续误提交。
+- 原始版本树与归档 main 的 AGENTS.md 仍保存在各自来源分支及 snapshot/20261023/* 快照提交中，可随时追溯；archive/legacy-main 与 snapshot 主树的差异因此仅剩这些 AGENTS.md 文件。
+- 同步修正 README、GETTING_STARTED 与 versions/desktop/README 中对 AGENTS.md 的引用。后续用 subtree 同步版本分支时，如带回 AGENTS.md，按本约定在合并中移除。

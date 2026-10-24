@@ -56,7 +56,7 @@ npm start --prefix shell
 
 `scripts/env.ps1` 管理仓颉 SDK、STDX 和 OpenSSL。`build.ps1` 生成编译产物，`package.ps1` 将内核与运行库放入 `dist/core` 并嵌入 UTF-8 清单；Electron 开发入口从这个目录启动内核。内核构建失败时先检查工具链路径，桌面端启动还需要完成模型配置。
 
-阅读 [PRODUCT.md](../versions/desktop/PRODUCT.md) 了解产品范围，修改代码前读取 [AGENTS.md](../versions/desktop/AGENTS.md)。桌面版内部 `docs/` 按原约定保留在本地，不由本次整合补入公开仓库。
+阅读 [PRODUCT.md](../versions/desktop/PRODUCT.md) 了解产品范围。桌面版内部 `docs/` 按原约定保留在本地，不由本次整合补入公开仓库。
 
 ## 路径与配置约定
 
