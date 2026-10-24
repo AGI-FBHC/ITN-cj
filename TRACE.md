@@ -5642,3 +5642,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - 0.9.2 本地交付：功能提交 `ff661d9596b088ae6b6d045f73253edc1ecb2eb5`；`dist/Lumin-0.9.2/Lumin.exe`、`dist/Lumin-0.9.2.zip`（`231420203` bytes，SHA256 `68DE3D0A3229BB6E8FA4D3EA4A084FEE1330C3E535A9ABEF3D6583885DAFDD56`）、安装器 `dist/Lumin-Setup-0.9.2.exe`（`155741271` bytes，SHA256 `59AE715A43C60C32722527700090D1BAAC3AA6D7B492B8DDF673422A392AC528`）。release.version/build/sourceCommit 与功能提交一致，40 项关键资产哈希一致，ZIP 内凭据之外的 renderer/executable/release 清单齐全。
 - 安装验收 24/24：中文空格路径、静默安装、2740 个 payload 文件哈希、快捷方式、深链、升级锁、安装版真实启动、PPT/DOCX/PDF、隔离数据库、升级/卸载/重装保留学习数据；正式便携 EXE 在全新 TEMP/APPDATA/LOCALAPPDATA 空目录启动 `RESULT=OK`。包内 renderer 的光影专项 10/10，非源码工作树专属断言。
 - 公网发布已完成：`http://113.249.102.41:6025/` 当前显示 0.9.2，安装版与便携版两个 HEAD 均 200，服务器文件 SHA256 与本地一致，`lumin-release.service=active`。发布检查本地 23/23、远端页面 22/22；日志中服务重启瞬间一次 `curl 127.0.0.1:6025` 连接失败发生在重试窗口内，最终健康检查、页面和下载入口均通过；没有未解决的运行故障。GitHub `AGI-FBHC/ITN-cj` 的 desktop 远端 HEAD 已确认 `ff661d9`。`.taste-skill/` 保持未跟踪。
+
+### 2026-10-24 · 对话引用与本地路径访达
+
+- 用户要求回复中的网页链接、文件/目录路径、知识库引用和引用来源都能直接访达。实现统一在 renderer：Markdown 外部链接交给 `window.itnWindow.openUrl`；绝对路径、`file://`、文件夹路径和相对工作区路径交给 `window.itnWindow.openPath`；知识库相对文档与 `[n]`/`[Wn]` 引用打开右侧 `resource-dock`，复用 Agents tree 同平面的侧栏布局，不再跳页。
+- `md()` 现在支持无协议网页 URL、Markdown 文件链接、行内 code 路径和普通路径；引用面板显示资料标题、章节、原文片段和“打开原文件/打开资料库”，网页引用提供“用浏览器打开”。资源出处列表也增加“打开引用”入口；知识库原文、学习资源和引用列表共用同一套右侧预览。
+- 先写回归再修出真实缺陷：引用按钮的闭包捕获了循环结束后的 `match=null`，导致真实鼠标点击报 `Cannot read properties of null (reading '1')`；改为捕获当前 `mark` 和 `source` 后通过。另修正知识库路径被误标成绝对 file 路径的问题、Bare URL 吞掉中文逗号和后续文本的问题、引用路径标题丢失的问题。
+- 新增 `tools/reference-link-check.cjs`（真实 Edge + 隔离仓颉 KB + 注入 Electron bridge 记录）：11/11 通过，覆盖外部 URL、目录/文件 openPath、知识库 `[1]`、网页 `[W2]`、来源行、右侧面板边界和“打开原文件”。截图 `tmp/reference-link-check/knowledge-reference.png` 目视确认右侧面板与对话同层、无横向溢出。回归：chat UX 18/18、knowledge 93/93、learning 45/45、ui-audit 120/120、语法检查通过。
+- 本段仅改 renderer、样式和测试，不改变 Cangjie 内核、数据库、模型/密钥或真实用户数据；`.taste-skill/` 保持未跟踪。MBTI 个性化配置、ENFJ 默认身份和 MBTI 测评引导按用户要求在本段交付后继续。

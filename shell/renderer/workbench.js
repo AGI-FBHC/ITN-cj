@@ -1,7 +1,7 @@
 /* Personal learning workspace. Data and task truth come from the Cangjie API. */
 const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz: '分阶测试', ppt: 'PPT 演示', legacy:'历史资料'};
 const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', completed: '已完成', failed: '未完成', cancelled: '已取消', interrupted: '上次任务已中断'};
-const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
+const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null, reference: null};
 
 // Keep the lock outside any particular dialog so reopening it cannot repeat a write.
 function workbenchRequestButton(label,cls,key,busyLabel,task,options) {
@@ -105,12 +105,13 @@ function ensureResourceDock() {
     // 成果面板的宽度也要能拖：面板是动态创建的，拖动条得在这时候挂
     if (typeof installSplitters === 'function') installSplitters();
   }
-  const reader = current === 'resources' ? $('outcome-reader') : null;
+  const referenceMode = !!workbench.reference;
+  const reader = !referenceMode && current === 'resources' ? $('outcome-reader') : null;
   const embedded = !!reader;
   if (embedded && dock.parentElement !== reader) reader.appendChild(dock);
   if (!embedded && dock.parentElement !== document.querySelector('.app')) document.querySelector('.app').appendChild(dock);
   dock.classList.toggle('embedded-resource', embedded);
-  dock.hidden = !workbench.open || (!embedded && current !== 'chat');
+  dock.hidden = !workbench.open || (!embedded && !referenceMode && current !== 'chat');
   if (reader) reader.classList.toggle('has-selection', !dock.hidden);
   document.body.classList.toggle('resource-open', !embedded && !dock.hidden);
   return dock;
@@ -126,6 +127,7 @@ renderResourceDock = function () {
 function closeResourceDock() {
   ++workbench.loadToken;
   workbench.open = false;
+  workbench.reference = null;
   ensureResourceDock();
   (current === 'resources' ? document.querySelector('.outcome-grid .resource-entry.selected') : $('wb-artifacts'))?.focus();
 }
@@ -141,7 +143,7 @@ async function openLearningResource(id, version) {
       await navigation;
       if (generation !== state.navigationGeneration) return;
     }
-    workbench.file=null;workbench.selected = resource;
+    workbench.file=null;workbench.reference=null;workbench.selected = resource;
     workbench.open = true;
     renderResourceDock();
     document.querySelectorAll('.outcome-grid .resource-entry').forEach(node => {
@@ -238,8 +240,8 @@ function fileArtifactCard(artifact) {
 async function openFilePreview(file,metadata={}) {
   if(!window.itnWindow?.readResourceFile){toast('文件预览只在桌面窗口中可用');return;}
   const generation=state.navigationGeneration,token=++workbench.loadToken,data=await window.itnWindow.readResourceFile(file);if(token!==workbench.loadToken||generation!==state.navigationGeneration)return;
-  if(!data.ok){workbench.file={kind:'file',path:file,name:String(file).replace(/\\/g,'/').split('/').pop(),error:data.error,...metadata};workbench.selected=null;workbench.open=true;renderResourceDock();return;}
-  workbench.file={...data,...metadata,path:data.path};workbench.selected=null;workbench.open=true;renderResourceDock();
+  if(!data.ok){workbench.file={kind:'file',path:file,name:String(file).replace(/\\/g,'/').split('/').pop(),error:data.error,...metadata};workbench.selected=null;workbench.reference=null;workbench.open=true;renderResourceDock();return;}
+  workbench.file={...data,...metadata,path:data.path};workbench.selected=null;workbench.reference=null;workbench.open=true;renderResourceDock();
 }
 function renderFilePreview(dock,file) {
   const head=el('header','resource-dock-head');head.append(el('strong','grow',file.title || file.name),btn('关闭','ghost sm',closeResourceDock));dock.appendChild(head);
@@ -259,6 +261,121 @@ function renderFilePreview(dock,file) {
   }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '');else article.textContent=file.text || file.error || '';body.appendChild(article);}
 }
 
+function referenceKb(citation) {
+  const list = state.cfg?.knowledgeBases || [];
+  return list.find(k => k.id === citation?.kbId) || list.find(k => k.id === state.kb) || list[0] || null;
+}
+
+function referencePath(citation) {
+  const raw = String(citation?.docPath || "").trim();
+  if (!raw) return "";
+  if (/^[A-Za-z]:[\\/]/.test(raw) || /^\\\\/.test(raw) || /^\//.test(raw)) return raw;
+  const kb = referenceKb(citation);
+  const root = String(kb?.rootDir || kb?.sourcePath || "").replace(/[\\/]$/, "");
+  if (!root) return raw;
+  return root + "\\" + raw.replace(/^[\\/]+/, "").replace(/\//g, "\\");
+}
+
+function openReferencePath(path) {
+  if (!path) { toast("没有可打开的原文件"); return; }
+  if (!window.itnWindow?.openPath) { toast("打开原文件只在桌面窗口中可用"); return; }
+  window.itnWindow.openPath(path).then(result => {
+    if (result?.ok === false) toast(result.error || "无法打开原文件");
+  }).catch(() => toast("无法打开原文件"));
+}
+
+function renderReferenceDock(dock, ref) {
+  const citation = ref?.citation || ref || {};
+  const isWeb = citation.kind === "web" || /^https?:\/\//i.test(citation.docPath || citation.url || "");
+  const path = referencePath(citation);
+  const title = citation.docTitle || citation.title || citation.url || citation.docPath || "资料引用";
+  const head = el("header", "resource-dock-head reference-dock-head");
+  const heading = el("div", "grow reference-heading");
+  heading.append(el("span", "reference-kicker", isWeb ? "网页引用" : "知识库引用"), el("strong", "reference-title", title));
+  head.append(heading, btn("关闭", "ghost sm", closeResourceDock));
+  dock.appendChild(head);
+
+  const body = el("div", "resource-dock-body reference-body");
+  dock.appendChild(body);
+  const meta = el("div", "reference-meta");
+  if (citation.headingPath) meta.appendChild(el("span", null, citation.headingPath));
+  if (citation.docPath) meta.appendChild(el("span", "reference-path-text", citation.docPath));
+  if (meta.childElementCount) body.appendChild(meta);
+
+  const actions = el("div", "reference-actions");
+  if (isWeb) {
+    const href = citation.docPath || citation.url || "";
+    actions.appendChild(btn("用浏览器打开", "primary sm", () => {
+      window.itnWindow?.openUrl?.(href).then(result => {
+        if (result?.ok === false) toast(result.error || "无法打开网页");
+      }).catch(() => toast("无法打开网页"));
+    }));
+  } else {
+    if (path) actions.appendChild(btn("打开原文件", "primary sm", () => openReferencePath(path)));
+    actions.appendChild(btn("打开资料库", "ghost sm", () => go("kb")));
+  }
+  if (citation.chunkId) actions.appendChild(btn("复制引用位置", "ghost sm", () => navigator.clipboard.writeText(citation.chunkId).then(() => toast("已复制引用位置")).catch(() => toast("复制失败"))));
+  if (actions.childElementCount) body.appendChild(actions);
+
+  const content = el("div", "reference-content");
+  body.appendChild(content);
+  if (citation.text) content.innerHTML = md(citation.text);
+  else content.appendChild(el("p", "muted", "正在读取引用原文…"));
+
+  if (!isWeb && (citation.kbId || citation.docPath)) {
+    const kb = referenceKb(citation);
+    const kbId = citation.kbId || kb?.id || "";
+    if (kbId && citation.docPath) {
+      api("/api/kb/document", {id: kbId, path: citation.docPath, offset: 0, limit: 24}).then(data => {
+        if (!dock.isConnected || workbench.reference !== ref) return;
+        content.replaceChildren();
+        const fragments = data.chunks || [];
+        if (!fragments.length) content.appendChild(el("p", "muted", "这份资料的索引原文暂时不可用，可以使用上方“打开原文件”。"));
+        for (const chunk of fragments) {
+          const section = el("section", "reference-chunk");
+          if (chunk.headingPath) section.appendChild(el("h4", null, chunk.headingPath));
+          const article = el("article", "md");
+          article.innerHTML = md(chunk.text || "", {document: true, kbId, docPath: citation.docPath});
+          section.appendChild(article);
+          content.appendChild(section);
+        }
+      }).catch(error => {
+        if (!dock.isConnected || workbench.reference !== ref) return;
+        if (!citation.text) content.replaceChildren(el("p", "muted", "读取原文失败：" + error.message));
+      });
+    }
+  }
+
+  if (ref?.kind === "knowledge" && citation.id) {
+    api("/api/knowledge/node", {id: citation.id}).then(node => {
+      if (!dock.isConnected || workbench.reference !== ref) return;
+      content.replaceChildren();
+      content.append(el("h3", null, node.title || "知识点"), el("p", null, node.definition || "还没有定义。"));
+      for (const record of node.records || []) {
+        const row = el("section", "reference-chunk");
+        row.appendChild(el("h4", null, record.question || "对话记录"));
+        if (record.note) row.appendChild(el("p", null, record.note));
+        if (record.workspaceRoot) row.appendChild(btn(record.workspaceRoot, "reference-path-button", () => openReferencePath(record.workspaceRoot)));
+        content.appendChild(row);
+      }
+    }).catch(error => toast("读取知识点失败：" + error.message));
+  }
+}
+
+function openReference(ref) {
+  workbench.file = null;
+  workbench.selected = null;
+  workbench.reference = ref;
+  workbench.open = true;
+  renderResourceDock();
+}
+
+window.LuminReferencePanel = {
+  open: openReference,
+  close: closeResourceDock,
+  isOpen: () => !!workbench.reference && !!workbench.open,
+};
+
 async function exportResourceAs(res, kind) {
   if(kind==='pptx'){openPresentationBrief(res);return;}
   const a = window.itnWindow;
@@ -277,6 +394,7 @@ function renderResourceDock() {
   const dock = ensureResourceDock();
   // innerHTML 一清，挂在面板边缘的拖动条也没了：刷完内容再挂一次（installSplitters 是幂等的）
   dock.innerHTML = '';
+  if(workbench.reference){renderReferenceDock(dock,workbench.reference);return;}
   if(workbench.file){renderFilePreview(dock,workbench.file);return;}
   const res = workbench.selected;
   const head = el('header', 'resource-dock-head');
@@ -369,6 +487,7 @@ function renderResourceDock() {
   for (const c of res.citations || []) {
     const source = el('details', 'resource-source');
     source.appendChild(el('summary', null, '[' + c.index + '] ' + (c.docTitle || '') + ' · ' + (c.headingPath || '')));
+    source.appendChild(btn('打开引用', 'ghost sm reference-open-citation', () => openReference({kind: 'citation', citation: c})));
     source.appendChild(el('p', 'muted sm', (c.docPath || '') + ' · 生成时的资料切片'));
     const article = el('article', 'md'); article.innerHTML = md(c.text || '此历史资源没有保存切片快照，请回到知识库核实原文。');
     source.appendChild(article); provenance.appendChild(source);
@@ -818,6 +937,10 @@ PAGES.kb.render=async function(){
 const studyJobs = new Map();
 const studyQuizCache = new Map();
 function openStudyCitation(source, index, origin) {
+  if (window.LuminReferencePanel?.open) {
+    window.LuminReferencePanel.open({kind: "citation", citation: source, label: String(index)});
+    return;
+  }
   document.querySelector('.study-citation')?.remove();
   const drawer=el('aside','study-citation'); drawer.setAttribute('aria-label','引用原文'); drawer.setAttribute('role','dialog');
   const head=el('div','row'); head.append(el('strong','grow','['+index+'] '+(source.docTitle || '资料原文')));

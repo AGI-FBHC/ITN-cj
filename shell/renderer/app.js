@@ -340,17 +340,53 @@ function md(src, options = {}) {
   const inline = (s) => {
     const held = [];
     const hold = html => { const key = held.push(html) - 1; return "\uE000" + key + "\uE001"; };
-    s = s.replace(/`([^`]+)`/g, (_, code) => hold("<code>" + code + "</code>"));
+    const pathExtensions = "md|markdown|txt|text|csv|tsv|log|json|jsonl|pptx|ppt|docx|doc|pdf|png|jpe?g|webp|gif|svg|html?|xml|ya?ml|toml|zip";
+    const pathToken = new RegExp("(^|[\\s(（:：，,;；])((?:[A-Za-z]:[\\\\/]|\\\\\\\\|/)[^\\s<>\"'`]+|(?:[\\w.-]+[\\\\/])+[\\w.-]*[\\\\/]?|[\\w.-]+\\.(?:" + pathExtensions + "))(?:[\\\\/][^\\s<>\"'`]+)?(?=$|[\\s)）\\[\\]}>，。；：、,.;])", "gi");
+    const pathLink = (label, target, extra = {}) => {
+      let normalized = String(target || "").trim().replace(/[.,;:，。；：]+$/, "");
+      if (/^file:\/\//i.test(normalized)) {
+        normalized = normalized.replace(/^file:\/\//i, "").replace(/^\/([A-Za-z]:)/, "$1");
+      }
+      if (!normalized) return label;
+      const citation = (options.citations || []).find(c => String(c.docPath || "").replace(/\\/g, "/") === normalized.replace(/\\/g, "/"));
+      const attrs = ['class="md-link md-resource-link"', 'href="#"', 'data-resource-path="' + esc(normalized) + '"'];
+      if (citation || extra.kbId || extra.docPath) {
+        attrs.push('data-reference-kind="kb"');
+        attrs.push('data-kb-id="' + esc(citation?.kbId || extra.kbId || options.kbId || "") + '"');
+        attrs.push('data-doc-path="' + esc(citation?.docPath || extra.docPath || normalized) + '"');
+        if (citation?.docTitle) attrs.push('data-reference-title="' + esc(citation.docTitle) + '"');
+      } else {
+        attrs.push('data-reference-kind="path"');
+      }
+      return '<a ' + attrs.join(" ") + '>' + label + '</a>';
+    };
+    const looksLikePath = value => {
+      const v = String(value || "").trim();
+      if (!v || /[\r\n]/.test(v) || /^(?:https?:|mailto:|lumin:)/i.test(v)) return false;
+      if (/^file:\/\//i.test(v)) return true;
+      return /^[A-Za-z]:[\\/]/.test(v) || /^\\\\/.test(v) || /^\//.test(v) ||
+        /^[^<>"'`]+[\\/][^<>"'`]+$/.test(v) || new RegExp("^[^<>/\\\\]+\\.(?:" + pathExtensions + ")$", "i").test(v);
+    };
+    s = s.replace(/`([^`]+)`/g, (_, code) => {
+      return hold(looksLikePath(code)
+        ? pathLink("<code>" + code + "</code>", code)
+        : "<code>" + code + "</code>");
+    });
     if (options.document) {
       s = s.replace(/&lt;\/?(?:strong|b|em|i|u|s|sup|sub|br|div|p|figure|figcaption|img)\b.*?&gt;/gi, tag => hold(safeDocumentTag(tag, options)));
       s = s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, (_, alt, target) => {
         const source = target.match(/^&lt;(.*?)&gt;(?:\s+.*)?$/)?.[1] || target.replace(/\s+&quot;.*&quot;$/, "");
         return hold(documentImageTag(source, alt, options));
       });
-      s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, target) => documentLinkTag(match, label, target, options));
+      s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, target) => hold(documentLinkTag(match, label, target, options)));
     }
+    s = s.replace(/\[([^\]\n]+)\]\((file:\/\/[^)\s]+)\)/gi, (_, label, target) => hold(pathLink(label, target)));
+    s = s.replace(/\[([^\]\n]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|lumin:[^)\s]+)\)/g, (_, label, target) =>
+      hold('<a class="md-link md-external-link" href="' + target + '" target="_blank" rel="noopener noreferrer" data-external-link="1">' + label + "</a>"));
+    s = s.replace(/(^|[\s(（:：])((https?:\/\/)[^\s<，。；：、]+)/gi, (match, prefix, url) =>
+      prefix + hold('<a class="md-link md-external-link" href="' + url + '" target="_blank" rel="noopener noreferrer" data-external-link="1">' + url + "</a>"));
+    s = s.replace(pathToken, (match, prefix, path) => prefix + pathLink(path, path));
     return s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, '<span class="md-img">图片 · $1</span>')
-    .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|lumin:[^)\s]+)\)/g, '<a class="md-link md-external-link" href="$2" target="_blank" rel="noopener noreferrer" data-external-link="1">$1</a>')
     .replace(/~~([^~\n]+)~~/g, "<s>$1</s>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\[(\d+)\]/g, '<span class="cite">[$1]</span>')
@@ -464,27 +500,129 @@ function installMarkdownLinkInteractions() {
   const tip = markdownLinkTip();
   const hide = () => { tip.classList.remove("show"); tip.textContent = ""; };
   document.addEventListener("pointerover", (event) => {
-    const anchor = event.target.closest?.("a.md-external-link");
+    const anchor = event.target.closest?.("a.md-external-link,a.md-resource-link,a[data-kb-document]");
     if (!anchor) return;
     const href = String(anchor.getAttribute("href") || "");
-    let host = href;
-    try { host = new URL(href, location.href).hostname || href; } catch (e) { /* keep raw */ }
-    tip.textContent = host + " · Ctrl + 点击打开";
+    let label = href;
+    if (anchor.matches("a.md-resource-link")) {
+      label = anchor.dataset.referenceKind === "kb" ? "打开资料引用" : "用系统程序打开";
+    } else if (anchor.matches("a[data-kb-document]")) {
+      label = "查看资料原文";
+    } else {
+      try { label = new URL(href, location.href).hostname || href; } catch (e) { /* keep raw */ }
+    }
+    tip.textContent = label + " · Ctrl + 点击打开";
     const rect = anchor.getBoundingClientRect();
     tip.style.left = Math.max(10, Math.min(window.innerWidth - 230, rect.left)) + "px";
     tip.style.top = Math.max(10, rect.top - 38) + "px";
     tip.classList.add("show");
   });
   document.addEventListener("pointerout", (event) => {
-    if (event.target.closest?.("a.md-external-link")) hide();
+    if (event.target.closest?.("a.md-external-link,a.md-resource-link,a[data-kb-document]")) hide();
   });
   document.addEventListener("click", (event) => {
+    const resource = event.target.closest?.("a.md-resource-link");
+    if (resource) {
+      event.preventDefault();
+      if (resource.dataset.referenceKind === "kb") {
+        openCitationReference({
+          kbId: resource.dataset.kbId || state.kb || "",
+          docPath: resource.dataset.docPath || resource.dataset.resourcePath || "",
+          docTitle: resource.dataset.referenceTitle || resource.textContent || resource.dataset.docPath || "资料引用",
+          text: "",
+        });
+      } else {
+        openSystemReference(resource.dataset.resourcePath || "");
+      }
+      return;
+    }
+    const kbDocument = event.target.closest?.("a[data-kb-document]");
+    if (kbDocument && !(current === "kb" && kbDocument.closest("#view"))) {
+      event.preventDefault();
+      openCitationReference({kbId: state.kb, docPath: kbDocument.dataset.kbDocument, docTitle: kbDocument.textContent || "资料引用", text: ""});
+      return;
+    }
     const anchor = event.target.closest?.("a.md-external-link");
     if (!anchor) return;
     if (openMarkdownExternalLink(anchor)) event.preventDefault();
   });
 }
 installMarkdownLinkInteractions();
+
+function referenceBasePath() {
+  try {
+    const work = typeof sessionWorkDir === "function" ? sessionWorkDir() : null;
+    return String(work?.path || "").replace(/[\\/]$/, "");
+  } catch (e) { return ""; }
+}
+
+function resolveSystemReference(raw) {
+  let path = String(raw || "").trim().replace(/^<|>$/g, "");
+  try { path = decodeURIComponent(path); } catch (e) { /* keep raw */ }
+  if (/^file:\/\//i.test(path)) path = path.replace(/^file:\/\//i, "").replace(/^\/([A-Za-z]:)/, "$1");
+  if (/^[A-Za-z]:[\\/]/.test(path) || /^\\\\/.test(path) || /^\//.test(path)) return path;
+  const base = referenceBasePath();
+  return base ? base + (/[\\/]/.test(base) ? "\\" : "/") + path.replace(/^[\\/]+/, "") : path;
+}
+
+function openSystemReference(raw) {
+  const path = resolveSystemReference(raw);
+  if (!path) { toast("没有可打开的路径"); return false; }
+  if (window.itnWindow && typeof window.itnWindow.openPath === "function") {
+    window.itnWindow.openPath(path).then(result => {
+      if (result && result.ok === false) toast(result.error || "无法打开路径");
+    }).catch(() => toast("无法打开路径"));
+    return true;
+  }
+  toast("打开文件或文件夹只在桌面窗口中可用");
+  return false;
+}
+
+function openCitationReference(citation, label) {
+  const c = citation || {};
+  if (window.LuminReferencePanel?.open) {
+    window.LuminReferencePanel.open({kind: "citation", citation: c, label: label || ""});
+    return;
+  }
+  if (c.kind === "web" || /^https?:\/\//i.test(c.docPath || "")) {
+    window.itnWindow?.openUrl?.(c.docPath);
+    return;
+  }
+  if (c.docPath) openSystemReference(c.docPath);
+}
+
+function linkInlineCitations(root, citations) {
+  if (!root || !citations?.length) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) {
+    if (!walker.currentNode.parentElement.closest("a,button,pre,code")) nodes.push(walker.currentNode);
+  }
+  for (const node of nodes) {
+    const text = node.textContent || "";
+    const re = /\[((?:W)?\d+)\]/g;
+    let match, last = 0, changed = false;
+    const fragment = document.createDocumentFragment();
+    while ((match = re.exec(text))) {
+      const mark = match[1];
+      const index = Number(String(mark).replace(/^W/i, ""));
+      const source = citations.find((c, i) => Number(c.index || i + 1) === index) ||
+        (mark[0] === "W" ? citations.find(c => c.kind === "web" && Number(c.index || 0) === index) : null);
+      if (!source) continue;
+      fragment.appendChild(document.createTextNode(text.slice(last, match.index)));
+      const button = btn("[" + mark + "]", "citation-link", () => openCitationReference(source, mark));
+      button.type = "button";
+      button.setAttribute("aria-label", "查看引用 " + mark + " 原文");
+      fragment.appendChild(button);
+      last = match.index + match[0].length;
+      changed = true;
+    }
+    if (changed) {
+      fragment.appendChild(document.createTextNode(text.slice(last)));
+      node.replaceWith(fragment);
+    }
+  }
+}
 
 /* ---------- 通用组件 ---------- */
 
@@ -677,9 +815,15 @@ function citationBox(citations, report) {
       const li = el("li");
       // 网络来源单独一套编号：[n] 是本机资料，[Wn] 是抓回来的网页（会变，所以必须带抓取时间）
       const label = c.label || String(c.index);
-      li.textContent = "[" + label + "] " + (c.docTitle ? "《" + c.docTitle + "》" : c.docPath || "") +
-        (c.kind === "web" ? " · 网络资料 · 抓取于 " + (c.fetchedAt || "") : (c.headingPath ? " · " + c.headingPath : "")) +
-        (c.docPath ? "（" + c.docPath + "）" : "");
+      const source = btn("", "cite-source", event => openCitationReference(c, label));
+      source.type = "button";
+      source.setAttribute("aria-label", "查看引用 " + label + " " + (c.docTitle || c.docPath || "资料"));
+      source.append(
+        el("strong", "cite-source-index", "[" + label + "]"),
+        el("span", "cite-source-title", c.docTitle ? "《" + c.docTitle + "》" : c.docPath || "资料引用"),
+        el("span", "cite-source-meta", c.kind === "web" ? "网络资料 · 抓取于 " + (c.fetchedAt || "") : (c.headingPath || "本地资料")),
+      );
+      li.appendChild(source);
       if (c.kind === "web") li.classList.add("cite-web");
       ul.appendChild(li);
     }
@@ -1329,6 +1473,7 @@ function clearRouteUi() {
   if (typeof workbench !== 'undefined') {
     ++workbench.loadToken;
     workbench.open = false;
+    workbench.reference = null;
     clearInterval(workbench.stateTimer);
     workbench.stateTimer = null;
   }
@@ -6501,10 +6646,10 @@ function turnsFromEvents(events) {
 }
 
 /** 一轮里的一段正文（Codex 里就是一条 assistant 消息，没有气泡与"谁说的"标签）。 */
-function assistantBlock(text, live) {
+function assistantBlock(text, live, options = {}) {
   const a = el("div", "msg msg-ai");
   const b = el("div", "msg-body");
-  b.innerHTML = md(text);
+  b.innerHTML = md(text, options);
   if (live) markStreamTail(b);
   a.appendChild(b);
   return a;
@@ -6762,7 +6907,7 @@ function renderTurnBlock(t, live) {
     if(it.t==='knowledge'){const button=btn('知识点已记录：'+it.point.title,'ghost sm knowledge-recorded',()=>openKnowledgePoint(it.point.id));box.appendChild(button);}
     else if(it.t==='file')box.appendChild(fileArtifactCard(it.artifact));
     else if(it.t==='resource')box.appendChild(resourceCard(it.resource,true));
-    else if(it.text){const node=assistantBlock(it.text,live&&it.streaming);node.dataset.timelineKind='text';box.appendChild(node);}
+    else if(it.text){const node=assistantBlock(it.text,live&&it.streaming,{citations:t.citations,kbId:t.citations?.find(c=>c.kbId)?.kbId||state.kb});node.dataset.timelineKind='text';linkInlineCitations(node,t.citations);box.appendChild(node);}
   };
   const flushProcess=()=>{
     if(!pending.length)return;

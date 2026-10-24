@@ -460,6 +460,38 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .section-generation { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-top:18px; border-top:1px solid var(--line); }
 .study-generation { min-height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; }
 .citation-link { border:0; background:var(--brand-soft); color:var(--brand); font:inherit; font-size:.85em; padding:0 5px; border-radius:4px; cursor:pointer; vertical-align:baseline; }
+.cite-source {
+  width:100%;
+  display:flex;
+  align-items:baseline;
+  gap:7px;
+  padding:5px 0;
+  border:0;
+  background:transparent;
+  color:inherit;
+  text-align:left;
+  cursor:pointer;
+  font:inherit;
+}
+.cite-source:hover { color:var(--ink); }
+.cite-source-index { flex:none; color:var(--brand); }
+.cite-source-title { min-width:0; flex:1; overflow-wrap:anywhere; }
+.cite-source-meta { flex:none; max-width:46%; overflow:hidden; color:var(--muted); text-overflow:ellipsis; white-space:nowrap; }
+.reference-body { padding-top:20px; }
+.reference-dock-head { align-items:flex-start; }
+.reference-heading { min-width:0; display:grid; gap:4px; }
+.reference-kicker { color:var(--muted); font-size:13px; }
+.reference-title { overflow-wrap:anywhere; font-size:20px; line-height:1.4; }
+.reference-meta { display:flex; flex-wrap:wrap; gap:6px 14px; margin:0 0 18px; color:var(--muted); font-size:13px; }
+.reference-path-text { overflow-wrap:anywhere; }
+.reference-actions { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 22px; }
+.reference-content { min-width:0; }
+.reference-content > .md { font-size:15px; line-height:1.8; }
+.reference-chunk { padding:14px 0; border-top:1px solid var(--line-soft); }
+.reference-chunk h4 { margin:0 0 8px; color:var(--muted); font-size:14px; font-weight:600; }
+.reference-path-button { max-width:100%; overflow:hidden; padding:0; border:0; background:none; color:var(--brand); text-align:left; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; font:inherit; }
+.reference-path-button:hover { text-decoration:underline; }
+.reference-open-citation { margin:4px 0 8px; }
 .study-citation { position:fixed; right:18px; top:130px; width:min(390px,calc(100vw - 36px)); max-height:calc(100vh - 160px); overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:22px; z-index:40; }
 .study-citation .md { font-size:14px; line-height:1.8; overflow-wrap:anywhere; }
 .study-citation .path-line { word-break:break-all; }

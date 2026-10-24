@@ -423,6 +423,19 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand-soft)
 .md .ta-r { text-align: right; }
 .md a.md-link { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
 
+.md a.md-resource-link {
+  color: var(--brand);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.md a.md-resource-link code {
+  color: inherit;
+  text-decoration: inherit;
+}
+
 .md a.md-external-link {
   cursor: pointer;
   text-decoration-thickness: 1px;
