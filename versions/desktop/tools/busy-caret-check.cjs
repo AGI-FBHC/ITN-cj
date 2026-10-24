@@ -27,7 +27,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   check('clock updates text without rebuilding the turn',await page.locator('.live-elapsed').getAttribute('data-clock-probe')==='original');
   // 等：轮次在跑 + 最后正文块在呼吸 + 会话行转圈在，三个同时在场再做断言。
   await page.waitForFunction(()=>state.busyTurn&&document.querySelector('#chat-thread .stream-line')&&document.querySelector('.panel-item-row.rail-session .panel-item-spin'),null,{timeout:20000});
-  const live=await page.evaluate(()=>{
+  const readSheen=()=>page.evaluate(()=>{
     const line=document.querySelector('#chat-thread .stream-line');
     const body=line&&line.closest('.msg-body');
     const root=body&&body.querySelector('.md');
@@ -47,15 +47,36 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
             duration:style?style.animationDuration:'',
             iterations:style?style.animationIterationCount:'',
             delay:style?style.animationDelay:'',
+            backgroundImage:style?style.backgroundImage:'',
+            backgroundSize:style?style.backgroundSize:'',
+            backgroundRepeat:style?style.backgroundRepeat:'',
+            backgroundClip:style?style.webkitBackgroundClip||style.backgroundClip:'',
+            backgroundPosition:style?style.backgroundPosition:'',
+            textFill:style?style.webkitTextFillColor:'',
+            bright:style?style.getPropertyValue('--stream-bright').trim():'',
+            warm:style?style.getPropertyValue('--stream-warm').trim():'',
+            filter:style?style.filter:'',
             rowSpin:document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length,
             running:isSessionRunning(sid),sid,activeSpin};
   });
+  const live=await readSheen();
+  await page.waitForTimeout(550);
+  const sheenLater=await readSheen();
   check('streaming output has no blinking caret',live.noCaret&&live.count===1);
   check('only the latest text block is marked ('+live.label+')',live.tail&&live.inside);
-  check('latest line uses the smooth breathing animation',live.animation==='stream-breathe'&&live.duration==='2.8s'&&live.iterations==='infinite'&&live.delay.startsWith('-'));
+  check('latest line uses a colored gradient light sweep',live.animation==='stream-sheen'&&live.duration==='1.9s'&&live.iterations==='infinite'&&live.delay.startsWith('-')&&live.backgroundImage.includes('linear-gradient')&&live.backgroundSize==='220px 100%'&&live.backgroundRepeat==='repeat-x'&&live.backgroundClip==='text'&&live.textFill==='rgba(0, 0, 0, 0)'&&live.filter!=='none'&&live.bright&&live.warm);
+  check('the light band moves across the latest line instead of pulsing opacity',live.backgroundPosition!==sheenLater.backgroundPosition);
   check('the running session row shows a spinner',live.rowSpin>=1&&live.activeSpin&&live.running===true);
   const shots=path.join(root,'tmp/streaming-line-shots');fs.mkdirSync(shots,{recursive:true});
+  await page.locator('#chat-thread .stream-line').screenshot({path:path.join(shots,'live-line.png')});
   await page.screenshot({path:path.join(shots,'live.png'),fullPage:true});
+  const lightPalette=await readSheen();
+  await page.evaluate(()=>document.documentElement.setAttribute('data-theme','dark'));
+  await page.waitForTimeout(180);
+  const darkPalette=await readSheen();
+  check('the light sweep has a separate dark-theme palette',lightPalette.bright!==darkPalette.bright&&lightPalette.warm!==darkPalette.warm);
+  await page.locator('#chat-thread .stream-line').screenshot({path:path.join(shots,'live-line-dark.png')});
+  await page.screenshot({path:path.join(shots,'live-dark.png'),fullPage:true});
   await page.waitForFunction(()=>!state.busyTurn,null,{timeout:30000});
   await page.waitForFunction(()=>!document.querySelector('#chat-thread .stream-line')&&!document.querySelector('#chat-thread .caret'),null,{timeout:5000});
   // 会话栏的 spinner 与运行状态由面板刷新异步收尾：等最终空闲态，避免单次读取的时序抖动

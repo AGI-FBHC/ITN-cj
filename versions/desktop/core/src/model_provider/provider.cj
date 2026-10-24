@@ -10,6 +10,7 @@ import stdx.net.tls.*
 import stdx.net.tls.common.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.ModelConfig
+import itn_desktop_core.reasoning.*
 import itn_desktop_core.util.trimStr
 import itn_desktop_core.util.hasPrefix
 import itn_desktop_core.util.byteSafePrefix
@@ -24,6 +25,7 @@ import itn_desktop_core.runtime.ToolCallBlock
 import itn_desktop_core.runtime.ToolSpec
 import itn_desktop_core.runtime.Message
 import itn_desktop_core.runtime.MsgRole
+import itn_desktop_core.runtime.repairToolMessageOrder
 import itn_desktop_core.runtime.objOf
 import itn_desktop_core.runtime.evMessageUpdate
 import itn_desktop_core.runtime.deltaThinkingDelta
@@ -74,6 +76,8 @@ public class OpenAiChatProvider <: ChatProvider {
     private let baseUrl: String
     private let apiKey: String
     private let defaultModel: String
+    public let reasoningConfig: ModelConfig
+    public var reasoningMode: String = "default"
     public var maxAttempts: Int64 = 3
     public var maxOutputTokens: Int64 = 8192
     /** A client-side byte budget for MiMo's reasoning-only phase; 0 disables recovery. */
@@ -106,6 +110,8 @@ public class OpenAiChatProvider <: ChatProvider {
         this.baseUrl = base
         this.apiKey = cfg.apiKey
         this.defaultModel = cfg.model
+        this.reasoningConfig = copyReasoningConfig(cfg, cfg.reasoningMode)
+        this.reasoningMode = this.reasoningConfig.reasoningMode
     }
 
     public func respond(ctx: StepContext, stream: EventStream): ModelReply {
@@ -119,22 +125,26 @@ public class OpenAiChatProvider <: ChatProvider {
      */
     public func respondForWriting(ctx: StepContext, stream: EventStream): ModelReply {
         let reply = respondWithLimit(ctx, stream, maxOutputTokens, true)
-        if (reply.stopReason != "length" || maxOutputTokens >= 32768) {
+        if (reply.stopReason != "length" || maxOutputTokens >= 32768 || (reasoningMode != "default" && reasoningMode != "off")) {
             return reply
         }
         let model = if (ctx.model.size > 0) { ctx.model } else { defaultModel }
         let audit = JsonObject()
         audit.put("reason", JsonString("text_truncated"))
         audit.put("nextMaxTokens", JsonInt(32768))
-        if (model.toAsciiLower().contains("mimo")) {
+        if (reasoningMode == "default" && model.toAsciiLower().contains("mimo")) {
             audit.put("recoveryThinking", JsonString("disabled"))
         }
         match (onAudit) { case Some(f) => f("model/retry", audit); case None => () }
-        return respondWithLimit(ctx, stream, 32768, false)
+        let retried = respondWithLimit(ctx, stream, 32768, false)
+        addRetryUsage(retried, reply)
+        return retried
     }
 
     private func respondWithLimit(ctx: StepContext, stream: EventStream, outputLimit: Int64, canRecover: Bool): ModelReply {
         let model = if (ctx.model.size > 0) { ctx.model } else { defaultModel }
+        let requestConfig = copyReasoningConfig(reasoningConfig, reasoningMode)
+        requestConfig.model = model
         let payload = JsonObject()
         payload.put("model", JsonString(model))
         let msgs = JsonArray()
@@ -144,18 +154,19 @@ public class OpenAiChatProvider <: ChatProvider {
             sys.put("content", JsonString(ctx.system))
             msgs.add(sys)
         }
-        for (m in ctx.messages) {
+        let modelMessages = repairToolMessageOrder(ctx.messages)
+        for (m in modelMessages) {
             let serialized = m.toChatJson()
-            if (model.toAsciiLower().contains("mimo") && m.role == MsgRole.AssistantMsg && m.toolCalls.size > 0 && m.thinking.size > 0) {
+            if (passReasoningHistory(requestConfig) && m.role == MsgRole.AssistantMsg) {
+                // Tool-capable DeepSeek requires every assistant reasoning block, including text-only turns.
                 serialized.put("reasoning_content",JsonString(m.thinking))
             }
             msgs.add(serialized)
         }
         payload.put("messages", msgs)
-        payload.put("temperature", JsonFloat(0.3))
         payload.put("stream", JsonBool(true))
-        payload.put("max_tokens", JsonInt(outputLimit))
-        if (!canRecover && model.toAsciiLower().contains("mimo")) {
+        applyReasoningParameters(payload, requestConfig, reasoningMode, outputLimit)
+        if (!canRecover && reasoningMode == "default" && model.toAsciiLower().contains("mimo")) {
             // MiMo counts reasoning against the output budget. A recovery attempt must reach output.
             let thinking = JsonObject(); thinking.put("type",JsonString("disabled")); payload.put("thinking",thinking)
         }
@@ -167,6 +178,11 @@ public class OpenAiChatProvider <: ChatProvider {
         let requestAudit = JsonObject()
         requestAudit.put("requestedModel", JsonString(model))
         requestAudit.put("maxOutputTokens", JsonInt(outputLimit))
+        requestAudit.put("reasoningMode", JsonString(effectiveReasoningMode(requestConfig, reasoningMode)))
+        requestAudit.put("reasoningProfile", JsonString(reasoningProfile(requestConfig)))
+        for (key in ["reasoning_effort", "thinking", "enable_thinking", "thinking_budget", "max_tokens", "max_completion_tokens"]) {
+            match (payload.get(key)) { case Some(value) => requestAudit.put(key, value); case None => () }
+        }
         requestAudit.put("messageCount", JsonInt(msgs.size()))
         requestAudit.put("turn", JsonInt(ctx.turn))
         var latestUser = ""
@@ -183,7 +199,7 @@ public class OpenAiChatProvider <: ChatProvider {
         let started = DateTime.now()
         let err = postSse("/chat/completions", payload, { obj: JsonObject =>
             handleChunk(obj, acc, stream)
-            if (canRecover && model.toAsciiLower().contains("mimo") && maxReasoningBytes > 0 && acc.reasoningBytes > maxReasoningBytes && acc.calls.size == 0 && acc.text.toString().size == 0) {
+            if (canRecover && reasoningMode == "default" && model.toAsciiLower().contains("mimo") && maxReasoningBytes > 0 && acc.reasoningBytes > maxReasoningBytes && acc.calls.size == 0 && acc.text.toString().size == 0) {
                 acc.reasoningLimited = true; acc.finishReason = "reasoning_budget"
                 throw ReasoningBudgetReached()
             }
@@ -204,6 +220,7 @@ public class OpenAiChatProvider <: ChatProvider {
         reply.thinking = acc.reasoning.toString()
         reply.usageIn = acc.promptTokens
         reply.usageOut = acc.completionTokens
+        reply.usageReasoning = acc.reasoningTokens
         if (abortRequested()) {
             reply.stopReason = "aborted"
             reply.errorMessage = "已取消"
@@ -216,27 +233,54 @@ public class OpenAiChatProvider <: ChatProvider {
         }
         if (acc.reasoningLimited || (acc.finishReason == "length" && (acc.calls.size > 0 || acc.reasoning.toString().size > 0))) {
             // Retrying a text stream would duplicate visible content. Only retry a pure tool input.
-            if (canRecover && outputLimit < 32768 && trimStr(acc.text.toString()).size == 0) {
+            let actualLimit = pickInt(payload, ["max_tokens"], pickInt(payload, ["max_completion_tokens"], outputLimit))
+            if (canRecover && actualLimit < 32768 && trimStr(acc.text.toString()).size == 0) {
                 let audit = JsonObject()
                 audit.put("reason",JsonString(if (acc.calls.size > 0) { "tool_arguments_truncated" } else { "reasoning_budget_exhausted" })); audit.put("nextMaxTokens",JsonInt(32768))
-                if (model.toAsciiLower().contains("mimo")) { audit.put("recoveryThinking",JsonString("disabled")) }
+                if (reasoningMode == "default" && model.toAsciiLower().contains("mimo")) { audit.put("recoveryThinking",JsonString("disabled")) }
                 match (onAudit) { case Some(f) => f("model/retry",audit); case None => () }
-                return respondWithLimit(ctx,stream,32768,false)
+                let retried = respondWithLimit(ctx,stream,32768,false)
+                addRetryUsage(retried, reply)
+                return retried
             }
             reply.stopReason = "error"
             reply.errorMessage = "模型输出达到上限，工具参数被截断，未执行任何工具。请缩小文件内容或分段生成后重试。"
             return reply
         }
+        // Validate the entire batch before publishing any executable call. A completed
+        // tool-only response can contain malformed model-generated JSON even when its
+        // finish_reason is tool_calls (rather than length). Re-request this model step
+        // once; never repair arguments or restart the agent/its completed actions.
         for (call in acc.calls) {
             if (call.name.size > 0) {
                 let args = trimStr(call.args.toString())
                 if (!validToolArguments(args)) {
-                    reply.toolCalls.clear()
+                    let audit = JsonObject()
+                    audit.put("tool", JsonString(call.name))
+                    audit.put("argumentBytes", JsonInt(args.size))
+                    audit.put("toolCount", JsonInt(acc.calls.size))
+                    audit.put("finishReason", JsonString(acc.finishReason))
+                    // Arguments can contain private content: audit metadata only.
+                    match (onAudit) { case Some(f) => f("model/tool_arguments_invalid", audit); case None => () }
+                    if (canRecover && acc.finishReason == "tool_calls" && trimStr(reply.text).size == 0) {
+                        let retryAudit = JsonObject()
+                        retryAudit.put("reason", JsonString("invalid_tool_arguments"))
+                        retryAudit.put("attempt", JsonInt(2))
+                        retryAudit.put("tool", JsonString(call.name))
+                        match (onAudit) { case Some(f) => f("model/retry", retryAudit); case None => () }
+                        let retried = respondWithLimit(ctx, stream, outputLimit, false)
+                        addRetryUsage(retried, reply)
+                        return retried
+                    }
                     reply.stopReason = "error"
                     reply.errorMessage = "模型返回的 " + call.name + " 参数不是完整的 JSON 对象，未执行工具。请重试。"
                     return reply
                 }
-                reply.toolCalls.add(ToolCallBlock(call.id, call.name, args))
+            }
+        }
+        for (call in acc.calls) {
+            if (call.name.size > 0) {
+                reply.toolCalls.add(ToolCallBlock(call.id, call.name, trimStr(call.args.toString())))
             }
         }
         if (trimStr(reply.text).size == 0 && reply.toolCalls.size == 0) {
@@ -414,6 +458,13 @@ class NativeCall {
     let args = StringBuilder()
 }
 
+func addRetryUsage(target: ModelReply, previous: ModelReply): Unit {
+    target.usageIn += previous.usageIn
+    target.usageOut += previous.usageOut
+    if (previous.usageReasoning >= 0 && target.usageReasoning >= 0) { target.usageReasoning += previous.usageReasoning }
+    else { target.usageReasoning = -1 }
+}
+
 class StreamAcc {
     let text = StringBuilder()
     let reasoning = StringBuilder()
@@ -423,6 +474,7 @@ class StreamAcc {
     var responseId = ""
     var promptTokens: Int64 = 0
     var completionTokens: Int64 = 0
+    var reasoningTokens: Int64 = -1
     var reasoningBytes: Int64 = 0
     var reasoningLimited = false
 
@@ -467,6 +519,23 @@ func validToolArguments(text: String): Bool {
     if (t.size == 0) {
         return false
     }
+    let bytes = t.toArray()
+    // stdx 1.2 accepts raw LF (and other control characters) inside JSON
+    // strings. Tool execution needs strict JSON, so reject those bytes before
+    // decoding. Escaped forms such as backslash+n remain valid and unchanged.
+    var quoted = false
+    var escaped = false
+    for (byte in bytes) {
+        if (quoted && byte < 0x20) { return false }
+        if (escaped) {
+            escaped = false
+        } else if (quoted && byte == 92) {
+            escaped = true
+        } else if (byte == 34) {
+            quoted = !quoted
+        }
+    }
+    if (quoted || escaped) { return false }
     try {
         return JsonValue.fromStr(t) is JsonObject
     } catch (e: Exception) {
@@ -486,6 +555,7 @@ func handleChunk(obj: JsonObject, acc: StreamAcc, stream: EventStream): Unit {
     }
     acc.promptTokens = pickInt(obj, ["usage", "prompt_tokens"], acc.promptTokens)
     acc.completionTokens = pickInt(obj, ["usage", "completion_tokens"], acc.completionTokens)
+    acc.reasoningTokens = pickInt(obj, ["usage", "completion_tokens_details", "reasoning_tokens"], acc.reasoningTokens)
 
     var think = pickStr(obj, ["choices", "0", "delta", "reasoning_content"])
     if (think.size == 0) {

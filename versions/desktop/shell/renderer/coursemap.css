@@ -27,6 +27,8 @@ body.workspace-wide #view>.course-workspace{max-width:none;margin-inline:0}
 .course-job-bar{height:6px;border-radius:999px;background:var(--panel-sunk);overflow:hidden}
 .course-job-fill{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--brand) 64%,transparent),var(--brand));transition:width .3s ease}
 .course-job-foot{display:flex;justify-content:flex-end}
+.course-growth-loading{min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border:1px solid var(--line-soft);border-radius:16px;background:var(--panel);color:var(--muted)}
+.course-growth-loading p{margin:0;font-size:13px}
 .course-modal-overlay{position:fixed;inset:0;z-index:2300;background:rgba(20,28,23,.2);backdrop-filter:blur(3px);display:grid;place-items:center;padding:20px}
 .course-modal{width:620px;box-sizing:border-box;overflow:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:24px;padding:24px;box-shadow:0 28px 80px rgba(0,0,0,.22)}
 .course-modal-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:20px}

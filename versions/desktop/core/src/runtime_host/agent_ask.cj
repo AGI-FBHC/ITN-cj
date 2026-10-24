@@ -14,11 +14,19 @@ import itn_desktop_core.store.Store
 import itn_desktop_core.session.SessionEvent
 import itn_desktop_core.session.SessionStore
 import itn_desktop_core.learning.LearningStore
+import itn_desktop_core.study.StudyStore
+import itn_desktop_core.study.mbtiStyleText
+import itn_desktop_core.study.mbtiAssessmentContext
+import itn_desktop_core.study.isMbtiType
 import itn_desktop_core.resource.labelOf
 import itn_desktop_core.agent.learningTools
+import itn_desktop_core.agent.referenceTools
 import itn_desktop_core.agent.learningTeamTools
 import itn_desktop_core.agent.presentationTools
 import itn_desktop_core.agent.personalTools
+import itn_desktop_core.agent.reasoningTools
+import itn_desktop_core.agent.reasoningModeForTurn
+import itn_desktop_core.reasoning.copyReasoningConfig
 import itn_desktop_core.agent.knowledgeTools
 import itn_desktop_core.agent.courseTools
 import itn_desktop_core.agent.guidedTools
@@ -134,27 +142,62 @@ class AnswerSeg {
  *
  * provider 只推 reasoning_content 的增量（thinking_delta），没有显式边界，
  * 所以这里按"下一件事"来切段：开始出正文 / 开始动工具 / 这一轮跑完时各封一次。
- * 每个思考段记一条 assistant/thinking 事件 —— 界面据此画 Codex 那样的"已思考 N 秒"，
- * 折叠着，点开才看内容；它证明的是"模型先想、再决定要不要动工具"，而不是写死的步骤。
+ * 首个非空增量立即发布，之后按时间或字节数批量发布，避免每个 token 写数据库。
+ * 封段时以同一个 segmentId 发布完整快照，界面替换增量段，不重复累计文字或耗时。
  */
 class ThinkSeg {
-    public var buf = StringBuilder()
-    public var startMs: Int64 = 0
-    public var started: Bool = false
+    private let turnId: String
+    private var buf = StringBuilder()
+    private var pending = StringBuilder()
+    private var pendingBytes: Int64 = 0
+    private var startMs: Int64 = 0
+    private var lastDeltaMs: Int64 = 0
+    private var started = false
+    private var published = false
+    private var sequence: Int64 = 0
+
+    public init(turnId: String) { this.turnId = turnId }
 
     public func add(t: String, now: Int64): Unit {
+        if (t.size == 0) { return }
         if (!started) {
             started = true
             startMs = now
+            sequence += 1
         }
         buf.append(t)
+        pending.append(t)
+        pendingBytes += t.size
     }
 
-    public func take(): String {
-        let t = buf.toString()
+    private func payload(text: String, now: Int64): JsonObject {
+        let p = JsonObject()
+        p.put("text", JsonString(text))
+        p.put("ms", JsonInt(if (now >= startMs) { now - startMs } else { 0 }))
+        p.put("segmentId", JsonString(turnId + "-thinking-" + sequence.toString()))
+        return p
+    }
+
+    public func takeDelta(now: Int64, force: Bool): ?JsonObject {
+        if (pendingBytes == 0) { return None }
+        if (!force && published && now - lastDeltaMs < 140 && pendingBytes < 4096) { return None }
+        let p = payload(pending.toString(), now)
+        pending = StringBuilder()
+        pendingBytes = 0
+        lastDeltaMs = now
+        published = true
+        return Some(p)
+    }
+
+    public func take(now: Int64): ?JsonObject {
+        if (!started) { return None }
+        let p = payload(buf.toString(), now)
         buf = StringBuilder()
+        pending = StringBuilder()
+        pendingBytes = 0
         started = false
-        return t
+        published = false
+        return Some(p)
     }
 }
 
@@ -217,6 +260,8 @@ public class WorkContext {
     public var attachments: JsonArray = JsonArray()
     /** 导学侧栏：文件读写每一步都必须经过用户确认，即使权限档为 full。 */
     public var confirmFileAccess: Bool = false
+    /** 空值读取会话设置；显式模式只在本轮开始时校验并固定。 */
+    public var reasoningMode: String = ""
 
     public init() {}
 }
@@ -268,7 +313,9 @@ public class LuminAgent {
                 out0.put("message", JsonString("没有可用的对话模型，请先在设置里配置"))
                 return out0
             case Some(cfg) =>
-                let prov = OpenAiChatProvider(cfg)
+                let effective = reasoningModeForTurn(store, cfg, sessionIdIn,
+                    match (work) { case Some(w) => w.reasoningMode; case None => "" })
+                let prov = OpenAiChatProvider(copyReasoningConfig(cfg, effective))
                 let sidForAbort = sessionIdIn
                 // 界面按了停止 → provider 在下一个增量处收手（不然一轮长回答"停不下来"）
                 prov.shouldAbort = Some({ => sessionHub().isAborted(sidForAbort) })
@@ -315,7 +362,9 @@ public class LuminAgent {
                 out0.put("message", JsonString("没有可用的对话模型，请先在设置里配置"))
                 return out0
             case Some(cfg) =>
-                let prov = OpenAiChatProvider(cfg)
+                let effective = reasoningModeForTurn(store, cfg, sessionIdIn,
+                    match (work) { case Some(w) => w.reasoningMode; case None => "" })
+                let prov = OpenAiChatProvider(copyReasoningConfig(cfg, effective))
                 let sidForAbort = sessionIdIn
                 prov.shouldAbort = Some({ => sessionHub().isAborted(sidForAbort) })
                 return runFull(prov, kbId, taskBrief(kind, topic, count), sessionIdIn, webModeIn, "", work,
@@ -343,6 +392,16 @@ public class LuminAgent {
         setTaskState(store.dataDir, sessionId, turnId, "running")
         courseMarkBusy(store.dataDir,sessionId,true)
         try {
+            // 此时才有最终 sessionId。显式请求保存到这个会话；后续工具/界面修改只影响下一轮。
+            match (provider) {
+                case p: OpenAiChatProvider =>
+                    let requested = match (work) { case Some(w) => w.reasoningMode; case None => "" }
+                    let effective = reasoningModeForTurn(store, p.reasoningConfig, sessionId, requested)
+                    p.reasoningMode = effective
+                    p.reasoningConfig.reasoningMode = effective
+                    if (requested.size > 0) { sessions.setReasoningMode(sessionId, requested) }
+                case _ => ()
+            }
             let courseTarget=CourseStore(store.dataDir).target(sessionId)
             let guidedStore=GuidedStore(store.dataDir)
             let guidedKb=if(guidedStore.isGuided(sessionId)){strOf(guidedStore.context(sessionId),"kbId")}else{""}
@@ -406,6 +465,16 @@ public class LuminAgent {
 
         let cfgSettings = store.load()
 
+        // 独立的运行时副本供协作/PPT子Agent继承，不读取后续界面变更后的会话模式。
+        let runtimeModelConfig: ?ModelConfig = match (provider) {
+            case p: OpenAiChatProvider => Some(copyReasoningConfig(p.reasoningConfig, p.reasoningMode))
+            case _ => None
+        }
+        let runningReasoningMode = match (runtimeModelConfig) {
+            case Some(cfg) => cfg.reasoningMode
+            case None => "default"
+        }
+
         // ---- 联网策略（与手写那条链路同一套判断，不另立规矩）----
         let wmode = effectiveWebMode(store.dataDir, sessionId, webModeIn)
         let allowWeb = wmode != "off"
@@ -453,15 +522,19 @@ public class LuminAgent {
                 }
             })) { defs.add(d) }
         for (d in learningTeamTools(store, kbId, { => sessionHub().isAborted(sid) }, sid, turnId, question,
-            { kind: String, payload: JsonObject => log(kind, payload) })) { defs.add(d) }
+            { kind: String, payload: JsonObject => log(kind, payload) }, runtimeModel: runtimeModelConfig)) { defs.add(d) }
         let records = ArrayList<ToolRecord>()
-        for(d in presentationTools(store,sid,turnId,question,{ => sessionHub().isAborted(sid) },{kind: String,payload: JsonObject => log(kind,payload)})){defs.add(d)}
+        for(d in presentationTools(store,sid,turnId,question,{ => sessionHub().isAborted(sid) },{kind: String,payload: JsonObject => log(kind,payload)},runtimeModel: runtimeModelConfig)){defs.add(d)}
         for(d in personalTools(store,sid,turnId,question)){defs.add(d)}
+        for(d in reasoningTools(store,sid,question,runningMode: runningReasoningMode)){defs.add(d)}
         for(d in courseTools(store,sid,question)){defs.add(d)}
         for(d in guidedTools(store,sid,question)){defs.add(d)}
         for(d in taskTools(store,sid,question)){defs.add(d)}
+        for(d in referenceTools(store)){defs.add(d)}
         let originalWorkspace=match(work){case Some(w)=>w.dir;case None=>""}
         for(d in knowledgeTools(store,sid,turnId,question,originalWorkspace,{kind: String,payload: JsonObject=>log(kind,payload)})){defs.add(d)}
+        let referenceIndex = TurnReferenceIndex()
+        referenceIndex.attach(defs)
         let registry = piRegistryOf(defs, records)
         let mode = piModeOf(defs, "desktop")
         var ws: ?Workspace = None
@@ -600,6 +673,13 @@ public class LuminAgent {
             "用户明确提到学习阶段、困难或当前进度时，用 remember_learning_fact 的 status 类型记录原话；长期通用目标/偏好可设 scope=global，课程专属信息保留课程范围。" +
             "回答前参考下方 learningState 的最近阅读位置、当前完成标记、needsPractice 和 reviewQueue；按真实状态调整解释难度与例子，不重复询问已有目标/偏好，不把自述或阅读量当成实测掌握。" +
             "需要更多资源或测验证据时调用 get_learning_context。\n当前学习上下文：" + LearningStore(store.dataDir).agentContext(kbId).toString()
+        let learnerProfile = StudyStore(store.dataDir).loadProfile()
+        let userMbti = if (isMbtiType(learnerProfile.mbtiType)) { learnerProfile.mbtiType.toAsciiUpper() } else { "未填写" }
+        let luminMbti = if (isMbtiType(learnerProfile.luminMbtiType)) { learnerProfile.luminMbtiType.toAsciiUpper() } else { "ENFJ" }
+        preamble = preamble + "\nMBTI 交流偏好（用户档案，不是能力判断）：用户=" + userMbti + "；Lumin=" + luminMbti +
+            "。请让 Lumin 的表达风味明显体现：" + mbtiStyleText(luminMbti) +
+            " 用户类型存在时，优先适配其组织信息的方式，但不贴标签、不据此降低要求或推断能力。"
+        preamble += mbtiAssessmentContext(store.dataDir, sid)
         if (uiChapter.size > 0) {
             preamble = preamble + "\n用户此刻在应用里正在学《" + uiChapter + "》这一章；" +
                 "他说「这一章 / 这章 / 这节」时指的就是它 —— 直接按这一章处理，不要再让他重复说是哪一章。"
@@ -639,22 +719,24 @@ public class LuminAgent {
         // 否则模型查资料时的"让我看看…"讲解会和正文糊在一起（实测被当成讲义存了下来）。
         let answerBuf = StringBuilder()
         let seg = AnswerSeg()
-        let think = ThinkSeg()
+        let think = ThinkSeg(turnId)
         let activityClock = ActivityClock()
         let toolInputBytes = [0i64]
-        // 思考段封段：开始出正文 / 开始动工具 / 这一轮跑完时各刷一次
+        // 同步发布，保证尾部增量与完整快照先于正文、工具或终态事件落库。
         func flushThink(): Unit {
-            let t = think.take()
-            if (t.size == 0) {
-                return
+            let now = DateTime.now().toUnixTimeStamp().toMilliseconds()
+            match (think.takeDelta(now, true)) {
+                case Some(p) => log("assistant/thinking_delta", p)
+                case None => ()
             }
-            let p = JsonObject()
-            p.put("text", JsonString(byteSafePrefix(t, 6000)))
-            p.put("ms", JsonInt(DateTime.now().toUnixTimeStamp().toMilliseconds() - think.startMs))
-            log("assistant/thinking", p)
+            match (think.take(now)) {
+                case Some(p) => log("assistant/thinking", p)
+                case None => ()
+            }
         }
         stream.on({ e: AgentEvent =>
             let kind = kindText(e.kind)
+            if (kind == "message_end" || kind == "turn_end" || kind == "agent_end") { flushThink() }
             if (kind == "turn_end" || kind == "message_end") { checkpointContext(store.dataDir, sid, session) }
             // turn 边界 = 一次模型请求，事件流里已经有了（turn_start/turn_end）；
             // 这里不再额外记"步骤"——这是 agent，步骤由它自己决定，不该由我们编。
@@ -690,7 +772,12 @@ public class LuminAgent {
                         if (strOf(ae, "type") == "thinking_delta") {
                             let th = strOf(ae, "delta")
                             if (th.size > 0) {
-                                think.add(th, DateTime.now().toUnixTimeStamp().toMilliseconds())
+                                let now = DateTime.now().toUnixTimeStamp().toMilliseconds()
+                                think.add(th, now)
+                                match (think.takeDelta(now, false)) {
+                                    case Some(p) => log("assistant/thinking_delta", p)
+                                    case None => ()
+                                }
                             }
                             if (activityClock.ready()) {
                                 let dp = JsonObject()
@@ -727,19 +814,24 @@ public class LuminAgent {
             ()
         })
 
-        let outcome = agent.prompt(question, stream)
+        let outcome = try {
+            agent.prompt(question, stream)
+        } finally {
+            // provider 抛异常或被取消时也封段；外层随后才写 turn/end。
+            try { flushThink() } finally { sessionHub().clearRunning(sid) }
+        }
         checkpointContext(store.dataDir, sid, session)
         /* 这一轮真实用掉的 token（供应商回的 usage）。
            界面上"上下文用了多少"只能从这里来 —— 自己按字符估算是骗人的。
            pi 的 TUI 在页脚也显示这个数，它是用户判断"该不该 /compact"的唯一依据。 */
-        if (outcome.usageIn > 0 || outcome.usageOut > 0) {
+        if (outcome.usageIn > 0 || outcome.usageOut > 0 || outcome.usageReasoning >= 0) {
             let up = JsonObject()
             up.put("in", JsonInt(outcome.usageIn))
             up.put("out", JsonInt(outcome.usageOut))
+            if (outcome.usageReasoning >= 0) { up.put("reasoning", JsonInt(outcome.usageReasoning)) }
             log("turn/usage", up)
+            out.put("tokens", up)
         }
-        flushThink()
-        sessionHub().clearRunning(sid)
 
         // 没有流式增量时（例如服务端一次性返回），退回会话里最后一条 assistant 正文
         var answer = answerBuf.toString()
@@ -768,29 +860,8 @@ public class LuminAgent {
         if (answer.size > 0) { log("assistant/message", ap) }
 
         // ---- 引用自检：命中来自 kb_search 的工具记录（结构化载荷），与手写链路同一套算法 ----
-        var hits = JsonArray()
-        let webSources = ArrayList<JsonObject>()
-        var wi = 0
-        for (r in records) {
-            if (r.name == "kb_search" && r.ok) {
-                match (r.details) {
-                    case a: JsonArray =>
-                        if (hits.size() == 0) {
-                            hits = a
-                        }
-                    case _ => ()
-                }
-            }
-            if ((r.name == "web_fetch" || r.name == "web_search") && r.ok) {
-                wi = wi + 1
-                let src = JsonObject()
-                src.put("index", JsonInt(wi))
-                src.put("title", JsonString(r.summary))
-                src.put("url", JsonString(""))
-                src.put("fetchedAt", JsonString(stamp()))
-                webSources.add(src)
-            }
-        }
+        let hits = referenceIndex.localSources()
+        let webSources = referenceIndex.webSources()
         // ---- 产物：模型自己调 save_artifact 落了盘，就从工具记录里取路径 ----
         var artifactPath = ""
         var typedSaved = false

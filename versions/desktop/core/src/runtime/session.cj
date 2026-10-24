@@ -3,7 +3,10 @@ package itn_desktop_core.runtime
 import std.collection.*
 import std.fs.*
 import std.time.*
+import std.sync.*
 import stdx.encoding.json.*
+
+let sessionDirectoryLock = Mutex()
 
 /*
  * 会话：照 Pi 的 JSONL + 树来做。
@@ -338,8 +341,9 @@ public func appendCustom(customType: String, data: JsonObject): String {
         let slash = lastSlashOf(path)
         if (slash > 0) {
             let dir = safeUtf8(path.toArray(), 0, slash)
-            if (!exists(dir)) {
-                Directory.create(dir, recursive: true)
+            // Different sessions share this cwd directory and can start on different threads.
+            synchronized(sessionDirectoryLock) {
+                if (!exists(dir)) { Directory.create(dir, recursive: true) }
             }
         }
         File.writeTo(path, sb.toString().toArray())

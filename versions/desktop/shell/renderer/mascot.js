@@ -81,15 +81,26 @@
     try { localStorage.setItem(POSITION_KEY, JSON.stringify(position)); } catch (e) { /* ignore */ }
   }
 
+  function layoutScale() {
+    const rect = root.getBoundingClientRect();
+    const width = root.offsetWidth || 116;
+    return rect.width > 0 && width > 0 ? rect.width / width : 1;
+  }
+
   function clampPosition(next) {
-    // offsetWidth/Height become zero while hidden; CSS dimensions remain stable.
+    // 页面显示大小走 body zoom：指针给屏幕坐标，left/top 写布局坐标。
+    // 不按实际缩放换算时，130% 下拖 100px 会走 130px，且旧坐标会被直接提出窗口。
     const style = getComputedStyle(root);
     const width = parseFloat(style.width), height = parseFloat(style.height);
-    const maxX = Math.max(8, window.innerWidth - width - 10);
-    const maxY = Math.max(64, window.innerHeight - height - 14);
+    const scale = layoutScale() || 1;
+    const topEdge = (document.getElementById("titlebar")?.getBoundingClientRect().bottom || 0) + 8;
+    const minX = 8 / scale;
+    const minY = Math.max(8 / scale, topEdge / scale);
+    const maxX = Math.max(minX, (window.innerWidth - 10) / scale - width);
+    const maxY = Math.max(minY, (window.innerHeight - 14) / scale - height);
     return {
-      x: Math.min(Math.max(8, next.x), maxX),
-      y: Math.min(Math.max(64, next.y), maxY)
+      x: Math.min(Math.max(minX, next.x), maxX),
+      y: Math.min(Math.max(minY, next.y), maxY)
     };
   }
 
@@ -117,7 +128,14 @@
   }
 
   function defaultPosition() {
-    return { x: window.innerWidth - 130, y: window.innerHeight - 210 };
+    const scale = layoutScale() || 1;
+    const style = getComputedStyle(root);
+    const width = parseFloat(style.width) || 116;
+    const height = parseFloat(style.height) || 126;
+    return {
+      x: (window.innerWidth - 18) / scale - width,
+      y: (window.innerHeight - 24) / scale - height
+    };
   }
 
   function setState(next, autoReturnMs) {
@@ -201,7 +219,8 @@
     dragged = true;
     root.classList.add("dragging");
     openMenu(false);
-    place({ x: pointerStart.left + dx, y: pointerStart.top + dy });
+    const scale = layoutScale() || 1;
+    place({ x: pointerStart.left + dx / scale, y: pointerStart.top + dy / scale });
   });
 
   const finishPointer = (event) => {
@@ -241,6 +260,10 @@
   });
 
   window.addEventListener("resize", () => { place(position || defaultPosition()); savePosition(); });
+  window.addEventListener("lumin:ui-zoom", () => {
+    place(position || defaultPosition());
+    savePosition();
+  });
   window.addEventListener("dblclick", (event) => {
     if (!root.contains(event.target)) return;
     place(defaultPosition());

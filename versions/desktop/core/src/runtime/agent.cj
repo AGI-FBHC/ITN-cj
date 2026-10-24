@@ -37,6 +37,7 @@ public class RunOutcome {
     public var error: String = ""
     public var usageIn: Int64 = 0
     public var usageOut: Int64 = 0
+    public var usageReasoning: Int64 = -1
     public let toolResults = ArrayList<JsonObject>()
     public let warnings = ArrayList<String>()
 
@@ -50,6 +51,7 @@ public class RunOutcome {
         }
         o.put("usageIn", JsonInt(usageIn))
         o.put("usageOut", JsonInt(usageOut))
+        if (usageReasoning >= 0) { o.put("usageReasoning", JsonInt(usageReasoning)) }
         let ws = JsonArray()
         for (w in warnings) {
             ws.add(JsonString(w))
@@ -225,6 +227,9 @@ public class Agent {
             stream.push(evMessageEnd(am))
             out.usageIn = out.usageIn + reply.usageIn
             out.usageOut = out.usageOut + reply.usageOut
+            if (turns == 1) { out.usageReasoning = reply.usageReasoning }
+            else if (out.usageReasoning >= 0 && reply.usageReasoning >= 0) { out.usageReasoning += reply.usageReasoning }
+            else { out.usageReasoning = -1 }
 
             if (reply.stopReason == "error" || reply.stopReason == "length") {
                 out.ok = false
@@ -297,15 +302,22 @@ public class Agent {
                 }
             }
         }
-        if (ids.size <= keepRecent + 1) {
+        let all = session.messagesForModel()
+        var retained = if (keepRecent > 0) { keepRecent } else { 1 }
+        if (all.size <= retained + 1) {
             lastCompactNote = "对话还短，不用压缩"
             return false
         }
-        let firstKept = ids[ids.size - keepRecent]
-        let all = session.messagesForModel()
+        // A tool result cannot survive without its preceding assistant call block.
+        while (retained < all.size && all[all.size - retained].role == ToolResultMsg) { retained += 1 }
+        if (retained >= all.size || retained > ids.size) {
+            lastCompactNote = "最近的工具调用需完整保留，暂不压缩"
+            return false
+        }
+        let firstKept = ids[ids.size - retained]
         let sb = StringBuilder()
         var i: Int64 = 0
-        while (i + keepRecent < all.size) {
+        while (i + retained < all.size) {
             sb.append("[")
             sb.append(roleName(all[i].role))
             sb.append("] ")

@@ -1,7 +1,25 @@
 /* Knowledge-base course maps. All ownership, versions and lifecycle decisions are authoritative in Cangjie. */
-const courseUi={data:null,kb:'',selected:'',views:new Map(),jobs:new Map(),targets:new Map()};
+const courseUi={data:null,kb:'',selected:'',views:new Map(),jobs:new Map(),targets:new Map(),reportCache:new Map()};
 const COURSE_KINDS=[['lecture','定制讲义','file'],['practice','实操指南','code'],['quiz','分阶测试','check'],['ppt','PPT 演示','play']];
 const courseApi=(name,body={})=>api('/api/course/'+name,body);
+async function courseReport(kbId,force=false){
+  const key=kbId||'',now=Date.now(),cached=courseUi.reportCache.get(key);
+  if(!force&&cached){
+    if(now-cached.at>8000&&!cached.pending){
+      cached.pending=courseApi('report',{kbId:key}).then(data=>{
+        courseUi.reportCache.set(key,{at:Date.now(),data,pending:null});
+        return data;
+      }).catch(()=>null);
+    }
+    return cached.data;
+  }
+  if(cached?.pending)return cached.pending;
+  const pending=courseApi('report',{kbId:key});
+  courseUi.reportCache.set(key,{at:cached?.at||0,data:cached?.data||null,pending});
+  const data=await pending;
+  courseUi.reportCache.set(key,{at:Date.now(),data,pending:null});
+  return data;
+}
 
 function courseDialog(title,subtitle=''){
   document.querySelector('.course-modal-overlay')?.remove();
@@ -23,6 +41,7 @@ async function courseConfirm(title,message,action){
 }
 async function courseRefresh(){
   const generation=state.navigationGeneration,kb=courseUi.kb,token=courseUi.loadToken=(courseUi.loadToken||0)+1;
+  courseUi.reportCache.delete(kb);
   const data=await courseApi('state',{kbId:kb});
   if(generation!==state.navigationGeneration||kb!==courseUi.kb||token!==courseUi.loadToken||current!=='learn')return;
   courseUi.data=data;await renderCourseWorkspace();
@@ -207,7 +226,12 @@ PAGES.report.render=async function(){
   const toolbar=el('div','course-growth-toolbar'),label=el('label','course-library-label','知识库'),selector=kbSelector(()=>go('report'));selector.setAttribute('aria-label','选择成长知识库');label.appendChild(selector);
   toolbar.appendChild(label);root.appendChild(toolbar);
   if(!state.kb){root.appendChild(emptyState({art:'db',title:'还没有学习记录',text:'先选择知识库、生成思维导图，再开始学习。',actions:[btn('去学 · 练','primary',()=>go('learn'))]}));return;}
-  const data=await courseApi('report',{kbId:state.kb});if(generation!==state.navigationGeneration)return;
+  const loading=el('div','course-growth-loading');loading.append(el('span','spinner'),el('p',null,'正在读取学习记录…'));root.appendChild(loading);
+  const paintReport=async()=>{
+  await new Promise(resolve=>setTimeout(resolve,250));
+  if(generation!==state.navigationGeneration||!root.isConnected)return;
+  const data=await courseReport(state.kb);if(generation!==state.navigationGeneration||!root.isConnected)return;
+  loading.remove();
   const nodes=(data.nodes||[]).filter(n=>n.depth>1),next=nodes.find(n=>!n.done&&(n.resources||[]).length)||nodes.find(n=>!n.done),nextResources=next?.resources||[],completion=data.totalNodes?Math.round(Number(data.completedNodes||0)/Number(data.totalNodes)*100):0;
   const history=(data.history||[]).slice().sort((a,b)=>Date.parse(b.at)-Date.parse(a.at)),lastAt=history[0]?.at||'';
   const lastLabel=lastAt?new Date(lastAt).toLocaleDateString('zh-CN',{month:'long',day:'numeric'}):'还没有学习记录';
@@ -252,5 +276,7 @@ PAGES.report.render=async function(){
   drawActivity();paintHistory();state.growthActivityAbort?.abort();const activityAbort=new AbortController();state.growthActivityAbort=activityAbort;let resizeTimer=0;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!root.isConnected)return;drawActivity();},120);},{signal:activityAbort.signal});
   if(data.basis){const basis=el('p','course-growth-basis');basis.innerHTML=icon('shield')+'<span></span>';basis.lastChild.textContent=data.basis;root.appendChild(basis);}
   const memories=el('details','course-growth-memories'),sum=el('summary');sum.innerHTML=icon('target')+'<span>我的目标与学习记忆</span>';memories.appendChild(sum);let context={memories:[]};try{context=await api('/api/learning/context',{kbId:state.kb});}catch(e){}if(generation!==state.navigationGeneration)return;const memoryWrap=el('div','course-growth-memory-list');if(!(context.memories||[]).length)memoryWrap.appendChild(el('p','muted','还没有写入学习目标或偏好。'));for(const memory of context.memories||[]){const item=el('p','course-growth-memory');item.innerHTML=icon('pencil')+'<span></span>';item.lastChild.textContent=memory.text;memoryWrap.appendChild(item);}memoryWrap.appendChild(btn('管理学习记忆','ghost sm',()=>go('settings','memory')));memories.appendChild(memoryWrap);root.appendChild(memories);
+  };
+  void paintReport();
 };
 PAGE_META.report.title='我的成长';PAGE_META.report.sub='看真实学习记录，决定接下来学什么';

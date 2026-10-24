@@ -45,7 +45,7 @@ const repo=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
       const lum=c=>{const x=c.map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*x[0]+.7152*x[1]+.0722*x[2]};
       const ratio=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
       const bgOf=el=>{let n=el;while(n&&n!==document.documentElement){const cs=getComputedStyle(n),c=cs.backgroundColor,v=parse(c),nums=String(c).match(/[\d.]+/g)||[],alpha=String(c).startsWith('rgba')?Number(nums[3]):1;if(cs.backgroundImage&&cs.backgroundImage!=='none')return null;if(v&&alpha>.6)return v;n=n.parentElement}return [255,255,255]};
-      const roots=Array.from(document.querySelectorAll('#view,.topbar,#panel'));
+      const roots=Array.from(document.querySelectorAll('#view,.topbar,#panel,#titlebar'));
       const els=new Set();for(const r of roots)r.querySelectorAll('*').forEach(e=>els.add(e));
       const tiny=[],low=[],sentences=[];
       for(const el of els){const rect=el.getBoundingClientRect();if(!el.offsetParent||rect.width<=0||rect.height<=0||!el.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))continue;const cs=getComputedStyle(el),fs=parseFloat(cs.fontSize);const direct=Array.from(el.childNodes).some(n=>n.nodeType===3&&n.textContent.trim().length>1);if(!direct)continue;const text=el.textContent.trim().replace(/\s+/g,' ');if(!text)continue;if(fs<12.5)tiny.push(Math.round(fs*10)/10+'px · '+text.slice(0,30));const fg=parse(cs.color),bg=bgOf(el),inControl=!!el.closest('button,.btn,a,input,select,textarea');if(fg&&bg&&!inControl&&ratio(fg,bg)<4.5)low.push(Math.round(ratio(fg,bg)*100)/100+':1 · '+text.slice(0,30));}

@@ -48,9 +48,14 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
   check('the assistant reply arrives in the thread',await until(async()=>(await page.locator('#chat-thread').innerText()).includes('你希望面向什么学习程度'),30000));
 
   // 5) 运行中按钮变“停止”（用会走工具链的问题拉长运行窗口）
+  let releaseAsk;
+  const askGate=new Promise(resolve=>releaseAsk=resolve);
+  await page.route('**/api/agent/ask-pi',async route=>{await askGate;await route.continue();});
   await page.fill('#chat-input','给我讲讲工具调用');
   await page.locator('#chat-input').press('Enter');
   check('the send button turns into stop while the turn runs',await until(async()=>await page.getByRole('button',{name:'停止',exact:true}).count()>0,15000));
+  releaseAsk();
+  await page.unroute('**/api/agent/ask-pi');
   check('the turn finishes and the button returns to send',await until(async()=>await page.locator('.composer-send[aria-label="发送"]').count()>0,90000));
 
   // 6) 知识网络：空标题被拒绝

@@ -129,6 +129,7 @@ const check=(name,ok,detail)=>{console.log((ok?'PASS ':'FAIL ')+name+(detail?' '
         await button.click();await sleep(100);check('index build shows loading feedback',await button.isDisabled());await clickAgain(button);
       });
       check('index build double click sends one request',buildCalls===1,{calls:buildCalls});
+      if(await page.locator('.app-modal').count())await page.locator('.app-modal-actions').getByRole('button',{name:'关闭',exact:true}).click();
       button=await stable(page.getByRole('button',{name:'整理',exact:true}).first());
       const organizeCalls=await held('kb/organize',async()=>{
         await button.click();await sleep(100);check('knowledge-base organize shows loading feedback',await button.isDisabled());await clickAgain(button);

@@ -235,6 +235,8 @@ public func messageFromJson(o: JsonObject): ?Message {
                                         case b: JsonObject =>
                                             if (strOf(b, "type") == "text") {
                                                 m.text = m.text + strOf(b, "text")
+                                            } else if (strOf(b, "type") == "thinking") {
+                                                m.thinking = m.thinking + strOf(b, "thinking")
                                             } else if (strOf(b, "type") == "toolCall") {
                                                 let args = JsonObject()
                                                 match (b.get("arguments")) {

@@ -34,6 +34,7 @@ import itn_desktop_core.harvest.*
 import std.fs.*
 import itn_desktop_core.util.*
 import itn_desktop_core.runtime.validatedAttachments
+import itn_desktop_core.reasoning.validReasoningProfile
 import itn_desktop_core.tts.*
 
 public class Api {
@@ -200,6 +201,18 @@ public class Api {
                 case Some(b) =>
                     let s = store.load()
                     let incoming = ModelConfig.fromJson(b)
+                    match (b.get("reasoningProfile")) {
+                        case Some(value) =>
+                            let valid = match (value) {
+                                case profile: JsonString => validReasoningProfile(profile.getValue())
+                                case _ => false
+                            }
+                            if (!valid) {
+                                fail(ctx, 400, "reasoningProfile 不支持，请选择 auto/none/deepseek/mimo/qwen-budget/openai")
+                                return
+                            }
+                        case None => ()
+                    }
                     if (incoming.id.size == 0) {
                         fail(ctx, 400, "缺少 id")
                         return
@@ -208,6 +221,10 @@ public class Api {
                     var i = 0
                     while (i < s.models.size) {
                         if (s.models[i].id == incoming.id) {
+                            // 旧客户端不认识此字段时沿用既有协议，显式 auto 才恢复自动识别。
+                            if (b.get("reasoningProfile").isNone()) {
+                                incoming.reasoningProfile = s.models[i].reasoningProfile
+                            }
                             if (incoming.apiKey.size == 0) {
                                 incoming.apiKey = s.models[i].apiKey
                             }
@@ -773,6 +790,14 @@ public class Api {
             return
         }
 
+        if (path == "/api/kb/reference" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => ok(ctx, resolveKnowledgeReference(store, b))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/kb/document" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -902,6 +927,23 @@ public class Api {
             return
         }
 
+        if (path == "/api/agent/reasoning" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => ok(ctx, sessionReasoningState(store, strOf(b, "sessionId")))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/sessions/reasoning" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    try { ok(ctx, setSessionReasoningMode(store, strOf(b, "sessionId"), strOf(b, "mode"))) }
+                    catch (e: ReasoningModeError) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // lumin（pi 运行时）跑一轮问答：与 /api/agent/ask 同形，用来同题对照（见 docs/11）
         if (path == "/api/agent/ask-pi" && method == "POST") {
             match (bodyJson(ctx)) {
@@ -915,6 +957,8 @@ public class Api {
                         ok(ctx, LuminAgent(store).askTask(strOf(b, "kbId"), question,
                             strOf(b, "sessionId"), strOf(b, "web"), trimStr(strOf(b, "skill")),
                             Some(workContextOf(store, b))))
+                    } catch (e: ReasoningModeError) {
+                        fail(ctx, 400, e.message)
                     } catch (e: Exception) {
                         fail(ctx, 500, "问答失败（lumin）：" + e.message)
                     }
@@ -942,6 +986,8 @@ public class Api {
                     try {
                         ok(ctx, LuminAgent(store).make(kind, strOf(b, "kbId"), topic, count,
                             strOf(b, "sessionId"), strOf(b, "web"), Some(workContextOf(store, b))))
+                    } catch (e: ReasoningModeError) {
+                        fail(ctx, 400, e.message)
                     } catch (e: Exception) {
                         fail(ctx, 500, "生成失败（lumin）：" + e.message)
                     }
@@ -1052,6 +1098,48 @@ public class Api {
                     o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
                     o.put("knowledgeLinkLabels", JsonString(db.getKv("settings", "ui_knowledge_link_labels", "1")))
                     o.put("knowledgeView", JsonString(db.getKv("settings", "ui_knowledge_view", "graph")))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // ---------- 顶部通知中心的持久化 ----------
+        // 通知是界面历史，但必须跟数据目录走：内核端口每次启动会变化，
+        // 若只写 localStorage，重启后历史与已读状态就会消失。
+        if (path == "/api/notifications/get" && method == "POST") {
+            let db = DbHub.open(store.dataDir)
+            let raw = db.getKv("settings", "ui_notifications", "[]")
+            let items = match (JsonValue.fromStr(raw)) {
+                case a: JsonArray => a
+                case _ => JsonArray()
+            }
+            let o = JsonObject()
+            o.put("items", items)
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/notifications/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let items = match (b.get("items")) {
+                        case Some(a: JsonArray) => a
+                        case _ => JsonArray()
+                    }
+                    if (items.size() > 60) {
+                        fail(ctx, 400, "通知历史最多保留 60 条")
+                        return
+                    }
+                    let raw = items.toString()
+                    if (raw.size > 262144) {
+                        fail(ctx, 400, "通知历史过大")
+                        return
+                    }
+                    let db = DbHub.open(store.dataDir)
+                    db.putKv("settings", "ui_notifications", raw)
+                    let o = JsonObject()
+                    o.put("items", items)
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1453,7 +1541,22 @@ public class Api {
                 t.put("available", JsonBool(true))
                 arr.add(t)
             }
+            for (d in referenceTools(store)) {
+                let t = JsonObject()
+                t.put("name", JsonString(d.name)); t.put("title", JsonString(d.label))
+                t.put("desc", JsonString(d.description)); t.put("usage", JsonString(d.schema))
+                t.put("available", JsonBool(true)); arr.add(t)
+            }
             for (d in taskTools(store, "", "")) {
+                let t = JsonObject()
+                t.put("name", JsonString(d.name))
+                t.put("title", JsonString(d.label))
+                t.put("desc", JsonString(d.description))
+                t.put("usage", JsonString(d.schema))
+                t.put("available", JsonBool(true))
+                arr.add(t)
+            }
+            for (d in reasoningTools(store, "", "")) {
                 let t = JsonObject()
                 t.put("name", JsonString(d.name))
                 t.put("title", JsonString(d.label))
@@ -1706,19 +1809,23 @@ public class Api {
             // 界面点「新建对话」时先开一个会话 id，这样提问前就能把它显示在会话栏里，
             // 生成过程中也能按这个 id 轮询事件做流式输出。
             let ss = SessionStore(store.dataDir)
-            let sid = ss.newId()
+            let pid = match (bodyJson(ctx)) { case Some(b) => strOf(b, "projectId"); case None => "" }
+            if (pid.size > 0 && ProjectStore(store.dataDir).find(pid).isNone()) {
+                fail(ctx, 400, "项目不存在，请重新选择工作区")
+                return
+            }
+            let summary = ss.create()
+            let sid = strOf(summary, "sessionId")
             let o = JsonObject()
             o.put("sessionId", JsonString(sid))
             // 新建时可以指定项目：会话一出生就归到那个文件夹下
-            match (bodyJson(ctx)) {
-                case Some(b) =>
-                    let pid = strOf(b, "projectId")
-                    if (pid.size > 0) {
-                        ProjectStore(store.dataDir).bind(sid, pid)
-                    }
-                    o.put("projectId", JsonString(pid))
-                case None => ()
+            if (pid.size > 0) {
+                ProjectStore(store.dataDir).bind(sid, pid)
+                summary.put("projectId", JsonString(pid))
+                summary.put("kind", JsonString("work"))
             }
+            o.put("projectId", JsonString(pid))
+            o.put("session", summary)
             ok(ctx, o)
             return
         }
@@ -1742,6 +1849,10 @@ public class Api {
                     let tid = strOf(b, "turnId")
                     if (sid.size == 0 || tid.size == 0) {
                         fail(ctx, 400, "缺少 sessionId / turnId")
+                        return
+                    }
+                    if (sessionHub().activeTurn(sid).size > 0) {
+                        fail(ctx, 409, "请先停止当前任务再回退会话")
                         return
                     }
                     let removed = SessionStore(store.dataDir).rewind(sid, tid)
@@ -1792,6 +1903,10 @@ public class Api {
                         fail(ctx, 400, "缺少 sessionId")
                         return
                     }
+                    if (sessionHub().activeTurn(sid).size > 0) {
+                        fail(ctx, 409, "请先停止当前任务再切换历史分支")
+                        return
+                    }
                     let ss = SessionStore(store.dataDir)
                     // 允许传 eventId（精确）或 turnId（那一条提问所在轮次的第一条）
                     var target = intOf(b, "eventId")
@@ -1815,18 +1930,41 @@ public class Api {
         if (path == "/api/sessions/branch" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
-                    let sid = strOf(b, "sessionId")
-                    let tid = strOf(b, "turnId")
+                    let sid = trimStr(strOf(b, "sessionId"))
+                    let tid = trimStr(strOf(b, "turnId"))
                     if (sid.size == 0) {
                         fail(ctx, 400, "缺少 sessionId")
                         return
                     }
                     let ss = SessionStore(store.dataDir)
+                    if (DbHub.open(store.dataDir).scalarInt("SELECT COUNT(*) FROM sessions WHERE id = ?", va([tv(sid)])) == 0) {
+                        fail(ctx, 404, "找不到原会话")
+                        return
+                    }
+                    if (tid.size > 0 && ss.turnStartEventId(sid, tid) <= 0) {
+                        fail(ctx, 404, "找不到分支起点轮次")
+                        return
+                    }
+                    let running = sessionHub().activeTurn(sid)
+                    if (running.size > 0 && (tid.size == 0 || tid == running)) {
+                        fail(ctx, 409, "这一轮仍在执行，请完成或停止后再创建分支")
+                        return
+                    }
                     // turnId 空 = 「从最新的一条分」：整段复制过去（界面 ⋯ 里的新建分支走这条）
                     let nsid = if (tid.size > 0) { ss.branch(sid, tid) } else { ss.branchAll(sid) }
-                    // 分支继承原会话的项目归属，但**不**继承上下文缓存：它是新的一段
+                    // 截断到指定祖先轮次，保留原始工具配对；不能复制后续轮次或运行状态。
+                    checkpointBranchContext(store.dataDir, sid, nsid)
+                    // 分支继承项目目录与资源标签，不复制审批、任务状态或排队插话。
                     let ps = ProjectStore(store.dataDir)
                     ps.bind(nsid, ps.projectOf(sid))
+                    for (prefix in ["resource:", "guided:"]) {
+                        let value = DbHub.open(store.dataDir).getKv("sessions_meta", prefix + sid, "")
+                        if (value.size > 0) {
+                            let binding = objOf(JsonValue.fromStr(value)).getOrThrow()
+                            if (prefix == "guided:") { binding.put("sessionId", JsonString(nsid)) }
+                            DbHub.open(store.dataDir).putKv("sessions_meta", prefix + nsid, binding.toString())
+                        }
+                    }
                     let o = JsonObject()
                     o.put("sessionId", JsonString(nsid))
                     // 名字一起回给界面：新分支可能还没有事件（列表里暂时看不到），
@@ -1845,6 +1983,10 @@ public class Api {
                     let sid = strOf(b, "sessionId")
                     if (sid.size == 0) {
                         fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    if (sessionHub().activeTurn(sid).size > 0) {
+                        fail(ctx, 409, "请先停止当前任务再修改会话分支")
                         return
                     }
                     let ss = SessionStore(store.dataDir)
@@ -1908,6 +2050,10 @@ public class Api {
                     let tid = strOf(b, "turnId")
                     if (sid.size == 0 || tid.size == 0) {
                         fail(ctx, 400, "缺少 sessionId / turnId")
+                        return
+                    }
+                    if (sessionHub().activeTurn(sid).size > 0) {
+                        fail(ctx, 409, "请先停止当前任务再切换历史分支")
                         return
                     }
                     let done = SessionStore(store.dataDir).activateTurn(sid, tid)
@@ -2068,8 +2214,14 @@ public class Api {
 
         if (path == "/api/sessions/list" && method == "POST") {
             // 导学会话也是普通会话：仍然出现在侧栏，并带 resource 标签供界面识别。
+            // force=true：前端新建/改名/删除后的显式刷新，必须看到刚落库的变化（绕过 stale-while-revalidate）。
             let arr = JsonArray()
-            for (sm in SessionStore(store.dataDir).list()) { arr.add(sm) }
+            var force = false
+            match (bodyJson(ctx)) {
+                case Some(b) => force = boolOf(b, "force")
+                case None => ()
+            }
+            for (sm in SessionStore(store.dataDir).list(force)) { arr.add(sm) }
             let o = JsonObject()
             o.put("sessions", arr)
             ok(ctx, o)
@@ -2532,35 +2684,35 @@ public class Api {
         // ---------- 学习者档案 ----------
 
         if (path == "/api/profile/get" && method == "POST") {
-            let d = StudyStore(store.dataDir).load()
-            ok(ctx, d.profile.toJson())
+            ok(ctx, StudyStore(store.dataDir).loadProfile().toJson())
             return
         }
 
         if (path == "/api/profile/save" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
-                    let ss = StudyStore(store.dataDir)
-                    let d = ss.load()
-                    d.profile.nickname = strOf(b, "nickname")
-                    d.profile.goal = strOf(b, "goal")
-                    let wh = intOf(b, "weeklyHours")
-                    if (wh > 0) { d.profile.weeklyHours = wh }
-                    d.profile.preferredFormats = strArrayOf(b, "preferredFormats")
-                    match (b.get("selfScores")) {
-                        case Some(sv) =>
-                            match (objOf(sv)) {
-                                case Some(so) =>
-                                    for ((k, val) in so.getFields()) {
-                                        d.profile.setScore(k, intValue(val))
-                                    }
-                                case None => ()
-                            }
-                        case None => ()
-                    }
-                    d.profile.updatedAt = nowStamp()
-                    ss.save(d)
-                    ok(ctx, d.profile.toJson())
+                    try { ok(ctx, StudyStore(store.dataDir).updateProfile(b).toJson()) }
+                    catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/profile/mbti/start" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    try { ok(ctx, MbtiAssessmentStore(store.dataDir).start(restart: boolOf(b, "restart"))) }
+                    catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/profile/mbti/state" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    try { ok(ctx, MbtiAssessmentStore(store.dataDir).state(sessionId: strOf(b, "sessionId"))) }
+                    catch (e: Exception) { fail(ctx, 400, e.message) }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
             return
@@ -3166,7 +3318,7 @@ func speechJson(store: Store, cfg: ModelConfig, text: String, voice: String): Js
 /* 界面静态资源白名单：serveStatic 校验与静态路由注册共用这一份。
    曾经是两份清单（白名单一份、路由注册一份），新增 studyplayer.js 时只改了一份 → 页面 404。
    只留一个来源，杜绝再次走偏。 */
-let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "team-panel.js", "team-panel.css", "mascot.js", "mascot.css", "release.json",
+let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "notifications.js", "notifications.css", "team-panel.js", "team-panel.css", "mascot.js", "mascot.css", "release.json",
     "logo-mark.png", "logo-light.png", "logo-dark.png",
     "mascot/xiaoyuanlong-idle.png", "mascot/xiaoyuanlong-breathe.png", "mascot/xiaoyuanlong-blink.png",
     "mascot/xiaoyuanlong-wake.png", "mascot/xiaoyuanlong-listen-1.png", "mascot/xiaoyuanlong-listen-2.png",
@@ -3273,6 +3425,15 @@ func verifyBackup(path: String): Int64 {
 func workContextOf(store: Store, b: JsonObject): WorkContext {
     let db = DbHub.open(store.dataDir)
     let work = WorkContext()
+    match (b.get("reasoningMode")) {
+        case Some(v) => match (v) {
+            case s: JsonString =>
+                if (s.getValue().size == 0) { throw ReasoningModeError("reasoningMode 不能为空；省略字段表示使用会话设置") }
+                work.reasoningMode = s.getValue()
+            case _ => throw ReasoningModeError("reasoningMode 必须是可用档位的字符串")
+        }
+        case None => ()
+    }
     work.attachments = validatedAttachments(b.get("attachments"))
     work.confirmFileAccess = boolOf(b, "confirmFileAccess")
     work.dir = db.getKv("settings", "agent_work_dir", "")
@@ -3380,10 +3541,13 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/kb/build",
         "/api/kb/stats",
         "/api/kb/document",
+        "/api/kb/reference",
         "/api/kb/image",
         "/api/kb/search",
         "/api/agent/ask",
         "/api/agent/ask-pi",
+        "/api/agent/reasoning",
+        "/api/sessions/reasoning",
         "/api/agent/approvals",
         "/api/agent/approvals/answer",
         "/api/agent/steer",
@@ -3394,6 +3558,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/agent/cancel",
         "/api/prefs/get",
         "/api/prefs/save",
+        "/api/notifications/get",
+        "/api/notifications/save",
         // 联网搜索（Tavily）：新增接口一定要在这里登记，否则分发器按精确路径匹配会直接 404
         "/api/websearch/get",
         "/api/websearch/save",
@@ -3476,6 +3642,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/sessions/delete",
         "/api/profile/get",
         "/api/profile/save",
+        "/api/profile/mbti/start",
+        "/api/profile/mbti/state",
         "/api/study/tree",
         "/api/study/course",
         "/api/study/lecture",

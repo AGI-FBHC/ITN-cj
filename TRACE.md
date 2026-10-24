@@ -275,3 +275,10 @@ scripts/package-app.ps1原来强制复制两份docs说明，公开检出缺docs�
 - 本地整合检出 D:/Desktop/ITN/ITN-cj-unified 已切换 main 并快进至合并结果。运行中的独立版本检出、服务器与数据库无需因本次目录整合迁移。
 - README 品牌横幅已实际渲染检查。为避免中文依赖预览环境字体，将图形文字转为 SVG 路径，保留中文 title/desc 供辅助阅读，最终约 92KB；渲染确认标题、三版本卡片与文字正常，无裁切。
 - 验证范围为来源提交/文件树/TRACE/作者身份/文档链接/脚本语法与 Desktop 发布前缀。未执行全量跨版本业务构建或部署。GitHub PR diff 超过 300 文件显示上限，本地按四个源树全量校验；审计结果位于 docs/history/2026-10-23-editions.json。
+
+## 2026-10-24 desktop 0.9.x 同步至 main
+
+- 用户在 desktop 分支新增并推送 38 个提交（6fa3624 → 4acf800，含 0.9.3 发布、推理/画像/引用与界面改动）；在 sync/desktop-20261024 分支使用 `git subtree pull --prefix=versions/desktop origin desktop`（不 squash）合入，原始作者、提交与历史全部保留。
+- 合并无冲突。合并后 `versions/desktop` 与来源 tip 的唯一树差异仍是之前新增的 `scripts/publish-lumin.ps1` 路径适配（兼容独立检出与 versions/desktop），该适配已在独立夹具中验证。
+- 验证：desktop tip 为 HEAD 祖先且 `rev-list origin/desktop --not HEAD` 为 0；42 个 PowerShell 脚本通过 AST 解析，8 个 Electron/渲染脚本通过 `node --check`，`shell/package.json` 版本为 0.9.3。未执行桌面端完整构建、Electron 打包与真机冒烟（依赖本机 Windows SDK 与桌面运行环境）。
+- 通过 PR 以 merge commit 合入 main；pro/lite 分支与版本目录不受影响。

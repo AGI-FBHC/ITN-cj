@@ -5426,3 +5426,255 @@ read_chunk 读得到原文并带回库标识与正文。
 - 根 README 改为公开源码结构：`core/` 仓颉业务内核、`shell/` Electron 外壳、`lumin/` 运行时与 CLI、`scripts/` 构建打包发布、`tools/` 验收与发布服务、`samples/` 样例。移除私有 docs 链接。
 - AGENTS/PRODUCT 同步本地文档政策；`scripts/package-app.ps1` 改为可选附带本地说明书，公开检出没有 `docs/` 时仍可打包。PowerShell AST 与 diff 检查通过，未修改业务接口、内核或真实用户数据。
 - 目标远端的 main 布局为 `apps/desktop/`；本次按用户指定只更新 `desktop` 分支，分支根目录仍直接承载桌面端源码，不混入 Web 平台代码。
+
+### 2026-10-23 · 海报页补充安装/启动失败时的便携版入口
+
+- 用户要求直接在桌面端海报说明同事遇到的启动错误，告知安装版不行时可以尝试便携包。下载区新增提示：“安装或启动失败时，可尝试 ZIP 便携版。解压到独立文件夹后运行 Lumin.exe。”附同版本实际 ZIP 直链；常见问题增加“安装版无法安装或启动怎么办”，明确包含“内核启动超时，未收到端口文件”场景。
+- 提示仅在同版本安装器和 ZIP 同时存在时出现，链接跟随当前版本，不固定旧版地址。措辞为“可尝试”，不声称两种包的共同内核问题必定通过便携版解决。本轮只更新海报文案与轻量样式、服务渲染，不重新构建客户端或安装器，不操作学习数据库。
+- 快速验证：现有 release-server-check 23/23，语法/diff 检查通过；上传前后文件 SHA256 一致，旧服务与页面已备份，备份序号 20261023-004643。已原子更新 /opt/lumin-release/serve-release.cjs 和 release-site/index.html，systemd active；公网页面 200，新的下载区/FAQ 文案均存在，提示链接 /Lumin-0.8.33.zip 的 HEAD 为 200，无未替换模板标记。遵守用户要求，不追加耗时的模型、完整包下载或安装测试。
+
+### 2026-10-23 · 整理仓颉杯运行程序包与在线体验地址
+
+- 用户要求将最新桌面端便携版和在线体验地址说明放入 D:/Desktop/仓颉杯/运行程序包与在线体验地址，并指定参考会话 01a16244-396a-7d22-94ce-7fc10abeca32。已读取该会话的用户指示，核对名称与端口：Pro 6023、Lite 6024/login、Lumin 下载 6025、产品总览海报 6026；RAGFlow 6029 单列为辅助知识库服务，不混作第四个客户端版本。另一会话仍在处理 V1.2 和第三方说明，本次不修改这些文件。
+- 交付文件：Lumin-0.8.33.zip、在线体验地址与运行说明.txt。TXT 包含各入口、便携包解压/启动/模型配置步骤和备用下载链接，使用 UTF-8 BOM 与 CRLF，便于 Windows 记事本直接阅读；未包含账号密码或模型密钥。
+- 轻量核验：五个在线入口均 HTTP 200；复制前后 ZIP SHA256 相同且等于已验收发布 BA83F12112B4E52149167F3EAC59A878D3868EFB7E25B386C897FDB22EEA1F1D；读取 ZIP 清单确认根目录有 Lumin.exe，release.json 版本为 0.8.33。未重打包、未重复模型/安装器测试，也未修改真实学习数据或重新部署服务。外部交付文件不加入源码 Git，本记录追加同一 TRACE 供后续接续。
+
+### 2026-10-23 · 提交便携包文档审核与最新版下载指引
+
+- 用户要求检查“运行程序包与在线体验地址”文件夹内 Lumin ZIP 的说明文档，去除不应随包交付的本地调试记录，并优先推荐从 Lumin 下载页获取最新版。
+- 审核 ZIP 内文档路径：未发现项目 TRACE/AGENTS/HANDOFF、调试 .log、.env 或学习数据库。其余说明主要属于第三方依赖、许可及运行所需技能；保留这些内容。发现根目录 Lumin-使用说明.md 含旧 0.2.0、ITN-Desktop.exe、过时的侧栏/数据目录和私有文档引用；Lumin-系统说明.md 含多轮历史测试次数、内部调试/验收过程和 TRACE 引用，不适合作为随包使用说明。
+- 将这两份说明改为使用者版：当前 Lumin.exe、模型与资料配置、学习/导学/协作功能、数据与权限边界、基础问题处理及第三方许可；删除旧版本和内部验证记录。在两份包内说明和包外 在线体验地址与运行说明.txt 中都推荐通过 http://113.249.102.41:6025/ 获取最新版；包外固定 ZIP 地址标为本次随附版本备用链接。
+- 更新范围为比赛提交文件夹中的 ZIP 文档，不变更程序版本或已发布客户端二进制。逐项比较全部 2763 个 ZIP 条目，恰有两份根目录说明改变，其余 2761 条目（含目录、可执行文件、依赖、资源、release.json、许可证与技能）内容哈希一致。对应本地 docs/05 与 docs/07 说明源同步整理，防止下一次打包再次带入旧稿；docs 仍仅本地，不加入公开 Git。
+- 原始提交 ZIP、原说明和逐项比较结果保存在 D:\Desktop\ITN\ITN-Desktop\tmp\submission-manual-audit-20261023-013424；提交包现为说明整理版，SHA256=507B9C34ECB99F6F76F837B8592671351252D4F8775E027CBBB5500B3AF4A8C6，大小=231331261。与公网原版程序内容相同，ZIP 整体哈希因文档变化不同；dist 下原发布 ZIP 及安装器、线上服务未被改写。本次不做模型、安装器或整包重复下载测试。
+
+### 2026-10-23 · 修复上下文压缩拆散工具调用导致的模型 400（0.8.34）
+
+- 用户报错：Messages with role 'tool' must be a response to a preceding message with 'tool_calls'，invalid_request_error，request_id=dc79d1f4-6bd0-4e32-b426-e1f6c4d363e8。
+- 根因取证：只读 TEMP 用户库副本中的失败事件元数据及上下文角色结构，未打印正文、密钥或改写真实数据库。日志显示多轮并行检索/协作后产生摘要模型请求（messageCount 降为 2），随后实际请求只剩系统、摘要、两条孤立工具结果；存储检查点中没有对应 assistant.tool_calls。Agent.compact 原来按最后两条“消息”切割，两个/更多并行工具结果会把父调用压缩掉，直接触发上游协议检查。另发现恢复中断工具时原代码在全部上下文末尾补结果，若已经有后续 user 消息也会顺序不合法。
+- 先复现再修改：新增 Cangjie ToolContextTest，覆盖并行工具压缩、旧孤立结果恢复、中断结果插入位置、实际 HTTP 出站消息校验；四项在旧代码全部失败，HTTP 用例返回同类 400。
+- 修复：压缩切点如落在工具结果区，向前扩展到对应 assistant 调用，保留整组结果。新增 runtime/tool_context.cj，将上下文规范化用在模型出站、宿主检查点和恢复：完整调用/结果维持原顺序及内容；中断调用的明确错误结果紧跟同组结果、先于下一条普通消息；旧版已经丢失父调用或重复的工具结果保留为带工具名、调用 ID、结果和错误状态的历史文本，避免用孤立 role=tool 发送，不伪造成功结果或重放工具。只读恢复不覆盖原检查点或历史事件。
+- 先更新本地 docs/02 契约（docs 不上传 Git），业务路由、工具权限和数据库格式无变更。版本按既有规则递增为 0.8.34，旧版本目录保留。
+- 回归结果：ToolContextTest 最终 6/6（新增合法并行结果乱序但不改变内容、重复结果保留的边界），ProviderTest 19/19（含前轮 10054、部分正文上下文、取消、截断、限流），AgentLoopTest 13/13（含自动压缩与并行执行）。本轮针对性共 38 项，不声称运行全部 188 项。期间 Provider 审计测试发现 toolResultCount 被规范化后的角色改变，已保持其原有输入上下文统计语义后重跑通过。
+- 真实模型：新构建的 dist/core，deepseek-flash 真正返回两条 calc 调用、两条成功结果和最终“(12+8)*3/4 = 15，7*8 = 56。”；ASK_OK/TURN_OK=true。real-tool-smoke 新增 REAL_TOOL_PARALLEL=1，且 finally 清零 TEMP 凭据副本和隔离模型数据库/WAL/SHM。不重做昂贵课程/PPT生成。
+
+- 0.8.34 交付：功能提交 eb1ff04a5cb344afc569b38efe4912f7c319cffe；38 个 release 关键资产哈希通过，便携版实际 EXE 在全新临时用户目录启动 RESULT=OK。安装器使用同一 payload，installer acceptance 一次 24/24（中文空格路径、2738 文件哈希、升级锁、数据保留、安装版启动、随包文件运行时、卸载与重装），隔离测试目录 D:/lit/Lumin检查-10c19abb-学员。
+- 按既定双下载发布流程，将 ZIP 在安装器压缩时提前上传暂存，安装器构建/验收与上传并行；两个文件上传前后 SHA256 一致才从 incoming 原子移入 releases。发布页/服务代码未改，无需重启下载服务或重新上传大包；公网页面 v0.8.34、安装器和 ZIP 两条 HEAD 均 200。不做整包公网重复下载，也不重做模型/课程/PPT昂贵测试。
+- 下载页仍为 http://113.249.102.41:6025/；安装器 Lumin-Setup-0.8.34.exe、便携包 Lumin-0.8.34.zip，均不加额外命名后缀。更新后需退出旧版再启动新版，原 400 会话可直接输入“继续”使用，无须清空聊天记录。
+- 文件校验：安装器 155778160 bytes，SHA256=5D152D65DFFBCD5DE4EEDE5938AFC3558AB1EBB8D86956F1920AF85832CC6F4C；ZIP 231333302 bytes，SHA256=2BF9D11CC771D2A68A170D11E62C9FBA0CEB50BFED6D9A0A66EA5425FE17FAF3。
+
+### 2026-10-23 · 思考深度模式调研（未实施）
+
+- 用户本轮要求“能否添加思考深度模式，先帮我调研下”；范围为官方资料调研与桌面端只读代码核对，不授权本轮直接增加功能、升级版本、重打包或发布。未运行付费真实模型请求，未访问真实用户学习数据库或输出密钥。
+- 已读取 agent-reach 与 OpenAI Docs 技能。agent-reach 指定的 Exa 路由在本机未配置（Unknown MCP server exa），改用可用搜索服务检索并实际打开厂商官方文档；Jina 对旧 MiMo 文档路径读取未得到正文，不以该空结果作为证据。
+- 官方资料：DeepSeek https://api-docs.deepseek.com/guides/thinking_mode/，当前官方 deepseek-flash 支持 thinking enabled/disabled，reasoning_effort 为 low/high/max；携 tools 的多轮请求须按文档完整回传 reasoning_content。第三方网关同名模型不等于已经验证支持透传。
+- OpenAI https://developers.openai.com/api/docs/guides/reasoning?api-mode=chat：Chat Completions 使用 reasoning_effort，Responses 使用 reasoning.effort，可用档位与关闭能力依具体模型；GPT-6 Astra/6.1 Sol 的工具调用需 Responses。深度、总输出上限、正文长度是不同控制；思考 token 属输出计费与预算，不能把思考用量重复加到已含它的输出总数。
+- Qwen https://www.alibabacloud.com/help/en/model-studio/deep-thinking：支持的混合思考模型有 enable_thinking 与 thinking_budget；预算是思考 token 上限，不保证用足，按模型版本区分支持情况。
+- MiMo https://mimo.mi.com/docs/en-US/api/chat/responses：文档明确当前 none 关闭思考，其余 effort 有效值均启用相同思考行为，暂不区分实际强度。不可据字段接受多个枚举就设计成多个有实质差异的档位；现阶段建议默认/关闭/开启。
+- Claude https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost：新模型以自适应思考与 output_config.effort 调节，档位依模型；当前桌面端只走 OpenAI 兼容协议，Claude 原生接口应作为后续适配范围，不宣称已直连支持。
+- 代码核对：core/src/store/store.cj 的 ModelConfig 暂无 thinking/effort/budget 配置；core/src/model_provider/provider.cj 能读 reasoning_content，默认输出8192，MiMo纯思考客户端字节上限24000，不是 token 预算，恢复路径会扩额度并关闭思考。该逻辑需与显式深度选择协调，不能用户选深度却无提示降级。当前 reasoning_content 回传仅对含 mimo 的工具调用 assistant 做专门处理，需按具体厂商的工具历史规则扩展。
+- 普通聊天、资源/课程生成走 OpenAiChatProvider；学习协作树 core/src/agent/learning_team.cj 和 PPT 子任务等还走 core/src/llm/llm.cj 的 LlmClient。应在仓颉抽取共享请求参数适配，防止主会话设置生效而子任务失效；不能只改 renderer 按钮。现有统计仅输入/输出，单独思考用量需要解析接口提供的 usage 细项，缺失不能由字节/字数伪造。
+- 建议方案：输入区模型选择旁增加简洁“思考”菜单，默认跟随模型且不额外发送参数；按“服务商/网关+协议+具体模型”能力只列真实支持选项。每会话独立，发送时固化设置，工具续接同轮不变，切换会话不互相覆盖。先支持对话与随课导学、明确继承的协作子任务；知识库索引/embedding/TTS不受会话深度影响。同步提供Lumin读取当前模式与经用户明确要求设置模式的工具，沿用权限规则。
+- 后续若用户要求实施：先更新本地接口契约，再做能力识别与两条调用链适配、会话保存及UI；优先真实验证现有模型网关，至少覆盖简单问答、复杂推理、并行工具及续聊、跨会话不同深度、切模型不支持参数、停止/重试。比较首个正文耗时与真实usage，不能仅凭参数返回200认定档位有效。用户当前尚未批准实施，无业务代码/版本/程序包变更。
+
+### 2026-10-23 · 实施思考深度模式（0.8.35）
+
+- 用户确认“可以 帮我加一下”，授权从调研进入实施。沿前述方案增加会话级思考菜单、仓颉参数适配、Agent读写工具；只做本地迭代打包，不启动定时任务、不改Web、不自动发布远端。界面与会话/API由两名子Agent分域并行，父负责共享协议、模型传输、子任务继承、真实验收与交付。
+- 先更新本地 docs/02 契约；该目录仍不进Git。新增 core/src/reasoning/reasoning.cj 统一capability/参数：auto只识别官方host与受支持型号，第三方网关可在模型表单明确选deepseek/mimo/qwen-budget/openai，或none停用；按真实支持列出default/off/on/low/medium/high/max。DeepSeek不用不存在的medium，MiMo只开关；Qwen预算保留正文空间且不向已知thinking-only型号提供关闭；需要Responses工具链的OpenAI型号不冒充支持当前Chat Completions深度工具调用。
+- ModelConfig新增reasoningProfile，经models.reasoning_profile列幂等迁移保存；reasoningMode是运行时副本字段，不进全局模型配置。API校验合法profile，旧客户端不带字段时保留既有设置。仓颉OpenAiChatProvider和LlmClient共享参数函数；思考档位和输出预算分开，思考模型不携冲突temperature，支持接口请求usage流尾帧。
+- 新增POST /api/agent/reasoning只读、/api/sessions/reasoning设置当前会话下一轮。sessions_meta独立reasoning键持久化，分支复制、删除清理。ask-pi/task-pi在开始时校验并固定本轮模式；旧会话档位与新模型不兼容时只回退本次default、不覆盖原选择。协作树与PPT子Agent接收ModelConfig运行时副本，不读取其他会话或后续全局变更。
+- get_reasoning_mode读取模型能力/已保存模式/本轮固定模式；set_reasoning_mode仅在本轮用户明确要求且原文目标与args匹配时保存下一轮，不接受模型仅自报confirmed或把“关闭”升级成max，不改变正在执行的工具续接。支持“开启深度思考，不要执行其他操作”这种正常指令，不把与设置无关的否定词误当撤销授权。
+- Provider按厂商规则回传assistant.reasoning_content，包含DeepSeek工具上下文中的纯正文assistant轮次；MiMo字节保护只适用于原default路径，用户主动开启时不会静默降级关闭。usageReasoning从completion_tokens_details.reasoning_tokens取值，未提供用-1而非估算，跨请求有缺失不伪造完整总数；retry累计真实用量且不重复把思考加到输出总量。
+- 前端普通聊天与随课导学共用紧凑菜单，按API选项绘制，逐会话保存和空会话草稿迁移；防重保存、错误保留原值、切会话/切模型异步结果隔离。两主题与键盘焦点适配。usage仅实际变化才触发重绘，菜单签名缓存保留选项DOM，避免流式轮询时点击目标消失。模型表单增加思考协议，正常输入区展示上一轮实际思考token。
+- 真实验收发现并修复现存并发卡点：两个新会话首次使用同一cwd，runtime/session.cj存在exists后Directory.create的竞争，返回-17 File exists。给共享会话目录创建加进程内锁；新增16个并发native session断言。首次真实A低档已经完成工具，而B败于目录创建，未归因模型参数。修后真实并发成功。
+- 仓颉定向验证：ReasoningTest 11项、ReasoningSessionTest 8项，共19/19，最终代码连续两轮通过；另ProviderTest 19/19、ToolContextTest 6/6、AgentLoopTest 13/13。本轮57项不同的核心用例，未声称全量207项通过。覆盖实际回环HTTP出站、两条模型传输、思考历史、工具设置授权/目标不符拒绝、本轮固定与下轮生效、分支/删除、API/profile兼容、非法档位零上游调用、缺省和0用量。
+- 测试过程修正：初次构建默认参数误用位置参数，改为仓颉具名参数；测试过滤不能用竖线OR，该命令意外开始全量，已中断，后按具体suite执行；子Agent测试文件尾部多一个括号导致编译失败，删除后完整定向重跑通过。以上失败未计作通过结果。
+- 真模型用 tools/real-reasoning-smoke.cjs 与新dist/core，凭据仅从TEMP数据库副本读取，隔离学习库，finally清零凭据及临时模型库/WAL/SHM。当前deepseek-flash网关显式deepseek协议：A保存low、B保存off并发，A两个calc成功返回15/56；A运行中把下一轮改high，本轮两次模型请求仍low，B不出现思考。下一轮high读取get_reasoning_mode且记住15/56。首次通过耗时约2.8s/2.5s，真实usage分别in17570/out104/reasoning11、in17941/out78/reasoning24；非同题质量/速度基准，不以数字推断高档必然更好。其他厂商本轮只测协议出站，不宣称逐家真实API通过。
+- 前端子Agent使用ui-ux-pro-max检查规范；真实Edge+隔离仓颉夹具37/37，旧HEAD相同用例在缺少思考菜单处失败，已查看普通/导学浅深主题截图。此类测试验证操作和请求体，不冒充真实计费/模型质量验证。最终复跑与包验收另行追加。
+
+- 最终复验：前端真实Edge37/37第二轮通过；共57项不同核心用例通过，其中19项思考用例在最终代码连续两轮通过。最终release构建成功。最新dist/core真实deepseek复跑通过：low/off并发约3.3s，high续聊约2.4s；新增真实set_reasoning_mode调用把会话下一轮保存off，该轮所有上游请求仍high，证明工具不会中途改变模式。此轮high续聊上游实际上报reasoning=0，按0展示，不假定高档每轮一定产生思考正文。
+
+- 0.8.35 本地交付：功能提交 b96ebba；dist/Lumin-0.8.35/Lumin.exe、dist/Lumin-0.8.35.zip，保留历版、不追加命名后缀。38项发布资产SHA256逐项通过，真实便携EXE在空TEMP数据目录原生启动PRELOAD/TITLEBAR=ok、RESULT=OK；未运行无关Office样张生成。ZIP清单有Lumin.exe及release.json，版本0.8.35/sourceCommit=b96ebba逐项一致。ZIP=231371946 bytes，SHA256=AEF5EE1652C82B915A5228162BD9A382DCD40DA949FBCCE5B6CCE6AA8C753717。仅本地便携目录/ZIP，未制作安装器、推送或发布天翼云。用户原有.taste-skill未修改。
+
+### 2026-10-23 · 桌面端运行时卡顿深度诊断（只诊断不修复，接续被中断任务）
+
+- 用户上一轮要求“再测试检查桌面端运行时还有哪些会卡顿的 bug，先不着急改，深度测试全功能”，该轮在 07:25（为 perf-runtime-audit.cjs 追加 features 阶段后约 24 分钟无输出）被手动中断，两个后端/前端子代理同时被终止、未交付报告。本轮从 rollout JSONL 恢复全部上下文并续做。
+- 诊断工具 tools/perf-runtime-audit.cjs（此前已建，未跟踪）：打包版 Electron+Cangjie 跑在隔离数据目录，支持 full/leak/history/features 四阶段；controlled SSE 区分渲染层与内核/模型等待；快照模式只读复制用户库且运行后校验 originalFileUnchanged=true。本轮修复脚本两处：features 阶段 seed 参数改为仅 --seed-guided-fixture=1（course 夹具只允许空数据目录，与 --seed-fixture=15000 同用必抛异常且 setup 等待 40s 小于灌数 61s），setup 就绪等待 40s→90s。产品代码零改动。
+- 已完成四轮测量（tmp/perf-runtime-*）：真实库快照 full（93 会话/49711 事件/17 知识点，startupReady 8.8s）、空库 full 对照（startup 3.4s）、空库 leak 40 轮、真实库 history。本轮补跑 features 阶段（--dataset=seed --phase=features，tmp/perf-runtime-seed-2026-10-23T08-03-26-424Z）与三次定向探针（feature-retake、kb-collapse2/kb-css-probe、wrong-timeline）。
+- 核心结论 1（最重，数据规模型）：我的成长页 8.5s 就绪（cold-report 8482ms=learning/context 6889+tasks/list 5072 重叠+course/report 1267；空库 198ms）。子代理已定位到 learning/state.cj:27 progress LEFT JOIN chunks，执行计划 SCAN p; SCAN c（52×2811），仅回 6 行，三次实测 6486/6578/6581ms，数据库锁全程持有；期间 settings/notes/tasks 等被拖到 6.5-6.8s（health 16ms 不受影响）——即 DB 互斥锁排队，是“后台任务拖慢一切”的体感来源。memory 页同理（8030ms）。
+- 核心结论 2（数据规模型）：长回复流式生成期间切页/新会话劣化：stream-switch-home 11682ms（tasks/list 8541、settings 7015、sessions/list 4506）、stream-new-session-short 9662ms；空库对照 226-387ms/1118ms。子代理稳态实验（3 万事件库）：流式写入叠加读列表使 state 19→412ms、settings 59→437ms、sessions/list 本身 1.43s、并发 3 个列表失效各自重算共 3.68s、delta 最大间隔 94→430ms；已剔除 native seed 首次 parent_id 补全迁移的一次性干扰。增量事件查询 17→304ms、course/report 55→737ms 随库规模线性变慢。
+- 核心结论 3（前端内存滞留，空库也复现）：空库 40 轮快循环（每 5 轮强制 GC）listeners 130→865（每 5 轮 +92 线性）、DOM nodes 1058→14149（GC 后不回落）；真实库 8 轮导航 nodes 12111→32238、listeners 2247→2583。子代理候选根：聊天页每次进入新增从不移除的全局 Esc 闭包（经停止/发送回调保留旧聊天 DOM）；全局 reasoningControls 集合仅重绘时清理、缓存命中跳过。现测试覆盖导学退出停轮询，未覆盖长历史重排、慢响应乱序、内存滞留。
+- 核心结论 4（序列依赖，未完全定位）：完整审计序列中 cold-wrong 15023ms 超时（aria-busy 不清除）；单独 go('wrong') 时间线采样 344ms 正常，接口均 <400ms、无页面错误。修复阶段需在完整序列下复现二分。
+- features 阶段补充测量：知识网络 25/100/200 节点静止/拖拽/检查器/时间线全部流畅（idle ~3.2s 含 3s 采样窗，最长帧 79ms）；思维导图生成 1385ms、拖拽 217ms；讲义/练习/PPT 生成 2416/1810/9540ms，预览 15-92ms，导学问答 49ms；文件预览 md/html/pptx 21-92ms；40 篇知识库建索引 1088-1224ms、开页 289-333ms、检索 281-327ms；40 笔记/12 错题列表 278/320ms。calibrate 深链 fixture 库 490ms 正常。
+- 顺带发现（UX 缺陷，非性能）：知识库内容搜索出结果后 CSS 规则 .document-browser .library-documents:has(.library-results:not(:empty)) > .list{display:none} 把文档列表整体隐藏，但“显示 40/40 篇资料”计数与筛选控件仍可见、搜索结果混插同一卡片、「看内容」按钮物理点击必失败（Playwright 20s 超时复现，截图 tmp/kb-occlusion-*/kb-after-search.png），恢复入口“返回文档列表”在折叠区外；产品自动预览用 DOM .click() 绕过命中测试故自测未发现。依据 tmp/kb-css-probe 命中规则确认。
+- 判例说明：quiz 分阶测试生成在 features 首跑 45s 未产出资源；干净实例复测 1.2s 成功且事件链完整（tool/call→resource/saved，approvals 空），course-check 覆盖 quiz 且通过，判为一次性环境抖动（夹具模型服务），记观察项不算产品缺陷。calibrate 深链真实库 ~8.4s 就绪为成长页慢查询继承（时间线探针 tmp/wrong-timeline）。
+- 本轮产物：tools/perf-runtime-audit.cjs 修复+features 补齐；tmp/feature-retake.cjs、tmp/kb-occlusion.cjs、tmp/kb-collapse2.cjs、tmp/kb-css-probe.cjs、tmp/wrong-timeline.cjs 五个一次性探针（诊断脚本，不进业务）；全部原始数据在各 tmp/perf-runtime-*/result.json 与截图。未改任何业务源码、未动真实数据库（两次快照校验 originalFileUnchanged=true）、未打包未发布。修复优先级建议：1) learning/state.cj:27 查询/索引与 learning/context 拆分懒加载；2) 列表缓存 single-flight 与流式期间 stale-while-revalidate；3) Esc 闭包与 reasoningControls 泄漏二分修复；4) 知识库搜索后隐藏逻辑的 UX 收口；5) cold-wrong 序列复现。用户尚未批准修复实施。
+
+### 2026-10-23 · 修复运行时卡顿与内存滞留（0.8.36 本地迭代）
+
+- 用户批准进入修复阶段。本轮改动：core/src/learning/state.cj（成长页慢查询）、core/src/session/session.cj（会话列表缓存并发与节流）、shell/renderer/app.js（聊天页全局 Esc 滞留 + 思考控件清扫）、shell/renderer/workbench.css 与 workbench.js（知识库搜索视图收口）、shell/package.json（0.8.35→0.8.36）、tools/perf-runtime-audit.cjs（pack 指向 0.8.36）。
+- state.cj 修复：recentReading 由 progress LEFT JOIN chunks（EXPLAIN SCAN p; SCAN c，真实库 6 行结果 6.5-6.9s）改为两步——先取最近 6 条 progress，再按 ux_chunks_key 唯一索引逐条补 doc_title/heading_path；排序语义保持 datetime(at) DESC,rowid DESC。不依赖查询计划器行为。
+- session.cj 修复：SessionStore.list() 重构为 computeSessionList(epoch) + stale-while-revalidate——纪元命中照旧毫秒返回；过期且有旧缓存时立即回旧缓存，把全量重算交给后台 spawn（带在飞标记：startedMs>0 且 <15s 视为在飞，超时自愈防异常卡死；距上次算完 <1s 不重复安排；无缓存冷启动仍在本线程算，调用方必须拿到数据）。流式期间列表请求不再陪跑全量重算。
+- app.js 修复：聊天页每次渲染新增的匿名 window keydown（Esc 停止）改为存 state.chatGlobalEsc，渲染前先摘除旧监听；composer 重建前调用 repaintReasoningControls() 清扫已断连的思考控件，控件集合不再随渲染轮次膨胀。
+- 知识库搜索视图：workbench.css 隐藏列表时同步隐藏筛选行与“显示 N/N 篇资料”计数（.row/.muted 并入 ：has 选择器）；workbench.js “返回文档列表”按钮 insertBefore 到结果上方，长结果时第一眼可见。搜索后截图确认只剩返回按钮+结果。
+- 验证：cjpm build 通过；全量单元测试 207/207（含 learning_state_test、session_store_test 两处直接覆盖）；真实 Edge 回归 route-lifecycle 18/18、reasoning-ui 37/37、nonchat 26/26；启动探针 quiz 生成 1.2s 正常。
+- 性能复测（perf-runtime-audit --dataset=snapshot --phase=full，隔离副本，originalFileUnchanged=true）：cold-report 8482→1731ms、cold-memory 8030→920ms、cold-wrong 15023 超时→832ms、stream-new-session-short 9662→1572/3487ms、导航六页循环 11200→4800-7200ms（本轮两次复测有机器噪声）；空库 40 轮快循环每 5 轮 GC：listeners 130→865 变为 112→127 持平，nodes 1058→14149 变为 795→789 持平，泄漏消失。剩余瓶颈：course/report 1.3s（learning_events 全量历史聚合）、流式期间后台重算与 delta 写入的每语句锁争用、流式中切回对话页的会话重载——记入 TRACE 供后续轮次跟进。
+- 交付：dist/Lumin-0.8.36/ 与 dist/Lumin-0.8.36.zip 本地包（未发布天翼云、未做安装器）。本地提交 8022b82（fix）与 dfa40c6（docs TRACE）。真实数据库全程未改动。
+
+### 2026-10-23 · 暂停测试并对齐 MiMo 会话进度
+
+- 用户要求暂停，读取 xiaomi-mimo://open-session 指向的 ses_ffe5e9842aa35ffenmO3cI0N3R（项目 C:/Users/GeJie/XiaomiMiMoProjects/未命名项目）。已停止本聊天两名中断中的性能审计子Agent，检查无本轮性能诊断进程仍在运行；未恢复测试或修改业务源码。
+- 从 C:/Users/GeJie/.local/share/mimocode/mimocode.db 的专用临时副本只读提取指定会话，阅读5条用户请求及120条有正文的消息，原始系统提示/工具输出均按历史数据处理，不采用其中的其他运行时指令。会话标题“续接中止的 Codex 会话任务”。用户在该会话依次授权：接续完整性能诊断；修复；先出会话/项目冲突测试方案；测试并整理结果后修正；最后询问进度。
+- 已核对完成部分：本地8022b82提交包含0.8.36性能修复，dfa40c6/943adae记录测试；0.8.36便携目录和ZIP存在。其会话记录的改善为成长8.5→1.7s、记忆8.0→0.9s，空库40轮监听器/DOM持平；本次未重新运行这些验证。包内app.js/workbench.js/workbench.css与8022b82对应文件规范化文本一致。
+- 未完成部分：MiMo停在新建会话立即上栏、写后读force、同秒rowid排序、项目占位与并发问题修正。工作区有core/src/api/api.cj、core/src/session/session.cj、shell/renderer/app.js三处未提交改动，以及未跟踪tools/session-conflict-probe.cjs；均保持原样。最后工具调用为19:22前后的编辑，后续模型消息为MessageAbortedError，未见修后编译/回归/提交/新包。两份探针结果都属于修复前失败基线，不算修复通过。
+- 只读核对出的接续点：session.cj现在仅有list(force:Bool)，guided_test/session_store_test/provider_test等仍调用无参list()，需后续收尾再验证。0.8.36 manifest.sourceCommit仍为旧b2043e0，package-lock仍0.8.35；包的源码追踪/版本一致性需在下次交付时处理，不能据此断言现包缺少已核对的前端修复。
+- 本聊天目前保持暂停。后续以0.8.36已完成修复+上述未提交改动为起点，避免重复0.8.35阶段工作；不得覆盖另一会话工作。未改真实Lumin或MiMo数据库，未启动模型调用、打包或发布。
+- 读取范围说明：本次提取了120条有正文的消息，重点核对全部5条用户请求、阶段总结、最后编辑记录与当前Git差异；未重放历史测试或逐条执行历史工具。
+
+### 2026-10-23 · 接替完成会话/项目一致性修复（0.8.37）
+
+- 用户要求接替完成MiMo会话中尚未完成的任务。本轮承接其未提交的api/session/app改动与session-conflict-probe，不覆盖已提交0.8.36性能修复；修复新建上栏、组内排序、项目归属、跨会话并行，以及发布版本/源码追踪。接口增量先追加本地docs/02（仍不提交）。版本目录/ZIP按既有规则递增0.8.37，无额外后缀，旧版保留。
+- 新发现的根因：原/api/sessions/new仅newId，不INSERT sessions，ProjectStore.bind也仅写KV；未发言的会话压根没有持久记录，非单纯SWR陈旧窗。新增SessionStore.create，持久化空会话，响应带真实创建时间/rowid/项目摘要供前端立刻入组；不存在项目先拒绝且不产生孤立行。无参list()兼容原生调用并保留写后读，HTTP被动读取明确传false。
+- 列表：沿用0.8.36被动读取SWR和节流，但force保证请求前成功写入可见。独立build互斥串行化重算，等待者拿锁后再检查纪元，旧后台任务不能晚回来覆盖新快照；所有退出路径清理在飞标志，删除手工unlock/finally双解锁形态。空列表也缓存。列表包含createdAt/rowid，以sessions.updated_at作为活动时间，分支不再被复制的旧事件日期压到下面。同时间按rowid降序，停止使用随机id决定创建先后。
+- 实机补出的排序问题：流式每个delta都更新活动时间、前端每轮轮询markSessionActivity，旧后台会话会反复挤掉新会话；异步命名也会把刚完成的旧会话顶回去。改为user/message、assistant/message、turn/end更新活动时间，流式增量/内部审计只更新内容，命名不改变活动顺序；创建和完整回复仍正常按最新活动排序。新增确定性测试：后台token/迟到命名不挤掉新会话，完整回答完成后可重新排到顶部。
+- 前端由子Agent分域修改app.js：api/new响应摘要即时登记，local revision保护较晚创建/活动不被旧list覆盖；force撞在飞passive或更早force时补一次强制读取；网络错误保留旧列表，成功空列表不留删除残影；真实rowid取代临时占位。后台请求保存自身projectId/title/question/summary，不再借用当前会话字段。新建/隐式创建期间切页、切会话、发送请求各自有navigation/selection代际检查；旧历史不覆盖刚发送的问题；后台完成失败不清理其他会话local消息、busy或取消标志。
+- 仓颉：新增SessionConsistencyTest 8项，覆盖空会话持久化/重开、创建API真实摘要/项目拒绝、写后读创建改名绑定删除、同时间排序、分支时间、12并发创建读取、force API和流式排序。最终cjpm test全量215/215成功；此前7项和全量214也已通过，补实机排序后再完整重跑215，不以旧结果替代。
+- 前端：新增session-rail-consistency-check，真实Edge+手动释放的HTTP门闩，18/18连续复跑通过，覆盖旧list晚到、force补读、双项目占位、删除/断网、新建双击、切页/就地切会话、隐式创建和正在发送的历史响应竞态。现有branch-guard 8/8、chat-network-recovery 11/11、reasoning-ui 37/37均通过。此类夹具不宣称真实模型或数据库语义。
+- 实际Electron候选基于0.8.36复制到独立tmp/session-candidate-0.8.37，再覆盖最新构建的仓颉内核和最终app.js，原0.8.36包未覆盖。session-conflict-probe空库与真实用户库副本均28项功能断言+1项清理断言全过；真实库副本93会话、约5万事件。空库新建上栏153ms，副本187ms；双流短答726/2546ms，流式期间GET settings 85/99ms；项目A/B交错新建、后台P归属、B连续三轮问答、内核确认running后的删除409/停止退出均通过。原始报告分别tmp/session-conflict-2026-10-23T13-35-41-530Z/result.json与13-37-26-459Z/result.json。此为本机单轮测量，不作普遍延迟承诺。
+- 探针修正：MiMo脚本把waitFor返回包装对象当直接值、把projects/save传入id当服务端实际id（创建时会分配p随机id）、被动列表当强一致读、创建防重未结束就连续点击、POST settings、未确认内核开始就检查删除等混作产品失败。本轮逐项校准并补请求发出观测、失败非0退出、失败截图/状态及本测试进程精准清理/副本DB清零。初轮失败记录保留，不算通过；A2/A4的排序问题是校准后实机确认并修复的真实缺陷。父途中误用一个检测函数名导致ReferenceError，仅修测试后重跑，未归咎产品。
+- 真实模型：新增real-session-isolation-smoke，临时凭据副本+空隔离库+真实deepseek-flash+Edge。A在项目甲calc 17*19并长答，B在项目乙短答；两个空会话先持久化、A执行时B可启动、原生calc续聊323、答案/事件不串、侧栏可见、切回B内容正确、项目归属和无JS异常，共9/9。最终复测B约1.6s、两轮总15s。中间一次重跑有一轮返回ok=false，但旧通用断言未记录具体错误且临时库已清零，原因不能追溯；保留initial-failure日志，补双方原始错误摘要（脱敏）后最终9项复验通过，不将该次失败擅自归因模型/网络。本轮未做昂贵PPT或大库生成。
+- 版本/工具：shell/package.json与lock顶层/根包均0.8.37；perf-runtime-audit默认读取当前版本，可用--pack或LUMIN_PERF_PACK选包，报告版本/sourceCommit从实际release.json读取，不再标成旧0.8.35。session-conflict-probe支持--pack/SESSION_CONFLICT_PACK，避免误验旧包。
+- 全程PowerShell7，仓颉业务内核，未新增Python业务或测试夹具；未改真实Lumin/MiMo数据库，不打印密钥，不改Web，原.taste-skill保持未跟踪。功能完成后先本地提交，再用该提交构建正式包，最终包验收另行追加。
+
+- 0.8.37 正式本地交付验收：功能提交82352b3178908ea2e53a00cba9effed97dc5a4bf后打包；dist/Lumin-0.8.37/Lumin.exe与dist/Lumin-0.8.37.zip已生成。release.version/build/sourceCommit与功能提交一致，shell/package.json、lock顶层/根包和包内package版本均0.8.37，38项关键资产哈希逐项通过。ZIP含Lumin.exe与相同release清单；231384276 bytes，SHA256=7D314767D0747B773698A307473FA6BE41804698B6B608E8D64D5C87A1F3B6A0。
+- 正式EXE在新TEMP空数据目录原生启动，PRELOAD/TITLEBAR=ok、RESULT=OK，未借用真实用户模型/数据库。首次版本验收脚本用ConvertFrom-Json对象解析package-lock根空字符串键失败，改-AsHashtable后版本与后续启动/ZIP检查通过，非产品JSON损坏。
+- 原0.8.36及之前版本未覆盖；本轮只提供本地便携目录/ZIP，未重新做安装器或发布天翼云。收尾Git仅保留用户原有.taste-skill/未跟踪，TRACE与全部功能/测试变更已本地提交，可按功能提交回滚。
+
+### 2026-10-23 · 明确思考厂商适配配置（0.8.38）
+
+- 用户确认：配置时应能单独选择已经适配的厂商，未适配接口保持默认值。界面将原技术项 auto/none 改为“默认 / DeepSeek / MiMo / Qwen / OpenAI / 不启用思考”，保留原持久化值以兼容旧配置。
+- “默认”保持安全语义：只自动识别已知官方接口，未适配网关不额外发送思考参数；“不启用思考”是显式关闭项。选择项下方说明随厂商切换，分别提示实际控制方式，避免把字段兼容误当深度档位兼容。
+- 快速填写 MiMo Flash/Pro 预设现在直接选择 MiMo 适配；仓颉默认识别补充官方 TokenPlan 域名 token-plan-cn.xiaomimimo.com，避免预设模型仍停留在默认。自定义网关仍由用户按实际兼容协议选择，不猜测。
+- 验证：ReasoningTest 11/11 通过（含 TokenPlan host 自动识别）；真实 Edge reasoning-ui 39/39 通过，新增检查默认/厂商/显式关闭的值、中文标签、说明联动和保存请求，无浏览器异常。接口结构、会话模式存储和现有思考菜单行为不变。
+- README 与本地 docs/02 同步说明；docs 仍不进入公开 Git。版本按既有规则升至 0.8.38，保留旧包，无额外命名后缀。
+
+### 2026-10-23 23:08:00 +08:00 · 模型配置页简化（0.8.39）
+
+- 用户要求模型配置页尽可能简约、第一眼能完成配置。默认表单只保留接口地址、API 密钥、模型名称；显示名称、思考适配、图像/向量模型、语音朗读收进“高级设置”，用途分配与联网搜索改为按需展开。
+- 新配置内部 id 自动生成，预设连续使用不会复用固定 id 覆盖旧模型。编辑沿用原 id，密钥输入保持空白并由仓颉内核保留原值；已有对话、向量、切片和朗读绑定不会被重置。
+- 首次保存对话模型时，如当前没有对话模型，保存后通过现有角色补丁接口自动启用；启用失败与保存失败分开提示。校验改为就地字段错误，保存继续使用 runGuarded 防重。
+- “不启用思考”界面文案修正为“接口默认”，说明为不额外发送思考参数、由服务端决定是否思考，避免把协议适配开关误称为强制关闭厂商思考。
+- 验证：新增 tools/model-settings-check.cjs，真实 Edge + 隔离原生仓颉内核 13/13，覆盖三字段首次配置并自动启用、编辑保留密钥和高级字段、同预设重复新增不覆盖、保存双击防重、浅色/深色/窄屏无横向溢出、无页面异常；tools/reasoning-ui-check.cjs 更新折叠交互与文案断言后 39/39。两轮均为隔离数据，不调用真实模型、不读写用户数据库、不新增 Python。
+- 本轮同时记录用户后续要求：完成模型配置后，参考 Obsidian 官方关系图的节点、连线、标签和动态组织方式，重做知识网络的视觉与交互。该部分将在本轮配置交付后继续。
+
+### 2026-10-23 23:54 +08:00 · 知识网络改为克制的关系图（0.8.40）
+
+- 用户反馈知识网络“画得太丑、动态效果不好”，要求参考 Obsidian 网络图。使用 agent-reach 的 Web 路由核查官方 Graph view 文档 `https://help.obsidian.md/plugins/graph`；Jina Reader 不可达后切到真实浏览器读取。采用的原则是：小圆节点、关联度决定尺寸、低对比连线、悬停只突出当前关系、标签按缩放渐隐、力导向参数控制聚散、滚轮缩放与拖动平移；没有复制 Obsidian 的品牌或代码。
+- 原实现根因不是单纯配色：节点是大幅发光的 3D 光球，相机持续旋转，所有节点和关系说明同时绘制，视觉噪声高且交互定位不稳。现在改为确定性 2D 力导向布局，保留节点位置，新增节点优先靠近已连接节点；节点拖动、空白画布平移、围绕鼠标缩放分别处理。当前关系和悬停关系用节点色突出，普通连线使用中性低对比色。
+- 节点标签不再全部常驻：选中、悬停、搜索命中和少数高关联节点优先显示，其余按缩放阈值渐隐；连线关系说明保留原 icon 开关，开启后按当前关系显示，缩放足够且节点较少时显示更多，关闭后完全不显示。节点自定义颜色、调色盘、笔记铅笔入口、手动连线、时间线和提问来源工作区均保留。
+- 检查器继续与画布处于同一页面平面，不覆盖网络；打开/关闭时使用 220ms 布局过渡，并在过渡前后适配画布，避免节点被挤到画布外。选中节点冻结位置和漂移，其他人保持极缓慢的微小浮动；`prefers-reduced-motion` 下完全停止漂移。选中会加深节点色并显示轮廓，编辑预览也从发光球改成与网络一致的实心圆。
+- 触摸前已先跑旧版 `knowledge-check` 基线 92/92，随后逐步发现并修正 2D 改造带来的测试假设问题：新增节点后必须重建 layout；5px 内抖动仍算点击；节点拖动不再被误判为相机旋转；标签命中改为真实文本矩形；检查器过渡需要二次 fit。所有失败均先保留现象再修，不把工具测试问题包装成产品通过。
+- 回归：`tools/knowledge-check.cjs` 最终 93/93，真实 Edge + 原生仓颉内核 + 隔离数据库，设备像素比 1.5，覆盖点选精度、节点拖动、空白平移、标签命中、关系说明开关、调色、笔记、时间线、共享平面检查器和窄屏无横向溢出。新增 `tools/knowledge-visual-check.cjs` 13/13，真实 64/200 节点、悬停只突出关联、选中冻结、滚轮缩放、降动效、200 节点重排 <250ms、64/200 节点帧预算和无 JavaScript 异常。`tools/chat-ux-check.cjs` 18/18，确认原相机旋转断言已改为力导向图集成且不回归其他页面。
+- 视觉证据：`tmp/knowledge-visual-check/light.png` 与 `dark.png` 为真实 64 节点浅/深色截图；`tmp/knowledge-shots/network-graph.png` 为完整编辑流程截图。只修改 Electron renderer 与本地测试，不新增 Python 业务、不改 Web、不调用真实模型、不读写用户真实数据库；原 `.taste-skill/` 保持未跟踪。版本同步升至 0.8.40，待本地提交后打包验收。
+
+- 0.8.40 本地交付核验：功能提交 `351bb00a1494950a1887c516e82762f6b2f1a873`，版本目录 `dist/Lumin-0.8.40`，ZIP `dist/Lumin-0.8.40.zip`（220.67 MB，SHA256 `B0516DF5687067288B730FB76AF0984E89E59D9A7FDD713B7D04B85435F56CF5`）。`release.version=0.8.40`、`build=lumin-0.8.40-351bb00`、`sourceCommit` 与功能提交一致，包内 package 版本和源码 lock 顶层/根包版本均为 0.8.40；ZIP 内确认包含 `Lumin.exe` 与两份一致的 `release.json`。
+- 用正式 `dist/Lumin-0.8.40/Lumin.exe` 在全新 TEMP/APPDATA/LOCALAPPDATA 空目录原生启动，结果 PRELOAD=ok、TITLEBAR=ok、NAV=5、DOCX=ok、RESULT=OK。再用包内实际 renderer（`dist/Lumin-0.8.40/resources/app/renderer`）+ 原生仓颉内核重跑知识网络 93/93，证明交付包中的页面而不只是源码工作树通过。未做安装器、未发布天翼云、未推送远端；旧版本目录保留。
+
+### 2026-10-24 01:58 +08:00 · 全系统交互审计与通知中心（0.8.41）
+
+- 用户要求深度测试整体流畅性、页面切换、确认框层级、长操作等待反馈、顶部通知历史/已读、小鼋桌宠拖动和全组件拖动偏移；先整理方案再修复。按“先取证、再修复、最后回归”执行，所有写入测试使用隔离临时数据库，真实用户库只读复制且末尾校验原文件字节与 mtime 未变。
+- 基线：`ui-audit` 120 个“页面 × 主题 × 宽度”组合全部通过，未发现小字、低对比、横向溢出、无标签图标、整句按钮或 JS 异常；`perf-runtime-audit --dataset=snapshot --phase=full --cycles=3` 暴露 93 会话/49,711 事件副本下成长页首屏 1.6s、记忆页 0.79s、KB 管理 1.1s、六页轮转约 4.3–4.5s，流式期间切首页/成长约 5.5/6.5s；主要原因是 Panel 与 Page 重复读取 settings/report/profile/artifacts/sessions，以及成长页每次重复请求 `/api/course/report`。
+- 拖拽基线：真实 Edge + 隔离内核新增 `tools/drag-offset-check.cjs`，覆盖 85%/100%/130% 页面缩放下的桌宠、会话栏分隔条、思维导图、知识网络和协作面板。基线确认桌宠在 0.85 缩放拖动 120px 只跟 102px，1.3 缩放后旧保存坐标会被放大到窗口外；协作面板分隔条混用 `getBoundingClientRect()` 与 CSS 布局宽度，实际位移严重偏离。会话栏分隔条、思维导图、知识网络节点/画布在稳定夹具下通过。
+- 修复拖拽：桌宠新增实际 CSS/布局比例自校准，指针位移除以比例后再写 left/top；默认位置、边界夹紧、窗口 resize 和 `lumin:ui-zoom` 事件都按屏幕坐标换布局坐标，缩放后重新夹回可视区。协作面板同样按 `offsetWidth`/rect 比例算布局宽度，键盘与鼠标共用。修复后 `drag-offset-check` 25/25。
+- 确认框：原 `confirmDialog` 实际把 `.card.dialog` 插到当前 `#view` 内容流，重命名产物/编辑项目/写笔记等也内嵌；项目移除仍调用原生 `window.confirm`。新增 `openAppModal`：body 级遮罩、`role=dialog`、`aria-modal`、Esc、Tab 焦点陷阱、关闭回到触发控件、动作忙碌态和错误保留；确认框改为“取消 + 删除/移除/继续”等明确动作。已迁移确认、产物重命名、主题/网页、项目/会话编辑、笔记编辑、帮助/会话信息/快捷键等临时框，旧 task-modal 也补了同一 Esc 清理；路由切换会移除弹层并注销全局 Esc 监听，避免残留。
+- 通知中心：标题栏状态灯右侧新增铃铛。`notifications.js/css` 维护运行中/成功/失败/信息四种状态、未读角标、逐条“标为已读/标为未读”和“一键已读”；运行中条目显示旋转图标，完成后自动变成未读结果。历史由仓颉 `/api/notifications/get|save` 持久化在 settings KV，限制 60 条和 256KB，重启可恢复；任务中心的 chat/course-map/ppt/extract 状态会同步为 `task:<id>` 通知。知识库索引/整理、长网页抓取等慢操作不再向页面插 `progress-card`，只在按钮显示忙碌并在铃铛里显示运行/结果，完成后用全局结果弹窗。
+- 页面切换优化：加入同一导航内共享的 `navigationLoad` 缓存，Panel 与 Page 共用 settings/profile/report/artifacts/projects，写入后的显式刷新强制 bypass；成长页 `/api/course/report` 增加短期缓存与 stale-while-revalidate，课程状态刷新时失效。实测当前用户副本：chat 167ms、home 306ms、resources 45ms、notes 172ms、wrong 217ms、kb 825ms、memory 643ms；成长首屏约 1.55s（course/report 约 1.29s），后续命中缓存；六页轮转平均 <700ms，单次导航不再重复 study-report/settings，原用户数据库未被修改。
+- 回归：`tools/interaction-consistency-check.cjs` 20/20（铃铛、持久化、已读、60 条上限、全局弹窗、1.3 缩放尺寸、长索引通知、无内嵌等待卡）；`tools/drag-offset-check.cjs` 25/25；`tools/navigation-fluid-check.cjs` 14/14；`ui-audit` 120/120；`knowledge-check` 93/93；`knowledge-visual-check` 13/13；`chat-ux` 18/18；`mascot-motion` 33/33；`team-panel` 44/44；`model-settings` 13/13；`reasoning-ui` 39/39；`nonchat` 26/26；`route-lifecycle` 18/18；`session-switch` 18/18；`branch-guard` 8/8；`chat-network-recovery` 11/11；`session-rail-consistency` 18/18；`tasks` 22/22；`clarity-memory` 27/27；`pages-audit` 13/13；`course` 81/81；`learning` 45/45；`personal` 23/23；`session-list` 10/10；`request-feedback --audit-app` failures=0；`scrollbar`、`splash`、`busy-caret`、`markdown` 均通过；原生 `cjpm test` 215/215；`api-route-smoke` 162 条路由无 5xx/未知路由。
+- 测试夹具修正：`session-list-check` 的写入后读取改为显式 `force:true`，与当前 stale-while-revalidate 契约一致；`clarity/pages/request-feedback` 关闭新结果弹窗后再继续；`pages-audit` 注入响应门闩验证忙态，不再依赖快速 mock 的偶然时序。原有 `glass-shot` 仍有历史布局断言（模型名贴发送键、空成果栏必须可拖），不作为本轮产品通过证据；当前真实回归由上述 UIAudit/交互/路由套件覆盖。
+- 本轮修改 renderer、仓颉通知 API、通知静态资源、角色/任务状态同步、缓存和测试；不新增 Python 业务、不改 Web、不读写真实用户库、不推送远端。版本升至 0.8.41，待本地提交后打包验收。
+
+- 0.8.41 本地交付核验：功能提交 `bd99d3934757528fd201944ce5f2d90ec67d03ff`，版本目录 `dist/Lumin-0.8.41`，ZIP `dist/Lumin-0.8.41.zip`（220.68 MB，SHA256 `8D5CD6E67B06A625DDB7796824DAB8301D33CA856CFE2F2826738FFC86C72734`）。`release.version=0.8.41`、`build=lumin-0.8.41-bd99d39`、`sourceCommit` 与功能提交一致；包内 package/源码 lock 版本均 0.8.41，ZIP 确认包含 `Lumin.exe`、两份一致的 release 清单及 `notifications.js/css`。
+- 用包内实际 renderer（`dist/Lumin-0.8.41/resources/app/renderer`）+ 原生仓颉内核重跑通知/确认专项 20/20、拖拽缩放专项 25/25；正式 `Lumin.exe` 在全新空用户目录启动 `RESULT=OK`。未做安装器、未发布天翼云、未推送远端；旧版本目录保留，`.taste-skill/` 保持未跟踪。
+
+### 2026-10-24 02:18 +08:00 · 成长页骨架优先与 0.8.42 最终包
+
+- 在 0.8.41 基础上又补了一处感知流畅性：成长页不再把 `/api/course/report` 的重查询阻塞在 `go('report')` 的导航 Promise 里，而是先绘制带真实加载提示的骨架，延迟 250ms 后仅在用户仍停留该页时启动数据请求；用户快速离开页面时请求不再启动，避免重查询抢锁拖慢紧接着的资源页。实测包内 renderer：chat 145ms、home 271ms、report 114ms、resources 40ms、notes 154ms、wrong 182ms、kb 157ms；成长内容加载期间不再阻塞用户切页。
+- 0.8.42 最终交付：功能提交 `0173dc6f81f0a2e8ed6a0a72e7b7b11bb0a0883f`，`dist/Lumin-0.8.42/Lumin.exe`，`dist/Lumin-0.8.42.zip`（220.68 MB，SHA256 `650935E373FCCABE2B0B5AF3AD9556C62CC1B10094891B3E577C9DCD75A6D156`）；release 为 `lumin-0.8.42-0173dc6`，包内版本 0.8.42。包内通知/确认专项 20/20、包内拖拽专项 25/25、包内导航专项 14/14；正式 EXE 空目录启动 `RESULT=OK`。
+- 测试辅助提交 `b1d914a` 仅让三个专项支持 `ITN_UI_DIR`，便于对包内 renderer 复跑；0.8.41 包保留可回滚。`.taste-skill/` 仍未跟踪。
+
+### 2026-10-24 03:20 +08:00 · 点击域几何审计与顶部浮层互斥（0.8.43）
+
+- 用户要求继续扫描组件错位、视觉位置与鼠标实际点击位置不一致，并处理发现的其他交互 Bug。先复用真实 Edge + 隔离仓颉内核，在源码工作树扫描，不读写真实用户数据库、不打印密钥、不改 Web。
+- 原静态 UI 审计和拖拽专项只能证明“元素存在/能拖动”，不能发现中心区域被透明层、固定栏或其他浮层挡住。新增 `tools/pointer-geometry-check.cjs`：对 `button/a/input/select/textarea/summary/[role=...]/.clickable/.knowledge-ev-card` 的可见矩形中心及左右 25% 点执行真实 `document.elementFromPoint()`；先与所有 `overflow` 祖先求可见裁剪区，避免把本来就在滚动、平移画布外的部分误判；同时记录 canvas 的 CSS 矩形、内部像素尺寸和缩放比。
+- 覆盖矩阵：1440×960 / 130% 下全部 20 个页面/设置分区；1024×820 与 768×820 下主页、学习、成果、知识库、对话、模型设置；再在动态层验证任务中心、通知中心、全局确认框、命令检索、协作侧栏和知识时间线。所有浮层检查实际视口边界；知识网络 6 个节点在 85%、100%、130% 缩放下分别用真实鼠标点击并断言 `knowledgeNet.selected`。
+- 第一轮发现任务中心与通知中心可同时展开。原因是两个按钮都调用 `stopPropagation()`，各自的 document 外部点击监听不会收到对方点击；两个 `position:absolute` 面板随后重叠，后开面板会遮挡先开面板的控件。修复为两层共同发送 `lumin:top-popover-open` 事件，任一方打开时另一方立即收起；测试先开任务面板再点通知，并断言只有一个 `hidden=false`，同时测量现存浮层的视口边界和中心/边缘命中。该问题在旧版可稳定复现，修复后消失。
+- 测试误报也按证据校正，不把测试问题算作产品通过：`calibrate→report`、`models→settings/models`、`wrong→notes`、`settings/kb→kb/manage` 是现有路由别名；全局模态框和命令面板会故意阻断下层页面，因此只审计当前浮层范围内控件；早期可见矩形未先与 overflow 祖先求交，导致画布中被裁剪的课程节点误报被 rail 遮挡，已修正裁剪算法后重跑。
+- 最终 `pointer-geometry-check`：32 个页面/窗口组合 + 4 个动态层 + 3 个缩放节点检查，`RESULT=OK 3 passed, 0 failed`，截图在 `tmp/pointer-geometry/`，报告在 `report.json`。知识网络节点点击在 0.85/1/1.3 缩放全部命中；任务/通知互斥通过。`ui-audit` 120/120，无小字、低对比、横向溢出、无标签图标、整句按钮或 JS 异常。
+- 回归证据：`interaction-consistency` 20/20；`navigation-fluid` 14/14（快速切页、成长骨架、无重复读取）；`team-panel` 44/44（真实窗口 900/1024、协作树、关闭/重开、窄屏）；`drag-offset` 25/25（85%/100%/130% 桌宠、分隔条、思维导图、知识网络、协作面板）；`knowledge-check` 93/93（节点/标签命中、时间线、检查器、颜色/笔记）；`sidebar-torture` 55/55（快速切页、会话竞态、资源栏、运行中会话、任务中心收起）；`route-lifecycle` 18/18；`panel-sticky` 3/3；`scrollbar` 1/1；`tasks-check` 22/22；所有 runner 未发现页面异常。测试夹具的模型服务为本地 fixture，不把 mock 结果当作真实模型质量结论。
+- 本轮业务改动仅 `tasks.js` 与 `notifications.js` 的顶部浮层互斥，新增专项测试 `tools/pointer-geometry-check.cjs`；`.taste-skill/` 保持未跟踪。版本升至 0.8.43，待本地提交后打包验收。
+
+- 0.8.43 本地交付核验：功能提交 `863e90139b65c771c462101a9dd83c3f350b1d63`，`dist/Lumin-0.8.43/Lumin.exe`、`dist/Lumin-0.8.43.zip`（220.71 MB，`231399942` bytes，SHA256 `82B5E54FE8DAC26342163242807A98DE07D0DB221261200DDB83B8CD15F3C9C5`）；release 为 `lumin-0.8.43-863e901`，40 项关键资产哈希逐项一致，ZIP 内 `Lumin.exe`、根 `release.json`、`resources/app/renderer/release.json`、`tasks.js`、`notifications.js` 均存在。包内 renderer 用原生仓颉内核复跑：点击域/浮层 `RESULT=OK`，通知与确认 20/20。正式 EXE 在全新空 TEMP/APPDATA/LOCALAPPDATA 数据目录启动：`PRELOAD=ok TITLEBAR=ok NAV=5 DOCX=ok RESULT=OK`。
+- 包内拖拽复验首次出现一次边界抖动：130% 下知识节点拖动 40px，实测 43.02px，超过 3px 容差 0.02px；重复运行随即 25/25。核对源码后确认该断言测量指针坐标映射时仍保留知识节点允许的缓慢视觉漂移，属于测试不稳定而非新的点击偏移。随后 `tools/drag-offset-check.cjs` 在坐标赛道前设置 `knowledgeNet.reducedMotion=true`，把动效从坐标断言中剥离；源码和包内各复跑 25/25。产品视觉漂移交由知识网络视觉专项另行验证，不通过修改产品逻辑掩盖。
+
+### 2026-10-24 · 0.9.1：启动署名、思考流、真实任务与分支修复（进行中）
+
+- 用户本轮明确要求：启动动画 powered by cangjie 稍放大并大写 P/C；约六个真实模型任务、每任务五个用户回合内；模型思考时正文可见；检查并修复对话建立分支与其他对话 Bug；下一版本 0.9.1；完成后同步 git@github.com:AGI-FBHC/ITN-cj.git 的 desktop 分支。中途新增：前述全部完成后更新公网海报下载页版本，沿用安装版与便携版两个入口。
+- 当前真实基线由本地 Git 6fb696f / 程序 0.8.43 确认，保留 .taste-skill/。业务修改在 D:/Desktop/ITN/ITN-Desktop；始终 PowerShell 7，不改 Web，不操作真实用户学习库，不输出凭据；模型配置仅取私有临时副本，真实运行用新隔离内核、数据库和工作区，结束清零所有临时含凭据的 DB/WAL/SHM。
+- 按授权并行分工：父负责启动动画、思考 UI、六任务真实模型与整体验证/版本/打包/Git/发布；Hooke 分支 backend，Parfit 思考宿主事件，Pascal 思考可见性浏览器回归，Newton 工具参数回路。各子代理独立文件范围、不提交，父统一检查、测试与本地提交。使用 ui-ux-pro-max 的交互/可读性/反馈与主题规则，未运行 Python。
+- 冷启动 splash.html 与应用内 index.html/style.css 两处统一 Powered by Cangjie，13px 改 15px；现有 splash-check 同步大小写并新增字号一致性断言。
+- 思考原来只在结束后发 assistant/thinking，且只存前 6000 字节。现在首个真实思考增量立即发布 assistant/thinking_delta {segmentId,text,ms}，后续按 140ms 或 4096 字节批量落库；正文/工具/消息结束/异常/取消前统一冲刷，最终同 ID assistant/thinking 带完整正文和真实累计耗时；没有接口思考数据就不伪造。前端追加增量、最终替换同段不重复计数，正在思考默认展开且用户可折叠，思考记录历史仍可展开。
+- 思考浏览器用例先暴露“最终事件”和“正文开始”导致阅读 DOM 重建与选区丢失两项失败；父通过复用同一工作过程/思考节点、原地追加文字修复，不改变用户阅读选区和滚动位置。控件继续遵循浅深主题，不添加小字说明。修复过程中也检查复用后的按钮回调：查看原始事件与修改消息需在点击时查找当前真实 .turn-block，不再操作离线临时容器。
+- 分支真实旧版 HTTP 复现：不存在会话/回合返回 200 并产生空分支。新实现校验 400/404，不创建孤儿会话；运行中当前回合不可分支，完成祖先仍可分支；运行中回退/切换历史也拒绝。分支恢复指定祖先范围内的 native 工具调用/结果和思考，早期分支不复制含后续秘密的压缩摘要；项目/目录/思考模式及资源导学标签正确继承，审批和运行状态不复制。修复 Message 反序列化漏掉 thinking block 的问题，普通续聊也受益。本地 docs/02 已同步契约，仍不进 Git。
+- 六任务旧版基线已实跑：检索+两次 calc 成功、偏好/笔记保存与读取成功、多智能体协作及节点查看成功。任务01第二回合遇到非法 record_knowledge_point JSON 参数使整轮失败；没有原参数的旧日志不足以断定一定是模型或客户端，已增加安全元数据诊断。新回路整批预校验，仅无可见正文、正常 tool_calls 完结且零工具执行时，最多重发当前模型步骤一次；保留已成功步骤与用量，不修补 JSON、不重启任务、不重复执行动作；失败仍明确返回错误。
+- 首轮脚本另有三处前提问题如实保留：03只有一个知识点不能建议连线，调整先讨论第二概念；04普通会话资源默认无 KB 限定，调整按实际资源范围查；06把工作区建在应用存储目录导致真实权限拒绝，调整为独立 TEMP 工作目录。它们不计作产品缺陷。初轮完整报告 tmp/real-release-tasks-2026-10-23T22-59-49-631Z/report.json，后续候选版六任务将全部重新验证。
+- 定向验证截至此处：分支后台 6/6、思考宿主 9/9、思考浏览器 13/13、既有聊天 UX 18/18、分支防重/故障恢复 UI 8/8（本次门闩延迟压到 300ms，未把测试名称的 10s 当作实测）。首次 cjpm test -i 的筛选显示全部 SKIPPED，未计通过，改非增量编译后实际执行；新分支测试有三处 boolOf 缺默认参数编译失败，补 false 后重跑通过。Provider 24/25，发现标准库 JSON 接受未转义控制字符的边界，继续修正验证，未提前宣称通过。
+- 统一验证继续：ProviderTest 最终 26/26，补充 JSON 字符串中原始控制字符拒绝以及合法转义/空白保留；这项测试的失败确认 stdx 1.2 JSON 解析较宽松，不能只凭 is JsonObject 放行。前端为 invalid_tool_arguments 恢复显示“正在重新生成工具参数…”，避免误称输出过长。分支按钮防重 8/8、聊天网络恢复 11/11、协作面板 44/44、启动动画 11/11；思考选择/折叠/实时/历史/窄屏两主题均通过。已构建并打包新 dist/core；候选六任务真实模型运行中，前两任务全过，知识网络前两回合成功记录。全量核心237项并行回归中。GitHub desktop远端已fetch与ls-remote核对，远端旧合并对其共同祖先无文件差异，后续以保留历史的普通merge再push，不force、不改Web/main远端。
+- 最终真实模型验收：tools/real-release-tasks.cjs 经真实 Edge 输入框发送、新仓颉 core 与 deepseek-flash 实际接口完成6/6任务，共14个用户回合（2/2/3/2/2/3，各小于5）。覆盖kb_search/read_chunk/calc、多轮上下文、remember_learning_fact/save_note/search_personal_resources/read_personal_resource、record_knowledge_point/read_knowledge_point/suggest_knowledge_links、generate_learning_resource/read_learning_resource、research_topic_team、多级节点关闭重开/点击、真实文件write/read、较早轮次建立分支后calc续聊。逐轮断言真实工具成功、非空正文、最终turn/end；保存的数据/文件/父会话不变性均验证。所有14回合无失败工具或未完成终态、无前端异常。真实流式思考已在turn/end前可见，报告thinkingVisible=true。完整脱敏报告/逐回合事件/截图：tmp/real-release-tasks-2026-10-23T23-14-26-270Z/。主对话上报usage合计in376331/out5671，仅代表外层实际回报，不冒充资源/协作子模型完整计费。
+- 全量核心包unittests 228/228（tmp/core-091-all.log）；独立宿主ThinkingStreamTest 9/9，此独立测试包不在上述228之内，两部分共237个不同用例。ProviderTest最终26/26（tmp/provider-091-final.log）。思考UI最终14/14（含已完成回复原始事件按钮和可取消的气泡消息编辑），报告在 TEMP/itn-thinking-stream-1Lyy0i/report.json；检查浅/深窄窗截图文字与点击区域正常。
+- 先本地功能提交13dd298，再普通merge远端desktop历史为8020835；两者无文件树差异，仅保留远端已有提交关系，未rewrite或force。首次并行打包因真实六任务占用dist/core.exe而被现有保护明确拒绝，没有静默用旧内核；等待该原进程真实结束后重新打包，正在生成0.9.1双包。后续只做包内资源与安装/下载验证，不重复耗费模型或大库生成。
+
+### 2026-10-24 · 流式回复光影涌动与 0.9.2
+
+- 用户追加要求：把 Agent 回复最新一行的“呼吸灯”改成更明显的光影涌动。0.9.1 安装版/便携包已经完成验收并发布到 6025 海报页，因此本次视觉增量按顺序升为 0.9.2，保留 0.9.1 作为回滚版本。
+- 原实现仅对最新 Markdown 文本块做 opacity 1→.66 的 2.8 秒呼吸。现在改为文字内部重复渐变光带，以绿色和暖金色双光带每 1.9 秒横向流动；浅色主题采用深墨绿→青绿→暖金，深色主题采用浅灰→薄荷绿→暖白。字色仍由主题令牌计算，不新增硬编码背景块，仅用 `background-clip:text` 绘制文字内部的光。
+- 保留可访问性边界：`prefers-reduced-motion: reduce` 时关闭背景剪裁、滤镜和动画，恢复 currentColor；不支持背景裁字的浏览器保留正文颜色。光带只挂最新正文块，不插入光标，不影响正文选择、链接和 Markdown 结构；流式结束仍移除 `.stream-line`。
+- 验证更新：busy-caret 专项 10/10 通过，检查不是透明度脉冲、背景渐变重复、220px 光带移动、文字填充透明且滤镜存在、深色主题独立色板；截图按单行裁剪目视确认双色光带在普通字号下可见。思考 UI 14/14、聊天 UX 18/18、全页面 UI 审计 120/120 同时通过。未重复运行付费六任务，也不重做内核测试；本轮只改渲染层，不改变模型、工具、数据库或分支语义。
+
+- 0.9.2 本地交付：功能提交 `ff661d9596b088ae6b6d045f73253edc1ecb2eb5`；`dist/Lumin-0.9.2/Lumin.exe`、`dist/Lumin-0.9.2.zip`（`231420203` bytes，SHA256 `68DE3D0A3229BB6E8FA4D3EA4A084FEE1330C3E535A9ABEF3D6583885DAFDD56`）、安装器 `dist/Lumin-Setup-0.9.2.exe`（`155741271` bytes，SHA256 `59AE715A43C60C32722527700090D1BAAC3AA6D7B492B8DDF673422A392AC528`）。release.version/build/sourceCommit 与功能提交一致，40 项关键资产哈希一致，ZIP 内凭据之外的 renderer/executable/release 清单齐全。
+- 安装验收 24/24：中文空格路径、静默安装、2740 个 payload 文件哈希、快捷方式、深链、升级锁、安装版真实启动、PPT/DOCX/PDF、隔离数据库、升级/卸载/重装保留学习数据；正式便携 EXE 在全新 TEMP/APPDATA/LOCALAPPDATA 空目录启动 `RESULT=OK`。包内 renderer 的光影专项 10/10，非源码工作树专属断言。
+- 公网发布已完成：`http://113.249.102.41:6025/` 当前显示 0.9.2，安装版与便携版两个 HEAD 均 200，服务器文件 SHA256 与本地一致，`lumin-release.service=active`。发布检查本地 23/23、远端页面 22/22；日志中服务重启瞬间一次 `curl 127.0.0.1:6025` 连接失败发生在重试窗口内，最终健康检查、页面和下载入口均通过；没有未解决的运行故障。GitHub `AGI-FBHC/ITN-cj` 的 desktop 远端 HEAD 已确认 `ff661d9`。`.taste-skill/` 保持未跟踪。
+
+### 2026-10-24 · 对话引用与本地路径访达
+
+- 用户要求回复中的网页链接、文件/目录路径、知识库引用和引用来源都能直接访达。实现统一在 renderer：Markdown 外部链接交给 `window.itnWindow.openUrl`；绝对路径、`file://`、文件夹路径和相对工作区路径交给 `window.itnWindow.openPath`；知识库相对文档与 `[n]`/`[Wn]` 引用打开右侧 `resource-dock`，复用 Agents tree 同平面的侧栏布局，不再跳页。
+- `md()` 现在支持无协议网页 URL、Markdown 文件链接、行内 code 路径和普通路径；引用面板显示资料标题、章节、原文片段和“打开原文件/打开资料库”，网页引用提供“用浏览器打开”。资源出处列表也增加“打开引用”入口；知识库原文、学习资源和引用列表共用同一套右侧预览。
+- 先写回归再修出真实缺陷：引用按钮的闭包捕获了循环结束后的 `match=null`，导致真实鼠标点击报 `Cannot read properties of null (reading '1')`；改为捕获当前 `mark` 和 `source` 后通过。另修正知识库路径被误标成绝对 file 路径的问题、Bare URL 吞掉中文逗号和后续文本的问题、引用路径标题丢失的问题。
+- 新增 `tools/reference-link-check.cjs`（真实 Edge + 隔离仓颉 KB + 注入 Electron bridge 记录）：11/11 通过，覆盖外部 URL、目录/文件 openPath、知识库 `[1]`、网页 `[W2]`、来源行、右侧面板边界和“打开原文件”。截图 `tmp/reference-link-check/knowledge-reference.png` 目视确认右侧面板与对话同层、无横向溢出。回归：chat UX 18/18、knowledge 93/93、learning 45/45、ui-audit 120/120、语法检查通过。
+- 本段仅改 renderer、样式和测试，不改变 Cangjie 内核、数据库、模型/密钥或真实用户数据；`.taste-skill/` 保持未跟踪。MBTI 个性化配置、ENFJ 默认身份和 MBTI 测评引导按用户要求在本段交付后继续。
+
+### 2026-10-24 · 引用访达补全与断点复验
+
+- 恢复被中断的引用访达目标后，重新核对8433acd和MBTI未提交改动；未回退或覆盖这些内容。旧11项回归只用注入bridge，并不足以证明完整访达。补充原生Electron预加载/IPC与文件系统测试48/48（系统打开动作被记录拦截，不声称已验证第三方默认应用质量），报告TEMP/lumin-reference-desktop-nRSxTE/report.json；支持中文空格、UNC、file URI、字面百分号、相对baseDir与行列号。
+- 统一Markdown引用解析，保留带空格/括号/百分号/ampersand的Markdown文件目标、网页完整query、mailto与lumin内部链接。禁止将代码围栏内容变成链接，外部网页不导航走应用。read-only resolveReferencePath先stat和规范化，再交openPath，失败显示原因；系统scheme限定http/https/mailto，Lumin会话深链走本机已有会话页面。
+- 新增仓颉POST /api/kb/reference与resolve_knowledge_reference工具，引用保留kbId/chunkId/text等元数据。跨库同名源未注明库时返回候选，不借当前选择猜测；明确失效切片不会改成其他资料。右侧保留不可变引用片段，可加载完整索引原文、跳到实际切片所在页、加载后续页和从开头阅读；来源移走也保留快照。关闭/再打开、Esc、快速来源切换有独立生命周期，窄窗口自动临时收起会话列表以保留关闭按钮。
+- 发现并修复：W1与本机1同号会误指本机来源；外部URL括号被截断；相对文件依赖错误cwd；知识库首24片以外无法阅读；旧缩写heading导致真实索引文档不能打开；900px侧栏超出窗口38px。新reference-access-check 23/23、原reference-link 11/11；原文Markdown14/14和65行跨页表格14/14；独立KnowledgeReferenceTest8/8、ReferenceContextTest2/2。核心初编译暴露Cangjie关键字unsafe变量与getcwd导入缺失，修正后实际执行通过，未把编译失败或skip算通过。
+- 模型与前端共享每轮来源编号：TurnReferenceIndex在工具返回给模型时分配本地[n]/网页[Wn]，多次搜索/并发工具/跨库来源不会被首个搜索结果遮盖；最终引用从同一登记表生成，网页保留真实url而非空字符串。新增引用工具在宿主注册，最终包复制reference-paths.cjs并纳入资产hash。
+- 用户追加顺序：先手头引用任务做好并深度测试，再加学习档案个性化（用户MBTI、Lumin MBTI、默认ENFJ、对话问答推断并经确认填写），最后稍微优化Markdown代码块和表格。现已完成引用定向验收，继续完善MBTI流程；已有简单选择器/字段和提示词是前轮未提交草稿，不将其视作完整问答功能或完整授权验证。
+
+### 2026-10-24 · 个性化问答与回复 Markdown（0.9.3 候选）
+
+- 继续引用访达任务后按用户指定顺序完成MBTI，再做Markdown小幅优化；保留仓颉业务内核、不新增Python。已复验根AGENTS，使用PowerShell7。本轮测试/模型写入均为临时隔离目录，未改真实用户数据库；正在运行的旧正式版不关闭。
+- 个性化位于设置→常规→学习者档案：我的MBTI可未知，Lumin默认ENFJ，两者各16型。用独立分区替代嵌套卡片，短按钮“偏好问答”。入口防重/待处理状态，创建或恢复已命名普通会话并放入真实session列表，不把多个连续点击变成多份问答。先发送开始/继续，由正常对话交互。
+- 仓颉MbtiAssessmentStore持久化固定8题（每维2题），平票维度补问；一轮一道，重复调用幂等；题号/用户本轮A/B原话/turnId校验，服务端得分及依据，不由模型猜类型。完成不自动写档案，仅当前专用会话用户明确确认后保存服务端结果；取消/否定/引用资料/错误类型不能授权。设置单方不重置另一方；profile更新改字段级原子批量，不重写笔记/进度。宿主每轮读取新档案与当前会话测评状态，16种Lumin表达提示区别化，用户MBTI不作为能力判断。
+- harness提供同等工具：get_mbti_preferences、start_mbti_assessment（返回可点击专用会话链接）、get_mbti_assessment、answer_mbti_assessment、set_mbti_preference，工具目录与宿主注册一致；本地docs/02接口契约已补充（docs仍忽略不提交）。
+- Markdown围栏支持反引号/波浪线、未闭合流式代码、较短嵌套围栏；代码块加语言与复制按钮，不插入额外首行，不损坏中文/HTML/缩进/尾空格，失败提示。表格扩大单元间距、安静表头和悬停，窄窗容器内横向滚动；行内代码中的管道不再错拆为列。截图发现代码块继承玻璃行内代码边框，专门重置。无新增渲染依赖，不做无关大改。
+- 测试先说明范围：markdown-check改为真实Edge的固定渲染契约（不再启动Python mock，不伪称模型）；旧测试在流式回答尾部未到时断言会偶发误报。现26/26，含真实剪贴板（Windows CRLF归一后精确内容）、围栏/管道、安全链接、深浅主题/窄窗；thinking-stream真实Edge受控事件14/14。MBTI界面12/12，延迟start请求测试防重，真实API持久化、重入和局部档案修改保留。该测试真实发现start请求少/api前缀，已修后全过。
+- 核心首次编译发现新代码quote关键字冲突，改userQuote（JSON字段仍quote）；明确runtime boolOf默认false。修正后完整cjpm test实际257/257（248核心+9宿主，零skip）；补充工具入口后MbtiAssessmentTest定向9/9（其他248按filter跳过，不当作本轮重测）。完整日志tmp/core-093-all.log、定向tmp/mbti-093-tool-final.log；最终核心重构建中，真实模型问答和包内验收尚待，不提前宣称完成。
+- 真实模型验收完成：tools/real-mbti-check.cjs通过12/12用户回合（开始1、八题8、确认保存1、ENFJ/INTJ同题对比2），每轮由真实Edge输入框提交，真实配置模型deepseek实际接口+新仓颉内核，零失败/未完成工具和前端异常。八题全B服务端结果INFP，确认前档案始终为空，确认后才持久化；普通新会话不携带问答进度，只改Lumin类型保留用户INFP。报告/脱敏事件/截图TEMP/lumin-real-mbti-report-ODDt1f，临时凭据副本及核心数据目录清理均成功。接口上报主回合用量输入296268/输出4131（含思考1542），共300399；不重复计思考。
+- 人工阅读同题真实回答：ENFJ先接住分心感受，建议小步学习并邀请用户说目标；INTJ先算14天7小时预算、解释边界与取舍，再列行动路线，风味有可见差异。该结论基于这一次同题对比，不冒称16种人格均有真实模型对照。最终引用浏览器专项新core+新renderer再测23/23；此前原生Electron桥48/48覆盖真实IPC/stat，系统打开动作被拦截记录，不宣称实际第三方默认应用质量已测。
+- 本地包生成：dist/Lumin-0.9.3，sourceCommit=d584325，41项关键资产哈希全部匹配，ZIP SHA256=622F779F06EAF482E138DBD09A1D1BCA5041D20E90B205F1248D18F4E93E967A。GitHub desktop已普通快进推送d584325（保留历史，不force）。安装器压缩中，暂未发布。
+- 包内原生桥测试首次启动失败的原因属于测试环境：开发Electron加载package main时process.resourcesPath仍指开发运行时，找不到包内kernel，弹出错误对话框并阻断调试连接；清代理和直接赋resourcesPath均无效，保留失败报告15aLx8/aQ19Tl/oXhxkQ，不算产品通过。为该桥测试仅映射kernel fixture的exists/spawn/cwd到包内真实kernel，其余IPC/preload/stat不变，产品代码不为测试改动；修正后包内main/preload/reference模块48/48（TEMP/lumin-reference-desktop-RHJDpt/report.json）。正式EXE真实路径启动另由安装验收负责，测试不会把这一映射当成部署路径验证。
+- 0.9.3 安装器完成：Lumin-Setup-0.9.3.exe，155785467 bytes，SHA256 E4C4DB9E1C3C8BE17103516C5D7B3EC40458CB464A688DC9333AE9E2386E91F2。payloadCommit=d584325，2741个payload文件。安装验收24/24（TEMP/Lumin检查-5e3b679f-学员），含真实正式EXE启动/预加载/标题栏、PPT/DOCX/PDF、隔离数据库、升级锁、卸载重装与学习库字节不变。启动初始DOCX样张未提供所以smoke该项标skipped；随后独立已安装资源测试真实DOCX_EXPORT_AND_READ=OK，不把skip算成功。
+- 采用既有tools/deploy-release.ps1 -Version 0.9.3发布双包，无额外后缀；本地release服务23/23、下载页深浅/移动端22/22已过，正并行上传至/opt/lumin-release/incoming；远端空间42G可用且lumin-release.service原状态active。待远端SHA256与公网下载入口核对后再报告发布成功。
+- 0.9.3 公网发布完成：tools/deploy-release.ps1成功，远端双包和服务/页面SHA256全部与本地一致，公网下载页22/22。服务重启瞬间一次curl 127.0.0.1:6025连接失败处于脚本既有重试窗口，随后健康检查及页面成功，不是残留故障。直接公网HEAD两文件200，Content-Length分别155785467/231523824；Range bytes=0-63均206且MZ/PK签名正确。证据tmp/deploy-093.log、tmp/public-093-check.json。未额外全量回下载约387MB，远端完整文件哈希已核对。最终核对时曾请求不存在的/api/releases得到404，属检查路径错误；以真实下载页与两个已公布文件地址完成最终验收。
+- 下载：http://113.249.102.41:6025/ ，安装版/Lumin-Setup-0.9.3.exe，便携版/Lumin-0.9.3.zip；继续保留Powered by Cangjie和双下载入口、旧0.9.2回滚包。包内功能源提交d584325，此后仅测试适配与交付trace，无shell/core/scripts文件差异。源码已本地分阶段提交并推送GitHub desktop，未修改Web/main远端，.taste-skill仍保持未跟踪。
+- 本轮交付核对：网页/系统文件/目录/知识库引用可访达，精确来源与完整分页已验证；MBTI配置默认ENFJ与可恢复问答、服务端计分、确认填写、Agent等价工具、真实同题风味对比已完成；Markdown代码与表格轻量美化/复制/主题/窄窗通过。实际验证包括257项完整核心、最终工具定向9项、MBTI界面12项、真实模型12用户回合、Markdown26项、思考流14项、引用浏览器23项、原生桥48项、安装验收24项；不把各专项重复项简单相加宣传为不重复用例数。

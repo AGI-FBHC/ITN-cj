@@ -483,7 +483,8 @@
   const resize = document.getElementById("team-resize");
   function setDockWidth(width) {
     const main = document.querySelector(".app > .main");
-    const available = scrim.getBoundingClientRect().width + (main?.getBoundingClientRect().width || 600);
+    // 这里改的是 CSS 布局宽度；getBoundingClientRect() 已被 body zoom 放大，不能混用。
+    const available = (scrim.offsetWidth || 0) + (main?.offsetWidth || 600);
     const value = Math.max(280, Math.min(1000, available - 280, width));
     scrim.style.setProperty("--team-dock-width", value + "px");
     resize?.setAttribute("aria-valuenow", String(Math.round(value)));
@@ -491,9 +492,12 @@
   resize?.addEventListener("pointerdown", event => {
     if (event.button !== 0) return;
     event.preventDefault();
-    const startX = event.clientX, startWidth = scrim.getBoundingClientRect().width;
+    const startX = event.clientX;
+    const rect = scrim.getBoundingClientRect();
+    const startWidth = scrim.offsetWidth || parseFloat(getComputedStyle(scrim).width) || rect.width;
+    const scale = rect.width > 0 && startWidth > 0 ? rect.width / startWidth : 1;
     resize.setPointerCapture(event.pointerId);
-    const move = e => setDockWidth(startWidth + startX - e.clientX);
+    const move = e => setDockWidth(startWidth + (startX - e.clientX) / scale);
     const end = () => { resize.removeEventListener("pointermove", move); resize.removeEventListener("lostpointercapture", end); };
     resize.addEventListener("pointermove", move);
     resize.addEventListener("lostpointercapture", end);
@@ -501,6 +505,6 @@
   resize?.addEventListener("keydown", event => {
     if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
     event.preventDefault();
-    setDockWidth(scrim.getBoundingClientRect().width + (event.key === "ArrowLeft" ? 40 : -40));
+    setDockWidth((scrim.offsetWidth || 0) + (event.key === "ArrowLeft" ? 40 : -40));
   });
 })();

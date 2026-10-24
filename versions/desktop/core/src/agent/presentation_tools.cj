@@ -3,10 +3,11 @@ package itn_desktop_core.agent
 import std.collection.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.Store
+import itn_desktop_core.store.ModelConfig
 import itn_desktop_core.presentation.DesktopJobs
 import itn_desktop_core.util.*
 
-public func presentationTools(store: Store, sid: String, tid: String, userText: String, shouldAbort: () -> Bool, emit: (String,JsonObject) -> Unit): ArrayList<DomainTool> {
+public func presentationTools(store: Store, sid: String, tid: String, userText: String, shouldAbort: () -> Bool, emit: (String,JsonObject) -> Unit, runtimeModel!: ?ModelConfig = None): ArrayList<DomainTool> {
     let out=ArrayList<DomainTool>()
     out.add(makeTool("create_presentation","制作PowerPoint","按固定流水线生成可编辑交互课件PPTX",
         "需要真正的.pptx文件时使用。先问受众、用途、页数、风格，等待用户确认；用户明确无需确认/细节由你决定则直接制作。传 requirement（用户需求）、title、audience、purpose、style、backgroundStyle、slideCount、detailLevel、includeSpeakerNotes=true。子Agent会先生成结构化提纲，再逐页生成内容，最后调用旧网页版兼容渲染器生成真实PPTX。返回的 path/previewPath 已可直接打开；不要再复制、移动文件或调用 powershell，也不要擅自存入个性资源。不能只复制Markdown。",
@@ -22,7 +23,7 @@ public func presentationTools(store: Store, sid: String, tid: String, userText: 
             let file=if(hasSimpleSlides){
                 DesktopJobs(store.dataDir).buildPresentation(args,sid,tid,shouldAbort)
             }else{
-                PresentationAgent(store).generate(args,userText,sid,tid,shouldAbort)
+                PresentationAgent(store,runtimeModel: runtimeModel).generate(args,userText,sid,tid,shouldAbort)
             }
             emit("artifact/created",file)
             return learningResult(file,if(hasSimpleSlides){"PPTX已制作完成，候选文件可预览；尚未存入个性资源"}else{"交互课件已按固定流水线生成，候选PPTX可预览；章节页由渲染器自动补入，尚未存入个性资源"})

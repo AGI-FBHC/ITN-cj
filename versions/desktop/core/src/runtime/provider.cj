@@ -32,6 +32,8 @@ public class ModelReply {
     public var errorMessage: String = ""
     public var usageIn: Int64 = 0
     public var usageOut: Int64 = 0
+    /** -1 means the upstream did not provide a thinking-token breakdown. */
+    public var usageReasoning: Int64 = -1
 }
 
 public interface ChatProvider {

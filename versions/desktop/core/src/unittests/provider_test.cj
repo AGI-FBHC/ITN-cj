@@ -226,9 +226,175 @@ class ProviderTest {
         let counter=ArrayList<Int64>();counter.add(0)
         let server=startServer(toolScript("{\"path\":\"a.html\",\"content\":\"unfinished", "tool_calls"),200,counter,false)
         let reply=OpenAiChatProvider(modelCfg(Int64(server.port))).respond(StepContext(),EventStream())
-        @Expect(counter[0],1); @Expect(reply.stopReason,"error"); @Expect(reply.toolCalls.size,0)
+        @Expect(counter[0],2); @Expect(reply.stopReason,"error"); @Expect(reply.toolCalls.size,0)
         @Expect(reply.errorMessage.contains("JSON"),true)
         server.close()
+    }
+
+    func nativeToolFrame(index: Int64, id: String, name: String, args: String): String {
+        let fn = JsonObject(); fn.put("name", JsonString(name)); fn.put("arguments", JsonString(args))
+        let call = JsonObject(); call.put("index", JsonInt(index)); call.put("id", JsonString(id)); call.put("function", fn)
+        let calls = JsonArray(); calls.add(call)
+        let delta = JsonObject(); delta.put("tool_calls", calls)
+        let choice = JsonObject(); choice.put("delta", delta)
+        let choices = JsonArray(); choices.add(choice)
+        let obj = JsonObject(); obj.put("choices", choices)
+        return line(obj.toString())
+    }
+
+    func toolFinishFrame(): String {
+        return line("{\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}") + "data: [DONE]\n\n"
+    }
+
+    func scriptedRequests(scripts: Array<String>, requests: ArrayList<JsonObject>): Server {
+        let server = ServerBuilder().addr("127.0.0.1").port(0).build()
+        server.distributor.register("/v1/chat/completions", { ctx: HttpContext =>
+            requests.add(objOf(JsonValue.fromStr(readAllString(ctx.request.body))).getOrThrow())
+            let index = if (requests.size <= scripts.size) { requests.size - 1 } else { scripts.size - 1 }
+            ctx.responseBuilder.status(200)
+            ctx.responseBuilder.header("Content-Type", "text/event-stream")
+            ctx.responseBuilder.body(scripts[index].toArray())
+        })
+        spawn { server.serve() }; sleep(Duration.millisecond * 150)
+        return server
+    }
+
+    @TestCase
+    func interleavedNativeArgumentsPreserveUnicodeAndSplitJsonEscapes(): Unit {
+        let fragments = ["{\"title\":\"异常", "输入\",\"definition\":\"引用", "\\", "\"abc\\\"与", "\\u4e", "2d、🙂\"}"]
+        let script = StringBuilder(); let expected = StringBuilder()
+        for (i in 0..fragments.size) {
+            expected.append(fragments[i])
+            script.append(nativeToolFrame(0, "record-1", "record_knowledge_point", fragments[i]))
+            if (i == 1) { script.append(nativeToolFrame(1, "calc-1", "calc", "{\"expr\":")) }
+            if (i == 3) { script.append(nativeToolFrame(1, "calc-1", "calc", "\"2+3\"}")) }
+        }
+        script.append(toolFinishFrame())
+        let requests = ArrayList<JsonObject>()
+        let server = scriptedRequests([script.toString()], requests)
+        try {
+            let reply = OpenAiChatProvider(modelCfg(Int64(server.port))).respond(StepContext(), EventStream())
+            @Expect(requests.size, 1); @Expect(reply.stopReason, "toolUse"); @Expect(reply.toolCalls.size, 2)
+            @Expect(reply.toolCalls[0].argsJson, expected.toString())
+            @Expect(strOf(reply.toolCalls[0].args(), "definition"), "引用\"abc\"与中、🙂")
+            @Expect(strOf(reply.toolCalls[1].args(), "expr"), "2+3")
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func malformedToolOnlyResponseRecoversTheSameStepOnceWithoutRepair(): Unit {
+        // Legal outer SSE JSON containing illegal inner JSON: unescaped quote from a model.
+        let invalid = "{\"title\":\"异常输入\",\"definition\":\"不能把\"abc\"按0处理\"}"
+        let valid = "{\"title\":\"异常输入\",\"definition\":\"必须拒绝异常输入\"}"
+        let first = nativeToolFrame(0, "bad-record", "record_knowledge_point", invalid) +
+            line("{\"usage\":{\"prompt_tokens\":10155,\"completion_tokens\":309,\"completion_tokens_details\":{\"reasoning_tokens\":80}}}") + toolFinishFrame()
+        let second = nativeToolFrame(0, "good-record", "record_knowledge_point", valid) +
+            line("{\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":12,\"completion_tokens_details\":{\"reasoning_tokens\":3}}}") + toolFinishFrame()
+        let requests = ArrayList<JsonObject>(); let audits = ArrayList<JsonObject>()
+        let server = scriptedRequests([first, second], requests)
+        try {
+            let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
+            provider.onAudit = Some({ kind, data => if (kind == "model/retry" || kind == "model/tool_arguments_invalid") { audits.add(data) } })
+            let ctx = StepContext()
+            let user = Message(UserMsg); user.text = "异常输入能默认按0计算吗？"; ctx.messages.add(user)
+            let reply = provider.respond(ctx, EventStream())
+            @Expect(requests.size, 2); @Expect(requests[0].toString(), requests[1].toString())
+            @Expect(reply.stopReason, "toolUse"); @Expect(reply.toolCalls.size, 1)
+            @Expect(reply.toolCalls[0].id, "good-record"); @Expect(reply.toolCalls[0].argsJson, valid)
+            @Expect(reply.usageIn, 10165); @Expect(reply.usageOut, 321); @Expect(reply.usageReasoning, 83)
+            @Expect(audits.size, 2); @Expect(strOf(audits[1], "reason"), "invalid_tool_arguments")
+            @Expect(intOf(audits[0], "argumentBytes"), invalid.size)
+            @Expect(audits[0].toString().contains("不能把"), false)
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func invalidMultiCallBatchDoesNotPublishItsEarlierValidCall(): Unit {
+        let first = nativeToolFrame(0, "discarded-write", "write", "{\"path\":\"must-not-run.txt\",\"content\":\"private\"}") +
+            nativeToolFrame(1, "invalid-record", "record_knowledge_point", "{\"title\":") + toolFinishFrame()
+        let second = nativeToolFrame(0, "recovered-record", "record_knowledge_point", "{\"title\":\"异常输入\"}") + toolFinishFrame()
+        let requests = ArrayList<JsonObject>(); let server = scriptedRequests([first, second], requests)
+        try {
+            let reply = OpenAiChatProvider(modelCfg(Int64(server.port))).respond(StepContext(), EventStream())
+            @Expect(requests.size, 2); @Expect(reply.stopReason, "toolUse"); @Expect(reply.toolCalls.size, 1)
+            @Expect(reply.toolCalls[0].id, "recovered-record")
+            @Expect(reply.toolCalls[0].name, "record_knowledge_point")
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func malformedArgumentsWithVisibleTextAreNotRetried(): Unit {
+        let requests = ArrayList<JsonObject>()
+        let first = textFrame() + nativeToolFrame(0, "invalid-record", "record_knowledge_point", "{\"title\":") + toolFinishFrame()
+        let server = scriptedRequests([first], requests)
+        try {
+            let reply = OpenAiChatProvider(modelCfg(Int64(server.port))).respond(StepContext(), EventStream())
+            @Expect(requests.size, 1); @Expect(reply.stopReason, "error"); @Expect(reply.toolCalls.size, 0)
+            @Expect(reply.text, "已收到的回答"); @Expect(reply.errorMessage.contains("JSON"), true)
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func repeatedInvalidNonObjectArgumentsCannotBecomeExecutable(): Unit {
+        let invalid = ArrayList<String>()
+        for (args in ["{\"title\":", "[]", "null", "\"{}\"", "{} trailing", "{}{}", "{\"x\":1,}", "{\"x\":01}"]) { invalid.add(args) }
+        // The stdx decoder accepts unescaped LF. Cover every raw control byte,
+        // including after an escaped backslash/quote, rather than weakening JSON.
+        for (byte in 0..32) {
+            let control = String.fromUtf8([UInt8(byte)])
+            invalid.add("{\"title\":\"bad" + control + "value\"}")
+        }
+        invalid.add("{\"title\":\"escaped\\\\" + "\n" + "value\"}")
+        invalid.add("{\"title\":\"escaped\\\"" + "\n" + "value\"}")
+        for (args in invalid) {
+            let requests = ArrayList<JsonObject>()
+            let script = nativeToolFrame(0, "invalid-record", "record_knowledge_point", args) + toolFinishFrame()
+            let server = scriptedRequests([script], requests)
+            try {
+                let reply = OpenAiChatProvider(modelCfg(Int64(server.port))).respond(StepContext(), EventStream())
+                @Expect(requests.size, 2); @Expect(reply.stopReason, "error"); @Expect(reply.toolCalls.size, 0)
+                @Expect(reply.errorMessage.contains("JSON"), true)
+            } finally { server.close() }
+        }
+    }
+
+    @TestCase
+    func escapedControlsAndLegalJsonWhitespaceRemainUnchanged(): Unit {
+        let args = " \n\t{\"text\":\"line\\nnext\\r\\t\\b\\f\\u0000\\u001f\\\\\\\"\",\"nested\":[true,false,null,-1.2e+3]}\r\n "
+        let requests = ArrayList<JsonObject>()
+        let server = scriptedRequests([nativeToolFrame(0, "valid-escapes", "write", args) + toolFinishFrame()], requests)
+        try {
+            let reply = OpenAiChatProvider(modelCfg(Int64(server.port))).respond(StepContext(), EventStream())
+            @Expect(requests.size, 1); @Expect(reply.stopReason, "toolUse"); @Expect(reply.toolCalls.size, 1)
+            @Expect(reply.toolCalls[0].argsJson, trimStr(args))
+            @Expect(strOf(reply.toolCalls[0].args(), "text").contains("line\nnext\r\t"), true)
+        } finally { server.close() }
+    }
+
+    @TestCase
+    func recoveryDoesNotReplayPreviouslyCompletedToolActions(): Unit {
+        let calc = nativeToolFrame(0, "calc-completed", "calc", "{\"expr\":\"17*19\"}") + toolFinishFrame()
+        let invalid = nativeToolFrame(0, "bad-record", "record_knowledge_point", "{\"title\":\"异常输入") + toolFinishFrame()
+        let saved = nativeToolFrame(0, "note-recovered", "save_note", "{\"title\":\"安全恢复\",\"text\":\"异常输入不得按0处理\"}") + toolFinishFrame()
+        let requests = ArrayList<JsonObject>()
+        let server = scriptedRequests([calc, invalid, saved, textFrame() + endFrame() + "data: [DONE]\n\n"], requests)
+        try {
+            let dir = freshDir("invalid-tool-recovery")
+            let result = LuminAgent(Store(dir)).askWithProvider(OpenAiChatProvider(modelCfg(Int64(server.port))), "", "计算并保存笔记", "invalid-json-step", "off", "")
+            @Expect(boolOf(result, "ok", false), true); @Expect(requests.size, 4)
+            @Expect(requests[1].toString(), requests[2].toString())
+            var calcCalls = 0; var noteCalls = 0; var invalidCalls = 0
+            for (event in SessionStore(dir).events("invalid-json-step")) {
+                if (strOf(event, "type") != "tool/call") { continue }
+                let payload = objOf(event.get("payload").getOrThrow()).getOrThrow()
+                let name = strOf(payload, "tool")
+                if (name == "calc") { calcCalls += 1 }
+                if (name == "save_note") { noteCalls += 1 }
+                if (name == "record_knowledge_point") { invalidCalls += 1 }
+            }
+            @Expect(calcCalls, 1); @Expect(noteCalls, 1); @Expect(invalidCalls, 0)
+            @Expect(requests[2].toString().contains("323"), true)
+        } finally { server.close() }
     }
 
     @TestCase
