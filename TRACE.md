@@ -5638,3 +5638,7 @@ read_chunk 读得到原文并带回库标识与正文。
 - 原实现仅对最新 Markdown 文本块做 opacity 1→.66 的 2.8 秒呼吸。现在改为文字内部重复渐变光带，以绿色和暖金色双光带每 1.9 秒横向流动；浅色主题采用深墨绿→青绿→暖金，深色主题采用浅灰→薄荷绿→暖白。字色仍由主题令牌计算，不新增硬编码背景块，仅用 `background-clip:text` 绘制文字内部的光。
 - 保留可访问性边界：`prefers-reduced-motion: reduce` 时关闭背景剪裁、滤镜和动画，恢复 currentColor；不支持背景裁字的浏览器保留正文颜色。光带只挂最新正文块，不插入光标，不影响正文选择、链接和 Markdown 结构；流式结束仍移除 `.stream-line`。
 - 验证更新：busy-caret 专项 10/10 通过，检查不是透明度脉冲、背景渐变重复、220px 光带移动、文字填充透明且滤镜存在、深色主题独立色板；截图按单行裁剪目视确认双色光带在普通字号下可见。思考 UI 14/14、聊天 UX 18/18、全页面 UI 审计 120/120 同时通过。未重复运行付费六任务，也不重做内核测试；本轮只改渲染层，不改变模型、工具、数据库或分支语义。
+
+- 0.9.2 本地交付：功能提交 `ff661d9596b088ae6b6d045f73253edc1ecb2eb5`；`dist/Lumin-0.9.2/Lumin.exe`、`dist/Lumin-0.9.2.zip`（`231420203` bytes，SHA256 `68DE3D0A3229BB6E8FA4D3EA4A084FEE1330C3E535A9ABEF3D6583885DAFDD56`）、安装器 `dist/Lumin-Setup-0.9.2.exe`（`155741271` bytes，SHA256 `59AE715A43C60C32722527700090D1BAAC3AA6D7B492B8DDF673422A392AC528`）。release.version/build/sourceCommit 与功能提交一致，40 项关键资产哈希一致，ZIP 内凭据之外的 renderer/executable/release 清单齐全。
+- 安装验收 24/24：中文空格路径、静默安装、2740 个 payload 文件哈希、快捷方式、深链、升级锁、安装版真实启动、PPT/DOCX/PDF、隔离数据库、升级/卸载/重装保留学习数据；正式便携 EXE 在全新 TEMP/APPDATA/LOCALAPPDATA 空目录启动 `RESULT=OK`。包内 renderer 的光影专项 10/10，非源码工作树专属断言。
+- 公网发布已完成：`http://113.249.102.41:6025/` 当前显示 0.9.2，安装版与便携版两个 HEAD 均 200，服务器文件 SHA256 与本地一致，`lumin-release.service=active`。发布检查本地 23/23、远端页面 22/22；日志中服务重启瞬间一次 `curl 127.0.0.1:6025` 连接失败发生在重试窗口内，最终健康检查、页面和下载入口均通过；没有未解决的运行故障。GitHub `AGI-FBHC/ITN-cj` 的 desktop 远端 HEAD 已确认 `ff661d9`。`.taste-skill/` 保持未跟踪。
