@@ -5659,3 +5659,13 @@ read_chunk 读得到原文并带回库标识与正文。
 - 发现并修复：W1与本机1同号会误指本机来源；外部URL括号被截断；相对文件依赖错误cwd；知识库首24片以外无法阅读；旧缩写heading导致真实索引文档不能打开；900px侧栏超出窗口38px。新reference-access-check 23/23、原reference-link 11/11；原文Markdown14/14和65行跨页表格14/14；独立KnowledgeReferenceTest8/8、ReferenceContextTest2/2。核心初编译暴露Cangjie关键字unsafe变量与getcwd导入缺失，修正后实际执行通过，未把编译失败或skip算通过。
 - 模型与前端共享每轮来源编号：TurnReferenceIndex在工具返回给模型时分配本地[n]/网页[Wn]，多次搜索/并发工具/跨库来源不会被首个搜索结果遮盖；最终引用从同一登记表生成，网页保留真实url而非空字符串。新增引用工具在宿主注册，最终包复制reference-paths.cjs并纳入资产hash。
 - 用户追加顺序：先手头引用任务做好并深度测试，再加学习档案个性化（用户MBTI、Lumin MBTI、默认ENFJ、对话问答推断并经确认填写），最后稍微优化Markdown代码块和表格。现已完成引用定向验收，继续完善MBTI流程；已有简单选择器/字段和提示词是前轮未提交草稿，不将其视作完整问答功能或完整授权验证。
+
+### 2026-10-24 · 个性化问答与回复 Markdown（0.9.3 候选）
+
+- 继续引用访达任务后按用户指定顺序完成MBTI，再做Markdown小幅优化；保留仓颉业务内核、不新增Python。已复验根AGENTS，使用PowerShell7。本轮测试/模型写入均为临时隔离目录，未改真实用户数据库；正在运行的旧正式版不关闭。
+- 个性化位于设置→常规→学习者档案：我的MBTI可未知，Lumin默认ENFJ，两者各16型。用独立分区替代嵌套卡片，短按钮“偏好问答”。入口防重/待处理状态，创建或恢复已命名普通会话并放入真实session列表，不把多个连续点击变成多份问答。先发送开始/继续，由正常对话交互。
+- 仓颉MbtiAssessmentStore持久化固定8题（每维2题），平票维度补问；一轮一道，重复调用幂等；题号/用户本轮A/B原话/turnId校验，服务端得分及依据，不由模型猜类型。完成不自动写档案，仅当前专用会话用户明确确认后保存服务端结果；取消/否定/引用资料/错误类型不能授权。设置单方不重置另一方；profile更新改字段级原子批量，不重写笔记/进度。宿主每轮读取新档案与当前会话测评状态，16种Lumin表达提示区别化，用户MBTI不作为能力判断。
+- harness提供同等工具：get_mbti_preferences、start_mbti_assessment（返回可点击专用会话链接）、get_mbti_assessment、answer_mbti_assessment、set_mbti_preference，工具目录与宿主注册一致；本地docs/02接口契约已补充（docs仍忽略不提交）。
+- Markdown围栏支持反引号/波浪线、未闭合流式代码、较短嵌套围栏；代码块加语言与复制按钮，不插入额外首行，不损坏中文/HTML/缩进/尾空格，失败提示。表格扩大单元间距、安静表头和悬停，窄窗容器内横向滚动；行内代码中的管道不再错拆为列。截图发现代码块继承玻璃行内代码边框，专门重置。无新增渲染依赖，不做无关大改。
+- 测试先说明范围：markdown-check改为真实Edge的固定渲染契约（不再启动Python mock，不伪称模型）；旧测试在流式回答尾部未到时断言会偶发误报。现26/26，含真实剪贴板（Windows CRLF归一后精确内容）、围栏/管道、安全链接、深浅主题/窄窗；thinking-stream真实Edge受控事件14/14。MBTI界面12/12，延迟start请求测试防重，真实API持久化、重入和局部档案修改保留。该测试真实发现start请求少/api前缀，已修后全过。
+- 核心首次编译发现新代码quote关键字冲突，改userQuote（JSON字段仍quote）；明确runtime boolOf默认false。修正后完整cjpm test实际257/257（248核心+9宿主，零skip）；补充工具入口后MbtiAssessmentTest定向9/9（其他248按filter跳过，不当作本轮重测）。完整日志tmp/core-093-all.log、定向tmp/mbti-093-tool-final.log；最终核心重构建中，真实模型问答和包内验收尚待，不提前宣称完成。

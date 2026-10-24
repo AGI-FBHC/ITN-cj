@@ -413,7 +413,12 @@ function md(src, options = {}) {
   const text = String(src == null ? "" : src);
   const lines = esc(text).split("\n");
   const out = [];
-  let inCode = false, listType = null;
+  let inCode = false, listType = null, codeFence = '', codeLanguage = '', codeLines = [];
+  const flushCode = () => {
+    const language = codeLanguage || 'text';
+    out.push('<div class="md-code-block"><div class="md-code-head"><span>' + esc(language) + '</span><button type="button" class="md-copy-code" aria-label="复制代码">复制</button></div><pre><code>' + codeLines.join('\n') + '</code></pre></div>');
+    inCode = false; codeLines = [];
+  };
   const closeList = () => { if (listType) { out.push(listType === "ul" ? "</ul>" : "</ol>"); listType = null; } };
   const inline = (s) => {
     const held = [];
@@ -447,11 +452,16 @@ function md(src, options = {}) {
     if (r.startsWith("|")) r = r.slice(1);
     if (r.endsWith("|") && !r.endsWith("\\|")) r = r.slice(0, -1);
     const parts = [];
-    let cur = "";
+    let cur = "", ticks = 0;
     for (let i = 0; i < r.length; i++) {
       const ch = r[i];
+      if (ch === '`') {
+        let end = i + 1; while (r[end] === '`') end++;
+        const run = end - i; ticks = ticks === run ? 0 : ticks === 0 ? run : ticks;
+        cur += r.slice(i, end); i = end - 1; continue;
+      }
       if (ch === "\\" && r[i + 1] === "|") { cur += "|"; i++; continue; }
-      if (ch === "|") { parts.push(cur.trim()); cur = ""; continue; }
+      if (ch === "|" && ticks === 0) { parts.push(cur.trim()); cur = ""; continue; }
       cur += ch;
     }
     parts.push(cur.trim());
@@ -471,8 +481,13 @@ function md(src, options = {}) {
   for (let li = 0; li < lines.length; li++) {
     const raw = lines[li];
     const line = raw.replace(/\s+$/, "");
-    if (/^\s*```/.test(line)) { closeList(); out.push(inCode ? "</code></pre>" : "<pre><code>"); inCode = !inCode; continue; }
-    if (inCode) { out.push(raw); continue; }
+    const fence = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (inCode) {
+      if (fence && fence[1][0] === codeFence[0] && fence[1].length >= codeFence.length && !fence[2].trim()) flushCode();
+      else codeLines.push(raw);
+      continue;
+    }
+    if (fence) { closeList(); inCode = true; codeFence = fence[1]; codeLanguage = fence[2].trim().match(/^[\w#+.-]+/)?.[0] || ''; continue; }
     if (options.document && /^\s*&lt;\/?(?:div|p|figure|figcaption)\b/i.test(line)) { closeList(); out.push(inline(line)); continue; }
     const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) { closeList(); const n = h[1].length; out.push("<h" + n + ">" + inline(h[2]) + "</h" + n + ">"); continue; }
@@ -516,7 +531,7 @@ function md(src, options = {}) {
     out.push("<p>" + inline(line) + "</p>");
   }
   closeList();
-  if (inCode) out.push("</code></pre>");
+  if (inCode) flushCode();
   return '<div class="md">' + out.join("\n") + "</div>";
 }
 
@@ -600,6 +615,18 @@ function installMarkdownLinkInteractions() {
   });
 }
 installMarkdownLinkInteractions();
+document.addEventListener('click', async event => {
+  const button = event.target.closest?.('.md-copy-code');
+  if (!button) return;
+  event.preventDefault();
+  const code = button.closest('.md-code-block')?.querySelector('pre code');
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code.textContent);
+    button.textContent = '已复制';
+    setTimeout(() => { if (button.isConnected) button.textContent = '复制'; }, 1600);
+  } catch (_) { toast('复制失败，可以选中代码手动复制'); }
+});
 
 function referenceBasePath() {
   try {
@@ -5501,7 +5528,9 @@ const TOOL_LABEL = {
   restore_course_library: "恢复知识库", record_knowledge_point: "记录知识点", read_knowledge_point: "读取知识点",
   get_learning_context: "学习上下文", remember_learning_fact: "记住偏好", forget_learning_fact: "删除记忆",
   read_learning_resource: "读取学习资源", generate_learning_resource: "生成学习资源", revise_learning_resource: "修改学习资源",
-  set_mbti_preference: "设置交流人格",
+  set_mbti_preference: "设置交流人格", get_mbti_preferences: "读取交流偏好",
+  get_mbti_assessment: "读取偏好问答", answer_mbti_assessment: "记录偏好答案",
+  start_mbti_assessment: "打开偏好问答",
   research_topic_team: "主题研究小组", plan_study_team: "学习计划小组",
   search_personal_resources: "搜索个人内容", read_personal_resource: "读取个人内容", save_personal_resource: "保存个人内容",
   create_presentation: "制作演示", list_activity_tasks: "查看任务", cancel_activity_task: "停止任务",
@@ -6747,6 +6776,7 @@ function latestStreamBlock(host) {
   const root = host.querySelector(".md") || host;
   const last = root.children.length ? root.children[root.children.length - 1] : null;
   if (!last) return null;
+  if (last.matches('.md-code-block')) return last.querySelector('pre');
   if (last.matches("ul, ol")) return last.lastElementChild;
   if (last.matches(".md-table-wrap")) {
     return last.querySelector("tbody tr:last-child td:last-child") ||
@@ -9311,10 +9341,8 @@ function settingsGeneral() {
   prow1.appendChild(fieldOf("学习目标", inputOf("pf-goal", "例如 两周内讲完提示词工程", p.goal || "")));
   prow1.appendChild(fieldOf("每周投入（小时）", inputOf("pf-hours", "8", p.weeklyHours || "")));
   prof.appendChild(prow1);
-  const mbtiCard = cardOf({
-    title: "交流人格",
-    sub: "MBTI 只影响 Lumin 的表达方式，不用于能力判断或降低学习要求。",
-  });
+  const mbtiCard = el('section', 'profile-personality');
+  mbtiCard.appendChild(el('h3', null, '个性化'));
   const mbtiRow = el("div", "row");
   const myMbti = mbtiOptions(p.mbtiType || "", true);
   myMbti.id = "pf-mbti";
@@ -9327,10 +9355,10 @@ function settingsGeneral() {
   const mbtiHint = el("p", "mbti-help");
   mbtiHint.append(
     el("span", "muted", "不知道自己的类型？"),
-    btn("用 8 个问题测一测", "link-button", () => startMbtiAssessment()),
+    btn("偏好问答", "link-button", event => runGuarded('mbti:start', event.currentTarget, '正在打开…', () => startMbtiAssessment())),
   );
   mbtiCard.appendChild(mbtiHint);
-  mbtiCard.appendChild(el("p", "muted", "Lumin 默认使用 ENFJ：先接住你的目标，再给出清楚、可执行的下一步。保存档案后生效。"));
+  mbtiCard.appendChild(el("p", "muted", "Lumin 默认 ENFJ，温暖、主动、有条理。保存后生效。"));
   prof.appendChild(mbtiCard);
   /* 六维自评只在「我的成长 → 能力校准」里改：同一份数据两个入口，改一处漏一处是上一轮的教训 */
   const hint = el("div", "row profile-hint");
@@ -9343,13 +9371,20 @@ function settingsGeneral() {
 
 async function startMbtiAssessment() {
   try {
-    await newChat("", "chat");
+    const assessment = await api('/api/profile/mbti/start', {});
+    await loadSessions(true);
+    await openChatSession(assessment.sessionId);
     const input = $("chat-input");
     if (!input) return;
-    input.value = "我想做一次简短的 MBTI 小测评。请一次只问我一个问题，每题给 A/B 两个选项并注明对应维度；先问 8 题，再根据我的选择给出四维结果和置信度。未得到我明确确认前不要写入档案。测评结束后请问我是否用 set_mbti_preference 保存结果。";
-    input.dispatchEvent(new Event("input"));
+    if (!input.value.trim()) {
+      input.value = assessment.status === 'completed' || assessment.status === 'saved'
+        ? '请回顾这次 MBTI 偏好问答的结果与依据。'
+        : assessment.answered > 0 ? '继续 MBTI 偏好问答，请从当前未回答的题目开始。'
+        : '开始 MBTI 偏好问答，请一次只问我当前这一题。';
+      input.dispatchEvent(new Event("input"));
+    }
     input.focus();
-    toast("已打开 MBTI 测评对话，发送后开始");
+    toast("已打开偏好问答，发送后继续");
   } catch (e) {
     toast("打开 MBTI 测评失败：" + e.message);
   }

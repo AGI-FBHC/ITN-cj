@@ -616,14 +616,59 @@ public class StudyStore {
     /** Update profile-facing keys without rewriting study progress, notes or quiz records. */
     public func saveProfile(p: LearnerProfile): Unit {
         ensureDir(dataDir)
-        db().putKv("profile", "nickname", p.nickname)
-        db().putKv("profile", "goal", p.goal)
-        db().putKv("profile", "weeklyHours", p.weeklyHours.toString())
-        db().putKv("profile", "updatedAt", if (p.updatedAt.size > 0) { p.updatedAt } else { nowStamp() })
-        db().putKv("profile", "formats", joinList(p.preferredFormats))
-        db().putKv("profile", "selfScores", selfScoresJson(p))
-        db().putKv("profile", "mbtiType", if (isMbtiType(p.mbtiType)) { p.mbtiType.toAsciiUpper() } else { "" })
-        db().putKv("profile", "luminMbtiType", if (isMbtiType(p.luminMbtiType)) { p.luminMbtiType.toAsciiUpper() } else { "ENFJ" })
+        let ops = ArrayList<DbOp>()
+        for ((key, value) in [
+            ("nickname", p.nickname), ("goal", p.goal), ("weeklyHours", p.weeklyHours.toString()),
+            ("updatedAt", if (p.updatedAt.size > 0) { p.updatedAt } else { nowStamp() }),
+            ("formats", joinList(p.preferredFormats)), ("selfScores", selfScoresJson(p)),
+            ("mbtiType", if (isMbtiType(p.mbtiType)) { p.mbtiType.toAsciiUpper() } else { "" }),
+            ("luminMbtiType", if (isMbtiType(p.luminMbtiType)) { p.luminMbtiType.toAsciiUpper() } else { "ENFJ" })
+        ]) {
+            ops.add(DbOp("INSERT OR REPLACE INTO profile (k, v) VALUES (?, ?)", va([tv(key), tv(value)])))
+        }
+        db().batch(ops)
+    }
+
+    /** A patch only writes provided keys; unrelated learning rows and preferences survive. */
+    public func updateProfile(patch: JsonObject): LearnerProfile {
+        // Complete the legacy migration before applying a first profile-only update.
+        let current = loadProfile()
+        let ops = ArrayList<DbOp>()
+        for (key in ["nickname", "goal", "mbtiType", "luminMbtiType"]) {
+            if (patch.get(key).isNone()) { continue }
+            match (patch.get(key).getOrThrow()) {
+                case value: JsonString => ()
+                case _ => throw Exception("档案字段 " + key + " 必须是字符串")
+            }
+            var value = strOf(patch, key)
+            if (key == "mbtiType" || key == "luminMbtiType") {
+                value = trimStr(value).toAsciiUpper()
+                if (value.size > 0 && !isMbtiType(value)) { throw Exception("MBTI 类型不在标准 16 型中") }
+                if (key == "luminMbtiType" && value.size == 0) { value = "ENFJ" }
+            }
+            ops.add(DbOp("INSERT OR REPLACE INTO profile (k, v) VALUES (?, ?)", va([tv(key), tv(value)])))
+        }
+        if (patch.get("weeklyHours").isSome()) {
+            let hours = intOf(patch, "weeklyHours")
+            if (hours <= 0) { throw Exception("每周学习时长必须大于 0") }
+            ops.add(DbOp("INSERT OR REPLACE INTO profile (k, v) VALUES ('weeklyHours', ?)", va([tv(hours.toString())])))
+        }
+        if (patch.get("preferredFormats").isSome()) {
+            ops.add(DbOp("INSERT OR REPLACE INTO profile (k, v) VALUES ('formats', ?)", va([tv(joinList(strArrayOf(patch, "preferredFormats")))])))
+        }
+        if (patch.get("selfScores").isSome()) {
+            match (patch.get("selfScores").getOrThrow()) {
+                case scores: JsonObject =>
+                    for ((key, value) in scores.getFields()) { current.setScore(key, intValue(value)) }
+                case _ => throw Exception("selfScores 必须是对象")
+            }
+            ops.add(DbOp("INSERT OR REPLACE INTO profile (k, v) VALUES ('selfScores', ?)", va([tv(selfScoresJson(current))])))
+        }
+        if (ops.size > 0) {
+            ops.add(DbOp("INSERT OR REPLACE INTO profile (k, v) VALUES ('updatedAt', ?)", va([tv(nowStamp())])))
+            db().batch(ops)
+        }
+        return loadProfile()
     }
 
     public func load(): StudyData {

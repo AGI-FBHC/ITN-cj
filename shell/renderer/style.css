@@ -882,7 +882,7 @@ body.chat-mode .view > .composer { width: 100%; max-width: 920px; margin-inline:
 .tool-row .tool-sum { margin-left: auto; text-align: right; }
 @keyframes pulsedot { 50% { opacity: .25; } }
 /* 流式输出不插竖线光标：最后一段正文让一道有颜色的光从文字内部扫过。 */
-.stream-line {
+.stream-line,.md pre.stream-line {
   --stream-base: var(--ink);
   --stream-mid: color-mix(in srgb, var(--ink) 42%, var(--ok) 58%);
   --stream-bright: color-mix(in srgb, var(--ink) 18%, var(--ok) 82%);
@@ -3494,3 +3494,21 @@ html[data-theme="dark"] .composer {
 .doc-align-left { text-align: left; }
 .kb-image-unavailable { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink-2); font-size: 14px; }
 .boot-powered { position:absolute; bottom:34px; left:0; right:0; text-align:center; font-size:15px; letter-spacing:.04em; color:var(--muted); }
+
+/* Reply reading: clear code controls and a quiet table surface. */
+.profile-personality { margin-top:24px; padding-top:20px; border-top:1px solid var(--line); }
+.profile-personality h3 { margin:0 0 16px; font-size:16px; font-weight:600; }
+.profile-personality .mbti-help { display:flex; align-items:center; gap:8px; }
+.md .md-code-block { margin:16px 0; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+.md .md-code-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px 14px; border-bottom:1px solid var(--line-soft); background:var(--panel-soft); color:var(--muted); font-size:13px; line-height:1.5; }
+.md .md-copy-code { border:0; border-radius:6px; padding:4px 8px; background:transparent; color:var(--ink-2); cursor:pointer; font:inherit; }
+.md .md-copy-code:hover { background:var(--brand-soft); color:var(--ink); }
+.md .md-copy-code:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.md .md-code-block pre { margin:0; padding:16px 18px; border:0; border-radius:0; box-shadow:none; background-color:var(--panel); overflow:auto; line-height:1.75; tab-size:4; }
+.md .md-code-block pre code { padding:0; border:0; border-radius:0; box-shadow:none; background:none; color:var(--ink); font-family:Consolas,'Cascadia Code',monospace; font-size:calc(14px * var(--fs,1)); line-height:inherit; }
+.md .md-table-wrap { margin:16px 0; border-radius:10px; }
+.md table { font-size:14px; line-height:1.65; }
+.md th,.md td { padding:10px 14px; }
+.md th { font-weight:650; background:var(--panel-soft); }
+.md tbody tr:hover td { background:var(--brand-soft); }
+.md .md-table-wrap code { white-space:pre; }

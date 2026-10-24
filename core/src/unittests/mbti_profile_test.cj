@@ -35,7 +35,6 @@ func mbtiProfileDefaultsPersistsAndToolRequiresConfirmation(): Unit {
         if (tool.name != "set_mbti_preference") { continue }
         let args = JsonObject()
         args.put("userType", JsonString("INFP"))
-        args.put("luminType", JsonString("ENFJ"))
         args.put("confirmed", JsonBool(false))
         args.put("quote", JsonString("请把 MBTI 设置为 INFP"))
         try { tool.run(args) } catch (e: Exception) { rejected = true }
@@ -48,7 +47,6 @@ func mbtiProfileDefaultsPersistsAndToolRequiresConfirmation(): Unit {
         if (tool.name != "set_mbti_preference") { continue }
         let args = JsonObject()
         args.put("userType", JsonString("INFP"))
-        args.put("luminType", JsonString("ENFJ"))
         args.put("confirmed", JsonBool(true))
         args.put("quote", JsonString("请把 MBTI 设置为 INFP，并确认保存"))
         let result = tool.run(args)

@@ -16,6 +16,7 @@ import itn_desktop_core.session.SessionStore
 import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.study.StudyStore
 import itn_desktop_core.study.mbtiStyleText
+import itn_desktop_core.study.mbtiAssessmentContext
 import itn_desktop_core.study.isMbtiType
 import itn_desktop_core.resource.labelOf
 import itn_desktop_core.agent.learningTools
@@ -678,6 +679,7 @@ public class LuminAgent {
         preamble = preamble + "\nMBTI 交流偏好（用户档案，不是能力判断）：用户=" + userMbti + "；Lumin=" + luminMbti +
             "。请让 Lumin 的表达风味明显体现：" + mbtiStyleText(luminMbti) +
             " 用户类型存在时，优先适配其组织信息的方式，但不贴标签、不据此降低要求或推断能力。"
+        preamble += mbtiAssessmentContext(store.dataDir, sid)
         if (uiChapter.size > 0) {
             preamble = preamble + "\n用户此刻在应用里正在学《" + uiChapter + "》这一章；" +
                 "他说「这一章 / 这章 / 这节」时指的就是它 —— 直接按这一章处理，不要再让他重复说是哪一章。"

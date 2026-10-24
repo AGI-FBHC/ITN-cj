@@ -7,7 +7,6 @@ import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.knowledge.KnowledgeStore
 import itn_desktop_core.course.CourseStore
 import itn_desktop_core.study.StudyStore
-import itn_desktop_core.study.isMbtiType
 import itn_desktop_core.learning.arrOf
 import itn_desktop_core.resource.ResourceRequest
 import itn_desktop_core.resource.generateResourceWithCancel
@@ -29,30 +28,7 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
     userText: String, emit: (String, JsonObject) -> Unit): ArrayList<DomainTool> {
     let ls = LearningStore(store.dataDir)
     let out = ArrayList<DomainTool>()
-    out.add(makeTool("set_mbti_preference", "设置交流人格", "保存用户与 Lumin 的 MBTI 交流偏好",
-        "仅在本轮用户明确要求设置 MBTI/交流人格，或在 MBTI 小测评后明确确认保存时使用。userType 可为空表示未知；luminType 为空时默认 ENFJ。confirmed 必须由用户本轮明确确认，quote 必须逐字来自本轮用户消息。MBTI 只影响表达风格，不是能力、诊断或测验结果。",
-        "{\"type\":\"object\",\"properties\":{\"userType\":{\"type\":\"string\"},\"luminType\":{\"type\":\"string\"},\"confirmed\":{\"type\":\"boolean\"},\"quote\":{\"type\":\"string\"}},\"required\":[\"confirmed\",\"quote\"]}", "write", { args: JsonObject =>
-            let userType = strOf(args, "userType").toAsciiUpper()
-            let luminType = if (strOf(args, "luminType").size == 0) { "ENFJ" } else { strOf(args, "luminType").toAsciiUpper() }
-            let exactQuote = trimStr(strOf(args, "quote"))
-            let lower = userText.toAsciiLower()
-            let asked = lower.contains("mbti") || userText.contains("人格") || userText.contains("类型") || userText.contains("测评")
-            if (userType.size > 0 && !isMbtiType(userType)) { throw Exception("用户 MBTI 类型不在标准 16 型中") }
-            if (!isMbtiType(luminType)) { throw Exception("Lumin 的 MBTI 类型不在标准 16 型中") }
-            if (!boolOf(args, "confirmed") || exactQuote.size == 0 || !userText.contains(exactQuote) ||
-                (!asked && !userText.contains("确认") && !userText.contains("保存"))) {
-                throw Exception("需要用户明确确认 MBTI 设置；quote 必须逐字来自本轮消息")
-            }
-            let profile = StudyStore(store.dataDir).loadProfile()
-            profile.mbtiType = userType
-            profile.luminMbtiType = luminType
-            profile.updatedAt = ""
-            StudyStore(store.dataDir).saveProfile(profile)
-            let brief = JsonObject()
-            brief.put("mbtiType", JsonString(userType))
-            brief.put("luminMbtiType", JsonString(luminType))
-            return learningResult(brief, "已保存 MBTI 交流偏好，Lumin 默认 ENFJ；这只影响表达方式")
-        }))
+    for (tool in mbtiTools(store, sid, turnId, userText)) { out.add(tool) }
     out.add(makeTool("resolve_knowledge_image", "定位知识库图片", "读取文档配图的实际来源、路径与格式",
         "doc_path 来自知识库文档或切片，source 来自原文 img src 或 Markdown 图片链接。优先定位同库本地配图，返回本地路径或原网络链接及大小；不返回 base64，定位成功不代表已理解图像内容。",
         "{\"type\":\"object\",\"properties\":{\"kb_id\":{\"type\":\"string\"},\"doc_path\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"}},\"required\":[\"doc_path\",\"source\"]}", "read", { args: JsonObject =>

@@ -2684,49 +2684,35 @@ public class Api {
         // ---------- 学习者档案 ----------
 
         if (path == "/api/profile/get" && method == "POST") {
-            let d = StudyStore(store.dataDir).load()
-            ok(ctx, d.profile.toJson())
+            ok(ctx, StudyStore(store.dataDir).loadProfile().toJson())
             return
         }
 
         if (path == "/api/profile/save" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
-                    let ss = StudyStore(store.dataDir)
-                    let d = ss.load()
-                    d.profile.nickname = strOf(b, "nickname")
-                    d.profile.goal = strOf(b, "goal")
-                    let wh = intOf(b, "weeklyHours")
-                    if (wh > 0) { d.profile.weeklyHours = wh }
-                    match (b.get("mbtiType")) {
-                        case Some(v) =>
-                            let code = strOf(b, "mbtiType").toAsciiUpper()
-                            if (code.size > 0 && !isMbtiType(code)) { fail(ctx, 400, "MBTI 类型不在标准 16 型中"); return }
-                            d.profile.mbtiType = code
-                        case None => ()
-                    }
-                    match (b.get("luminMbtiType")) {
-                        case Some(v) =>
-                            let code = strOf(b, "luminMbtiType").toAsciiUpper()
-                            if (code.size > 0 && !isMbtiType(code)) { fail(ctx, 400, "Lumin 的 MBTI 类型不在标准 16 型中"); return }
-                            d.profile.luminMbtiType = if (code.size == 0) { "ENFJ" } else { code }
-                        case None => if (d.profile.luminMbtiType.size == 0) { d.profile.luminMbtiType = "ENFJ" }
-                    }
-                    d.profile.preferredFormats = strArrayOf(b, "preferredFormats")
-                    match (b.get("selfScores")) {
-                        case Some(sv) =>
-                            match (objOf(sv)) {
-                                case Some(so) =>
-                                    for ((k, val) in so.getFields()) {
-                                        d.profile.setScore(k, intValue(val))
-                                    }
-                                case None => ()
-                            }
-                        case None => ()
-                    }
-                    d.profile.updatedAt = nowStamp()
-                    ss.save(d)
-                    ok(ctx, d.profile.toJson())
+                    try { ok(ctx, StudyStore(store.dataDir).updateProfile(b).toJson()) }
+                    catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/profile/mbti/start" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    try { ok(ctx, MbtiAssessmentStore(store.dataDir).start(restart: boolOf(b, "restart"))) }
+                    catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/profile/mbti/state" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    try { ok(ctx, MbtiAssessmentStore(store.dataDir).state(sessionId: strOf(b, "sessionId"))) }
+                    catch (e: Exception) { fail(ctx, 400, e.message) }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
             return
@@ -3656,6 +3642,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/sessions/delete",
         "/api/profile/get",
         "/api/profile/save",
+        "/api/profile/mbti/start",
+        "/api/profile/mbti/state",
         "/api/study/tree",
         "/api/study/course",
         "/api/study/lecture",
