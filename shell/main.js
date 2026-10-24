@@ -3,6 +3,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const { resolveReferencePath, resolveExternalUrl, threadIdFromUrl } = require("./reference-paths.cjs");
 
 const SMOKE = process.argv.includes("--smoke");
 
@@ -19,8 +20,8 @@ const PROTOCOL = "lumin";
 
 function threadIdFromArgs(args) {
   for (const a of args || []) {
-    const m = String(a).match(/^lumin:\/\/thread\/([A-Za-z0-9_-]+)/i);
-    if (m) return m[1];
+    const sid = threadIdFromUrl(a);
+    if (sid) return sid;
   }
   return "";
 }
@@ -51,6 +52,25 @@ function openThreadFromArgs(args) {
     console.log("DEEPLINK thread=" + sid);
   }
   return true;
+}
+
+async function openExternalReference(value) {
+  const reference = resolveExternalUrl(value);
+  if (!reference.ok) return reference;
+  try {
+    await shell.openExternal(reference.url);
+    return {ok: true};
+  } catch (error) {
+    return {ok: false, error: String(error.message || error)};
+  }
+}
+
+function openNavigationReference(url) {
+  if (threadIdFromUrl(url)) {
+    openThreadFromArgs([url]);
+    return;
+  }
+  void openExternalReference(url);
 }
 
 let win = null;
@@ -237,14 +257,17 @@ async function createWindow() {
     },
   });
   if (win.removeMenu) win.removeMenu();
-  /* 聊天/资料预览里的链接：http(s) 交给系统浏览器，绝不把应用窗口导航走、也不冒新窗口。 */
+  /* 外部链接交给系统，会话深链回到当前界面，不打开第二个应用窗口。 */
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) { try { shell.openExternal(url); } catch (e) { /* ignore */ } }
+    openNavigationReference(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
     const current = win.webContents.getURL();
-    if (url !== current) e.preventDefault();
+    if (url !== current) {
+      e.preventDefault();
+      openNavigationReference(url);
+    }
   });
   let winShown = false;
   const showWindowNow = () => {
@@ -363,28 +386,21 @@ async function createWindow() {
    * 用系统默认程序打开路径。
    *
    * 侧栏项目菜单里的"在资源管理器中打开"、演示页的"用 PowerPoint 打开"都走这一条：
-   * 路径由渲染层给，但只做"打开"，不读内容、不执行任何东西。
+   * 路径由渲染层给，先只读解析和检查，再交给系统默认应用。
    */
   ipcMain.handle("shell:open-path", async (_e, p) => {
-    if (!p) return { ok: false, error: "没有路径" };
+    const reference = await resolveReferencePath(p);
+    if (!reference.ok) return reference;
     try {
-      if (!fs.existsSync(p)) return { ok: false, error: "路径不存在：" + p };
-      const msg = await shell.openPath(p);
-      return msg ? { ok: false, error: msg } : { ok: true };
+      const msg = await shell.openPath(reference.path);
+      return msg ? { ...reference, ok: false, error: msg } : reference;
     } catch (e) {
       return { ok: false, error: String((e && e.message) || e) };
     }
   });
 
-  ipcMain.handle("shell:open-url", async (_e, url) => {
-    if (!/^https?:\/\//i.test(url)) return { ok: false, error: "只允许打开 http(s) 链接" };
-    try {
-      await shell.openExternal(url);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: String((e && e.message) || e) };
-    }
-  });
+  ipcMain.handle("shell:resolve-reference-path", (_e, reference) => resolveReferencePath(reference));
+  ipcMain.handle("shell:open-url", (_e, url) => openExternalReference(url));
 
   /**
    * 读演示文稿的文字（离线，只读）。

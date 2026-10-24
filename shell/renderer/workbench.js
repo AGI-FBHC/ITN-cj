@@ -71,7 +71,7 @@ Object.assign(TOOL_LABEL, {
   read_learning_resource: '读取学习资源', get_learning_context: '读取学习上下文',
   remember_learning_fact: '记录学习偏好', forget_learning_fact: '忘记学习记忆',
 });
-for (const name of ['generate_learning_resource', 'revise_learning_resource', 'read_learning_resource', 'get_learning_context', 'remember_learning_fact', 'forget_learning_fact']) TOOL_GROUP[name] = '学习资源';
+for (const name of ['generate_learning_resource', 'revise_learning_resource', 'read_learning_resource', 'get_learning_context', 'remember_learning_fact', 'forget_learning_fact', 'set_mbti_preference']) TOOL_GROUP[name] = '学习资源';
 if (!TOOL_GROUP_ORDER.includes('学习资源')) TOOL_GROUP_ORDER.push('学习资源');
 
 function promptLearning(text) {
@@ -111,6 +111,7 @@ function ensureResourceDock() {
   if (embedded && dock.parentElement !== reader) reader.appendChild(dock);
   if (!embedded && dock.parentElement !== document.querySelector('.app')) document.querySelector('.app').appendChild(dock);
   dock.classList.toggle('embedded-resource', embedded);
+  dock.classList.toggle('reference-dock', referenceMode);
   dock.hidden = !workbench.open || (!embedded && !referenceMode && current !== 'chat');
   if (reader) reader.classList.toggle('has-selection', !dock.hidden);
   document.body.classList.toggle('resource-open', !embedded && !dock.hidden);
@@ -125,10 +126,13 @@ renderResourceDock = function () {
 };
 
 function closeResourceDock() {
+  const origin = workbench.reference?.origin;
   ++workbench.loadToken;
   workbench.open = false;
   workbench.reference = null;
   ensureResourceDock();
+  document.body.classList.remove('reference-compact');
+  origin?.isConnected && origin.focus({preventScroll: true});
   (current === 'resources' ? document.querySelector('.outcome-grid .resource-entry.selected') : $('wb-artifacts'))?.focus();
 }
 
@@ -258,22 +262,19 @@ function renderFilePreview(dock,file) {
     box.append(el('strong',null,'这份 PPT 没有版面预览'),el('p',null,'不再用文字提纲冒充幻灯片。用 PowerPoint 打开可查看完整排版。'));
     if(window.itnWindow?.openPath)box.appendChild(btn('用 PowerPoint 打开','primary sm',async()=>{const result=await window.itnWindow.openPath(file.path);if(result&&result.ok===false)toast(result.error||'无法打开 PPT');}));
     body.appendChild(box);
-  }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '');else article.textContent=file.text || file.error || '';body.appendChild(article);}
+  }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '',{baseDir:String(file.path || '').replace(/[\\/][^\\/]+$/, '')});else article.textContent=file.text || file.error || '';body.appendChild(article);}
 }
 
 function referenceKb(citation) {
   const list = state.cfg?.knowledgeBases || [];
-  return list.find(k => k.id === citation?.kbId) || list.find(k => k.id === state.kb) || list[0] || null;
+  return list.find(k => k.id === citation?.kbId) || null;
 }
 
 function referencePath(citation) {
   const raw = String(citation?.docPath || "").trim();
   if (!raw) return "";
   if (/^[A-Za-z]:[\\/]/.test(raw) || /^\\\\/.test(raw) || /^\//.test(raw)) return raw;
-  const kb = referenceKb(citation);
-  const root = String(kb?.rootDir || kb?.sourcePath || "").replace(/[\\/]$/, "");
-  if (!root) return raw;
-  return root + "\\" + raw.replace(/^[\\/]+/, "").replace(/\//g, "\\");
+  return citation.absolutePath || '';
 }
 
 function openReferencePath(path) {
@@ -287,11 +288,13 @@ function openReferencePath(path) {
 function renderReferenceDock(dock, ref) {
   const citation = ref?.citation || ref || {};
   const isWeb = citation.kind === "web" || /^https?:\/\//i.test(citation.docPath || citation.url || "");
-  const path = referencePath(citation);
+  const token = workbench.loadToken;
+  const alive = () => workbench.open && workbench.reference === ref && token === workbench.loadToken && dock.isConnected;
   const title = citation.docTitle || citation.title || citation.url || citation.docPath || "资料引用";
   const head = el("header", "resource-dock-head reference-dock-head");
   const heading = el("div", "grow reference-heading");
-  heading.append(el("span", "reference-kicker", isWeb ? "网页引用" : "知识库引用"), el("strong", "reference-title", title));
+  const titleNode = el('strong', 'reference-title', title);
+  heading.append(el("span", "reference-kicker", ref.kind === 'knowledge' ? '知识点' : isWeb ? "网页引用" : "知识库引用"), titleNode);
   head.append(heading, btn("关闭", "ghost sm", closeResourceDock));
   dock.appendChild(head);
 
@@ -303,53 +306,43 @@ function renderReferenceDock(dock, ref) {
   if (meta.childElementCount) body.appendChild(meta);
 
   const actions = el("div", "reference-actions");
+  const openOriginal = btn('打开原文件', 'primary sm', () => openReferencePath(referencePath(citation)));
+  openOriginal.disabled = !referencePath(citation);
   if (isWeb) {
     const href = citation.docPath || citation.url || "";
     actions.appendChild(btn("用浏览器打开", "primary sm", () => {
-      window.itnWindow?.openUrl?.(href).then(result => {
+      if (!window.itnWindow?.openUrl) { window.open(href, '_blank', 'noopener,noreferrer'); return; }
+      window.itnWindow.openUrl(href).then(result => {
         if (result?.ok === false) toast(result.error || "无法打开网页");
       }).catch(() => toast("无法打开网页"));
     }));
   } else {
-    if (path) actions.appendChild(btn("打开原文件", "primary sm", () => openReferencePath(path)));
-    actions.appendChild(btn("打开资料库", "ghost sm", () => go("kb")));
+    if (ref.kind !== 'knowledge') actions.appendChild(openOriginal);
+    actions.appendChild(btn(ref.kind === 'knowledge' ? '查看知识网络' : '打开资料库', 'ghost sm', async () => {
+      if (ref.kind === 'knowledge') { await go('home'); await openKnowledgePoint(citation.id); }
+      else { if (citation.kbId) state.kb = citation.kbId; await go('kb'); }
+    }));
   }
   if (citation.chunkId) actions.appendChild(btn("复制引用位置", "ghost sm", () => navigator.clipboard.writeText(citation.chunkId).then(() => toast("已复制引用位置")).catch(() => toast("复制失败"))));
   if (actions.childElementCount) body.appendChild(actions);
 
   const content = el("div", "reference-content");
   body.appendChild(content);
-  if (citation.text) content.innerHTML = md(citation.text);
-  else content.appendChild(el("p", "muted", "正在读取引用原文…"));
-
-  if (!isWeb && (citation.kbId || citation.docPath)) {
-    const kb = referenceKb(citation);
-    const kbId = citation.kbId || kb?.id || "";
-    if (kbId && citation.docPath) {
-      api("/api/kb/document", {id: kbId, path: citation.docPath, offset: 0, limit: 24}).then(data => {
-        if (!dock.isConnected || workbench.reference !== ref) return;
-        content.replaceChildren();
-        const fragments = data.chunks || [];
-        if (!fragments.length) content.appendChild(el("p", "muted", "这份资料的索引原文暂时不可用，可以使用上方“打开原文件”。"));
-        for (const chunk of fragments) {
-          const section = el("section", "reference-chunk");
-          if (chunk.headingPath) section.appendChild(el("h4", null, chunk.headingPath));
-          const article = el("article", "md");
-          article.innerHTML = md(chunk.text || "", {document: true, kbId, docPath: citation.docPath});
-          section.appendChild(article);
-          content.appendChild(section);
-        }
-      }).catch(error => {
-        if (!dock.isConnected || workbench.reference !== ref) return;
-        if (!citation.text) content.replaceChildren(el("p", "muted", "读取原文失败：" + error.message));
-      });
-    }
+  if (citation.text) {
+    const saved = el('section', 'reference-snapshot');
+    saved.appendChild(el('h3', '', '引用片段'));
+    const article = el('article', 'md');
+    article.innerHTML = md(citation.text, {document: !!citation.kbId && !isWeb, kbId: citation.kbId, docPath: citation.docPath});
+    saved.appendChild(article); content.appendChild(saved); hydrateKnowledgeImages(article);
   }
+  const status = el('p', 'muted reference-status', isWeb ? (citation.text ? '' : '在浏览器中查看来源全文。') : '正在读取资料…');
+  content.appendChild(status);
 
   if (ref?.kind === "knowledge" && citation.id) {
     api("/api/knowledge/node", {id: citation.id}).then(node => {
-      if (!dock.isConnected || workbench.reference !== ref) return;
+      if (!alive()) return;
       content.replaceChildren();
+      titleNode.textContent = node.title || '知识点';
       content.append(el("h3", null, node.title || "知识点"), el("p", null, node.definition || "还没有定义。"));
       for (const record of node.records || []) {
         const row = el("section", "reference-chunk");
@@ -359,15 +352,68 @@ function renderReferenceDock(dock, ref) {
         content.appendChild(row);
       }
     }).catch(error => toast("读取知识点失败：" + error.message));
+    return;
   }
+  if (isWeb) return;
+  const load = async () => {
+    if (citation.kbId && !citation.docPath && !citation.chunkId) {
+      const kb = await api('/api/kb/stats', {id: citation.kbId});
+      if (!alive()) return;
+      titleNode.textContent = kb.name || title; status.textContent = '';
+      for (const doc of kb.docs || []) content.appendChild(btn(doc.title || doc.path, 'reference-document', () => openReference({kind: 'citation', citation: {kbId: citation.kbId, docPath: doc.path, docTitle: doc.title}})));
+      if (!kb.docs?.length) status.textContent = '这个知识库还没有资料。';
+      return;
+    }
+    const result = await api('/api/kb/reference', {kbId: citation.kbId || '', docPath: citation.docPath || '', chunkId: citation.chunkId || '', headingPath: citation.headingPath || ''});
+    if (!alive()) return;
+    if (result.status === 'ambiguous') {
+      status.textContent = '找到多份同名资料，选择要查看的来源。';
+      for (const item of result.candidates || []) content.appendChild(btn((item.kbName || item.kbId) + ' · ' + (item.docTitle || item.docPath), 'reference-document', () => openReference({kind: 'citation', citation: {...citation, ...item, text: citation.text || ''}})));
+      return;
+    }
+    if (result.status !== 'found') { status.textContent = citation.text ? '原资料暂不可用，引用片段仍保留。' : '没有找到这份资料，可以检查知识库来源。'; return; }
+    Object.assign(citation, {kbId: result.kbId, docPath: result.docPath, absolutePath: result.absolutePath || ''});
+    titleNode.textContent = result.docTitle || title;
+    openOriginal.disabled = !referencePath(citation);
+    status.textContent = '';
+    const original = el('section', 'reference-original'); original.appendChild(el('h3', '', '资料原文')); content.appendChild(original);
+    const chunks = el('div', 'reference-chunks'); original.appendChild(chunks);
+    let offset = Number(result.pageOffset || 0), loading = false;
+    const more = btn('加载更多', 'ghost sm reference-more', () => read());
+    original.appendChild(more);
+    async function read() {
+      if (loading || offset < 0) return;
+      loading = true; more.disabled = true; more.textContent = '读取中…';
+      try {
+        const page = await api('/api/kb/document', {id: result.kbId, path: result.docPath, offset, limit: 24});
+        if (!alive()) return;
+        for (const chunk of page.chunks || []) {
+          const section = el('section', 'reference-chunk' + (chunk.id === (citation.chunkId || result.chunkId) ? ' cited' : ''));
+          section.dataset.chunkId = chunk.id;
+          if (chunk.headingPath) section.appendChild(el('h4', '', chunk.headingPath));
+          const article = el('article', 'md'); article.innerHTML = md(chunk.text || '', {document: true, kbId: result.kbId, docPath: result.docPath});
+          section.appendChild(article); chunks.appendChild(section); hydrateKnowledgeImages(article);
+        }
+        offset = Number(page.nextOffset); more.hidden = offset < 0; more.textContent = '加载更多';
+      } catch (error) { if (alive()) { more.textContent = '重试'; toast('读取原文失败：' + error.message); } }
+      finally { loading = false; more.disabled = false; }
+    }
+    if (offset > 0) original.insertBefore(btn('从文档开头阅读', 'ghost sm', () => { chunks.replaceChildren(); offset = 0; more.hidden = false; read(); }), chunks);
+    await read();
+  };
+  load().catch(error => { if (alive()) status.textContent = '读取原文失败：' + error.message; });
 }
 
 function openReference(ref) {
+  ref = {...ref, citation: {...(ref.citation || ref)}};
+  ++workbench.loadToken;
+  ref.origin = document.activeElement;
   workbench.file = null;
   workbench.selected = null;
   workbench.reference = ref;
   workbench.open = true;
   renderResourceDock();
+  updateReferenceLayout();
 }
 
 window.LuminReferencePanel = {
@@ -375,6 +421,19 @@ window.LuminReferencePanel = {
   close: closeResourceDock,
   isOpen: () => !!workbench.reference && !!workbench.open,
 };
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && workbench.open && workbench.reference && !document.querySelector('.app-modal-layer,.task-modal')) {
+    event.preventDefault(); event.stopImmediatePropagation(); closeResourceDock();
+  }
+}, true);
+function updateReferenceLayout() {
+  const app = document.querySelector('.app'), rail = document.getElementById('rail'), panel = document.getElementById('panel');
+  if (!app) return;
+  const panelWidth = panel?.hidden ? 0 : parseFloat(getComputedStyle(panel).width) || 0;
+  document.body.classList.toggle('reference-compact', !!workbench.reference && workbench.open && app.clientWidth - (rail?.offsetWidth || 0) - panelWidth < 660);
+}
+window.addEventListener('resize', updateReferenceLayout);
+window.addEventListener('lumin:ui-zoom', updateReferenceLayout);
 
 async function exportResourceAs(res, kind) {
   if(kind==='pptx'){openPresentationBrief(res);return;}
@@ -466,11 +525,12 @@ function renderResourceDock() {
   else if (res.kind === 'practice') renderResourcePractice(content, res);
   else if (res.kind === 'ppt') renderPptResourcePreview(content, res);
   else {
-    const article = el('article', 'md'); article.innerHTML = md(res.markdown || '');
+    const article = el('article', 'md'); article.innerHTML = md(res.markdown || '', {citations: res.citations || []});
     if (article.querySelector('h1')?.textContent === res.title) article.querySelector('h1').remove();
     content.appendChild(article);
   }
   body.appendChild(content);
+  linkInlineCitations(content, res.citations || []);
   if (res.kind !== 'quiz') {
     const done = workbenchRequestButton(res.progress?.done ? '已标记完成 · 撤销' : '标记本次学习完成', 'sm ghost', 'resource:progress:'+res.id+':'+res.version, '正在记录…', async () => {
       try {
@@ -746,7 +806,7 @@ function syncWorkbenchEvents(events) {
     if (workbench.seenSaved.has(key)) continue;
     workbench.seenSaved.add(key);
     // Only newly produced resources open automatically; historic cards remain clickable.
-    if (current==='chat' && state.chatRequest && e.turnId === state.chatRequest.turnId) openLearningResource(e.payload.id, e.payload.version);
+    if (current==='chat' && state.chatRequest && !workbench.reference && e.turnId === state.chatRequest.turnId) openLearningResource(e.payload.id, e.payload.version);
   }
 }
 

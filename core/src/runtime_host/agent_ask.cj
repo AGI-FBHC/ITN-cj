@@ -14,8 +14,12 @@ import itn_desktop_core.store.Store
 import itn_desktop_core.session.SessionEvent
 import itn_desktop_core.session.SessionStore
 import itn_desktop_core.learning.LearningStore
+import itn_desktop_core.study.StudyStore
+import itn_desktop_core.study.mbtiStyleText
+import itn_desktop_core.study.isMbtiType
 import itn_desktop_core.resource.labelOf
 import itn_desktop_core.agent.learningTools
+import itn_desktop_core.agent.referenceTools
 import itn_desktop_core.agent.learningTeamTools
 import itn_desktop_core.agent.presentationTools
 import itn_desktop_core.agent.personalTools
@@ -525,8 +529,11 @@ public class LuminAgent {
         for(d in courseTools(store,sid,question)){defs.add(d)}
         for(d in guidedTools(store,sid,question)){defs.add(d)}
         for(d in taskTools(store,sid,question)){defs.add(d)}
+        for(d in referenceTools(store)){defs.add(d)}
         let originalWorkspace=match(work){case Some(w)=>w.dir;case None=>""}
         for(d in knowledgeTools(store,sid,turnId,question,originalWorkspace,{kind: String,payload: JsonObject=>log(kind,payload)})){defs.add(d)}
+        let referenceIndex = TurnReferenceIndex()
+        referenceIndex.attach(defs)
         let registry = piRegistryOf(defs, records)
         let mode = piModeOf(defs, "desktop")
         var ws: ?Workspace = None
@@ -665,6 +672,12 @@ public class LuminAgent {
             "用户明确提到学习阶段、困难或当前进度时，用 remember_learning_fact 的 status 类型记录原话；长期通用目标/偏好可设 scope=global，课程专属信息保留课程范围。" +
             "回答前参考下方 learningState 的最近阅读位置、当前完成标记、needsPractice 和 reviewQueue；按真实状态调整解释难度与例子，不重复询问已有目标/偏好，不把自述或阅读量当成实测掌握。" +
             "需要更多资源或测验证据时调用 get_learning_context。\n当前学习上下文：" + LearningStore(store.dataDir).agentContext(kbId).toString()
+        let learnerProfile = StudyStore(store.dataDir).loadProfile()
+        let userMbti = if (isMbtiType(learnerProfile.mbtiType)) { learnerProfile.mbtiType.toAsciiUpper() } else { "未填写" }
+        let luminMbti = if (isMbtiType(learnerProfile.luminMbtiType)) { learnerProfile.luminMbtiType.toAsciiUpper() } else { "ENFJ" }
+        preamble = preamble + "\nMBTI 交流偏好（用户档案，不是能力判断）：用户=" + userMbti + "；Lumin=" + luminMbti +
+            "。请让 Lumin 的表达风味明显体现：" + mbtiStyleText(luminMbti) +
+            " 用户类型存在时，优先适配其组织信息的方式，但不贴标签、不据此降低要求或推断能力。"
         if (uiChapter.size > 0) {
             preamble = preamble + "\n用户此刻在应用里正在学《" + uiChapter + "》这一章；" +
                 "他说「这一章 / 这章 / 这节」时指的就是它 —— 直接按这一章处理，不要再让他重复说是哪一章。"
@@ -845,29 +858,8 @@ public class LuminAgent {
         if (answer.size > 0) { log("assistant/message", ap) }
 
         // ---- 引用自检：命中来自 kb_search 的工具记录（结构化载荷），与手写链路同一套算法 ----
-        var hits = JsonArray()
-        let webSources = ArrayList<JsonObject>()
-        var wi = 0
-        for (r in records) {
-            if (r.name == "kb_search" && r.ok) {
-                match (r.details) {
-                    case a: JsonArray =>
-                        if (hits.size() == 0) {
-                            hits = a
-                        }
-                    case _ => ()
-                }
-            }
-            if ((r.name == "web_fetch" || r.name == "web_search") && r.ok) {
-                wi = wi + 1
-                let src = JsonObject()
-                src.put("index", JsonInt(wi))
-                src.put("title", JsonString(r.summary))
-                src.put("url", JsonString(""))
-                src.put("fetchedAt", JsonString(stamp()))
-                webSources.add(src)
-            }
-        }
+        let hits = referenceIndex.localSources()
+        let webSources = referenceIndex.webSources()
         // ---- 产物：模型自己调 save_artifact 落了盘，就从工具记录里取路径 ----
         var artifactPath = ""
         var typedSaved = false

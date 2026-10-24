@@ -344,3 +344,5 @@ body[data-page="study"] .sp-page.sp-page-guided{
 @media (prefers-reduced-motion:reduce){
   .sp-chat-typing span{ animation:none; }
 }
+.sp-sources button.sp-source { display:block; width:100%; padding:8px 0; border:0; background:none; color:var(--ink-2); text-align:left; font:inherit; cursor:pointer; }
+.sp-sources button.sp-source:hover { color:var(--brand); text-decoration:underline; }

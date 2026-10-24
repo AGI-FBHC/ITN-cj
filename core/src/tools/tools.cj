@@ -40,6 +40,7 @@ public func hitJson(chunk: KbChunk, score: Float64): JsonObject {
     let o = JsonObject()
     o.put("score", JsonFloat(score))
     o.put("id", JsonString(chunk.id))
+    o.put("chunkId", JsonString(chunk.id))
     o.put("docPath", JsonString(chunk.docPath))
     o.put("docTitle", JsonString(chunk.docTitle))
     o.put("headingPath", JsonString(chunk.headingPath))
@@ -105,7 +106,13 @@ public class ToolRegistry {
         let mode = mode0 + note
         let arr = JsonArray()
         for (h in hits) {
-            arr.add(hitJson(h.chunk, h.score))
+            let hit = hitJson(h.chunk, h.score)
+            hit.put("kbId", JsonString(kbId))
+            match (s.findKb(kbId)) {
+                case Some(kb) => hit.put("kbName", JsonString(kb.name))
+                case None => ()
+            }
+            arr.add(hit)
         }
         r.data = arr
         r.summary = "命中 " + hits.size.toString() + " 个切片（" + mode + "）"

@@ -5650,3 +5650,12 @@ read_chunk 读得到原文并带回库标识与正文。
 - 先写回归再修出真实缺陷：引用按钮的闭包捕获了循环结束后的 `match=null`，导致真实鼠标点击报 `Cannot read properties of null (reading '1')`；改为捕获当前 `mark` 和 `source` 后通过。另修正知识库路径被误标成绝对 file 路径的问题、Bare URL 吞掉中文逗号和后续文本的问题、引用路径标题丢失的问题。
 - 新增 `tools/reference-link-check.cjs`（真实 Edge + 隔离仓颉 KB + 注入 Electron bridge 记录）：11/11 通过，覆盖外部 URL、目录/文件 openPath、知识库 `[1]`、网页 `[W2]`、来源行、右侧面板边界和“打开原文件”。截图 `tmp/reference-link-check/knowledge-reference.png` 目视确认右侧面板与对话同层、无横向溢出。回归：chat UX 18/18、knowledge 93/93、learning 45/45、ui-audit 120/120、语法检查通过。
 - 本段仅改 renderer、样式和测试，不改变 Cangjie 内核、数据库、模型/密钥或真实用户数据；`.taste-skill/` 保持未跟踪。MBTI 个性化配置、ENFJ 默认身份和 MBTI 测评引导按用户要求在本段交付后继续。
+
+### 2026-10-24 · 引用访达补全与断点复验
+
+- 恢复被中断的引用访达目标后，重新核对8433acd和MBTI未提交改动；未回退或覆盖这些内容。旧11项回归只用注入bridge，并不足以证明完整访达。补充原生Electron预加载/IPC与文件系统测试48/48（系统打开动作被记录拦截，不声称已验证第三方默认应用质量），报告TEMP/lumin-reference-desktop-nRSxTE/report.json；支持中文空格、UNC、file URI、字面百分号、相对baseDir与行列号。
+- 统一Markdown引用解析，保留带空格/括号/百分号/ampersand的Markdown文件目标、网页完整query、mailto与lumin内部链接。禁止将代码围栏内容变成链接，外部网页不导航走应用。read-only resolveReferencePath先stat和规范化，再交openPath，失败显示原因；系统scheme限定http/https/mailto，Lumin会话深链走本机已有会话页面。
+- 新增仓颉POST /api/kb/reference与resolve_knowledge_reference工具，引用保留kbId/chunkId/text等元数据。跨库同名源未注明库时返回候选，不借当前选择猜测；明确失效切片不会改成其他资料。右侧保留不可变引用片段，可加载完整索引原文、跳到实际切片所在页、加载后续页和从开头阅读；来源移走也保留快照。关闭/再打开、Esc、快速来源切换有独立生命周期，窄窗口自动临时收起会话列表以保留关闭按钮。
+- 发现并修复：W1与本机1同号会误指本机来源；外部URL括号被截断；相对文件依赖错误cwd；知识库首24片以外无法阅读；旧缩写heading导致真实索引文档不能打开；900px侧栏超出窗口38px。新reference-access-check 23/23、原reference-link 11/11；原文Markdown14/14和65行跨页表格14/14；独立KnowledgeReferenceTest8/8、ReferenceContextTest2/2。核心初编译暴露Cangjie关键字unsafe变量与getcwd导入缺失，修正后实际执行通过，未把编译失败或skip算通过。
+- 模型与前端共享每轮来源编号：TurnReferenceIndex在工具返回给模型时分配本地[n]/网页[Wn]，多次搜索/并发工具/跨库来源不会被首个搜索结果遮盖；最终引用从同一登记表生成，网页保留真实url而非空字符串。新增引用工具在宿主注册，最终包复制reference-paths.cjs并纳入资产hash。
+- 用户追加顺序：先手头引用任务做好并深度测试，再加学习档案个性化（用户MBTI、Lumin MBTI、默认ENFJ、对话问答推断并经确认填写），最后稍微优化Markdown代码块和表格。现已完成引用定向验收，继续完善MBTI流程；已有简单选择器/字段和提示词是前轮未提交草稿，不将其视作完整问答功能或完整授权验证。

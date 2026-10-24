@@ -331,6 +331,84 @@ function hydrateKnowledgeImages(root) {
   }
 }
 
+const REFERENCE_FILE_EXT = /\.(?:md|markdown|txt|text|csv|tsv|log|jsonl?|pptx?|docx?|xlsx?|pdf|png|jpe?g|webp|gif|svg|html?|xml|ya?ml|toml|zip|cj|js|jsx|ts|tsx|css|rs|go|java|py|c|cpp|h|ps1)(?::\d+(?::\d+)?)?(?:#L?\d+(?:C\d+)?)?$/i;
+
+function localReferencePath(value) {
+  const path = String(value || '').trim();
+  return !/[\r\n]/.test(path) && (/^(?:file:\/\/|[A-Za-z]:[\\/]|\\\\|\.{1,2}[\\/]|\/)/.test(path) ||
+    REFERENCE_FILE_EXT.test(path) || (path.length > 3 && /^[^\s<>]+[\\/][^\s<>]*$/.test(path)));
+}
+
+function referenceSpec(value, options = {}) {
+  const target = String(value || '').trim();
+  if (!target || /[\u0000-\u001f]/.test(target)) return null;
+  if (/^(?:https?:\/\/|mailto:)/i.test(target)) return {kind: 'web', target};
+  if (/^www\./i.test(target)) return {kind: 'web', target: 'https://' + target};
+  if (/^lumin:\/\//i.test(target)) return {kind: 'internal', target};
+  if (target.startsWith('#')) return {kind: 'anchor', target: target.slice(1)};
+  const sources = options.citations || [];
+  const matching = sources.filter(source => source.kind !== 'web' && String(source.docPath || '').replace(/\\/g, '/') === target.replace(/\\/g, '/'));
+  if (matching.length) return {kind: 'kb', citation: {...matching[0], kbId: matching.length > 1 ? '' : matching[0].kbId || ''}, target};
+  if (/^[a-z][\w+.-]*:/i.test(target) && !/^[A-Za-z]:[\\/]/.test(target) && !/^file:/i.test(target)) return null;
+  if (options.document && options.kbId && !/^(?:file:|[A-Za-z]:[\\/]|\\\\)/i.test(target)) {
+    try {
+      const base = new URL('/' + String(options.docPath || '').replace(/\\/g, '/'), 'https://knowledge.invalid');
+      const resolved = new URL(target.replace(/\\/g, '/'), base);
+      if (resolved.origin === base.origin) return {kind: 'kb', target, citation: {kbId: options.kbId, docPath: decodeURIComponent(resolved.pathname.slice(1)), headingPath: resolved.hash.slice(1)}};
+    } catch (_) { return null; }
+  }
+  if (!localReferencePath(target)) return null;
+  return {kind: 'path', target, baseDir: options.baseDir || referenceBasePath()};
+}
+
+function markdownReference(label, value, options = {}) {
+  const spec = referenceSpec(value, options);
+  if (!spec) return label;
+  const link = document.createElement('a');
+  link.className = 'md-link ' + (spec.kind === 'web' ? 'md-external-link' : 'md-resource-link');
+  link.setAttribute('href', spec.kind === 'web' || spec.kind === 'internal' ? spec.target : '#');
+  link.dataset.reference = JSON.stringify(spec);
+  link.dataset.referenceKind = spec.kind;
+  if (spec.kind === 'path' || spec.kind === 'kb') link.dataset.resourcePath = spec.target;
+  if (spec.kind === 'kb') {
+    link.dataset.kbId = spec.citation.kbId || '';
+    link.dataset.docPath = spec.citation.docPath || '';
+  }
+  if (spec.kind === 'web') { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+  link.innerHTML = label;
+  return link.outerHTML;
+}
+
+// Markdown destinations may contain balanced parentheses, spaces, or <angle brackets>.
+function replaceMarkdownReferences(text, replace) {
+  let output = '', cursor = 0;
+  while (cursor < text.length) {
+    const start = text.indexOf('[', cursor);
+    if (start < 0) return output + text.slice(cursor);
+    const middle = text.indexOf('](', start + 1);
+    if (middle < 0) return output + text.slice(cursor);
+    let end = middle + 2, depth = 1;
+    const angle = text.startsWith('&lt;', end);
+    if (angle) {
+      const close = text.indexOf('&gt;', end + 4);
+      if (close >= 0) end = close + 4;
+    }
+    for (; end < text.length; end++) {
+      if (text[end] === '(') depth++;
+      else if (text[end] === ')' && --depth === 0) break;
+    }
+    if (depth || text.slice(start, end).includes('\n')) return output + text.slice(cursor);
+    let destination = text.slice(middle + 2, end).trim();
+    const bracketed = destination.match(/^&lt;([\s\S]*?)&gt;(?:\s+[\s\S]*)?$/);
+    destination = bracketed ? bracketed[1] : destination.replace(/\s+&quot;[\s\S]*?&quot;$/, '');
+    const image = start > 0 && text[start - 1] === '!';
+    const beginning = image ? start - 1 : start;
+    output += text.slice(cursor, beginning) + replace(text.slice(start + 1, middle), decodeMarkdownAttribute(destination), image);
+    cursor = end + 1;
+  }
+  return output;
+}
+
 function md(src, options = {}) {
   const text = String(src == null ? "" : src);
   const lines = esc(text).split("\n");
@@ -340,53 +418,24 @@ function md(src, options = {}) {
   const inline = (s) => {
     const held = [];
     const hold = html => { const key = held.push(html) - 1; return "\uE000" + key + "\uE001"; };
-    const pathExtensions = "md|markdown|txt|text|csv|tsv|log|json|jsonl|pptx|ppt|docx|doc|pdf|png|jpe?g|webp|gif|svg|html?|xml|ya?ml|toml|zip";
-    const pathToken = new RegExp("(^|[\\s(（:：，,;；])((?:[A-Za-z]:[\\\\/]|\\\\\\\\|/)[^\\s<>\"'`]+|(?:[\\w.-]+[\\\\/])+[\\w.-]*[\\\\/]?|[\\w.-]+\\.(?:" + pathExtensions + "))(?:[\\\\/][^\\s<>\"'`]+)?(?=$|[\\s)）\\[\\]}>，。；：、,.;])", "gi");
-    const pathLink = (label, target, extra = {}) => {
-      let normalized = String(target || "").trim().replace(/[.,;:，。；：]+$/, "");
-      if (/^file:\/\//i.test(normalized)) {
-        normalized = normalized.replace(/^file:\/\//i, "").replace(/^\/([A-Za-z]:)/, "$1");
-      }
-      if (!normalized) return label;
-      const citation = (options.citations || []).find(c => String(c.docPath || "").replace(/\\/g, "/") === normalized.replace(/\\/g, "/"));
-      const attrs = ['class="md-link md-resource-link"', 'href="#"', 'data-resource-path="' + esc(normalized) + '"'];
-      if (citation || extra.kbId || extra.docPath) {
-        attrs.push('data-reference-kind="kb"');
-        attrs.push('data-kb-id="' + esc(citation?.kbId || extra.kbId || options.kbId || "") + '"');
-        attrs.push('data-doc-path="' + esc(citation?.docPath || extra.docPath || normalized) + '"');
-        if (citation?.docTitle) attrs.push('data-reference-title="' + esc(citation.docTitle) + '"');
-      } else {
-        attrs.push('data-reference-kind="path"');
-      }
-      return '<a ' + attrs.join(" ") + '>' + label + '</a>';
-    };
-    const looksLikePath = value => {
-      const v = String(value || "").trim();
-      if (!v || /[\r\n]/.test(v) || /^(?:https?:|mailto:|lumin:)/i.test(v)) return false;
-      if (/^file:\/\//i.test(v)) return true;
-      return /^[A-Za-z]:[\\/]/.test(v) || /^\\\\/.test(v) || /^\//.test(v) ||
-        /^[^<>"'`]+[\\/][^<>"'`]+$/.test(v) || new RegExp("^[^<>/\\\\]+\\.(?:" + pathExtensions + ")$", "i").test(v);
-    };
-    s = s.replace(/`([^`]+)`/g, (_, code) => {
-      return hold(looksLikePath(code)
-        ? pathLink("<code>" + code + "</code>", code)
-        : "<code>" + code + "</code>");
-    });
     if (options.document) {
       s = s.replace(/&lt;\/?(?:strong|b|em|i|u|s|sup|sub|br|div|p|figure|figcaption|img)\b.*?&gt;/gi, tag => hold(safeDocumentTag(tag, options)));
-      s = s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, (_, alt, target) => {
-        const source = target.match(/^&lt;(.*?)&gt;(?:\s+.*)?$/)?.[1] || target.replace(/\s+&quot;.*&quot;$/, "");
-        return hold(documentImageTag(source, alt, options));
-      });
-      s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, target) => hold(documentLinkTag(match, label, target, options)));
     }
-    s = s.replace(/\[([^\]\n]+)\]\((file:\/\/[^)\s]+)\)/gi, (_, label, target) => hold(pathLink(label, target)));
-    s = s.replace(/\[([^\]\n]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|lumin:[^)\s]+)\)/g, (_, label, target) =>
-      hold('<a class="md-link md-external-link" href="' + target + '" target="_blank" rel="noopener noreferrer" data-external-link="1">' + label + "</a>"));
-    s = s.replace(/(^|[\s(（:：])((https?:\/\/)[^\s<，。；：、]+)/gi, (match, prefix, url) =>
-      prefix + hold('<a class="md-link md-external-link" href="' + url + '" target="_blank" rel="noopener noreferrer" data-external-link="1">' + url + "</a>"));
-    s = s.replace(pathToken, (match, prefix, path) => prefix + pathLink(path, path));
-    return s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, '<span class="md-img">图片 · $1</span>')
+    s = replaceMarkdownReferences(s, (label, target, image) => hold(image
+      ? options.document ? documentImageTag(target, decodeMarkdownAttribute(label), options) : '<span class="md-img">图片 · ' + label + '</span>'
+      : markdownReference(label.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>'), target, options)));
+    s = s.replace(/`([^`]+)`/g, (_, code) => hold(markdownReference('<code>' + code + '</code>', decodeMarkdownAttribute(code), options)));
+    s = s.replace(/&lt;((?:https?:\/\/|mailto:)[^\s]+?)&gt;/gi, (_, target) => hold(markdownReference(target, decodeMarkdownAttribute(target), options)));
+    s = s.replace(/(&quot;|「)((?:[A-Za-z]:[\\/]|\\\\|file:\/\/)[^\r\n]*?)(&quot;|」)/gi,
+      (_, before, target, after) => before + hold(markdownReference(target, decodeMarkdownAttribute(target), options)) + after);
+    s = s.replace(/(^|[\s(（:：])((?:https?:\/\/|lumin:\/\/|mailto:|www\.)[^\s\uE000\uE001<，。；！？、]+)/gi, (_, before, target) => {
+      let value = target.replace(/[.!?,;:）]+$/, '');
+      while (value.endsWith(')') && (value.match(/\)/g) || []).length > (value.match(/\(/g) || []).length) value = value.slice(0, -1);
+      return before + hold(markdownReference(value, decodeMarkdownAttribute(value), options)) + target.slice(value.length);
+    });
+    s = s.replace(/(^|[\s(（:：，,;；])((?:[A-Za-z]:[\\/]|\\\\|\.{1,2}[\\/]|\/)[^\s\uE000\uE001<>"'`，。；！？、)）]+|[^\s\uE000\uE001<>"'`，。；！？、()（）]+\.(?:md|markdown|txt|csv|json|pptx|docx|pdf|html?|cj|js|ts|py|ps1))(?=$|[\s\[\]，。；！？、)）])/gi,
+      (_, before, target) => before + hold(markdownReference(target, decodeMarkdownAttribute(target), options)));
+    return s
     .replace(/~~([^~\n]+)~~/g, "<s>$1</s>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\[(\d+)\]/g, '<span class="cite">[$1]</span>')
@@ -485,7 +534,7 @@ function markdownLinkTip() {
 
 function openMarkdownExternalLink(anchor) {
   const href = String(anchor?.getAttribute("href") || "");
-  if (!/^https?:\/\//i.test(href)) return false;
+  if (!/^(?:https?:\/\/|mailto:)/i.test(href)) return false;
   if (window.itnWindow && typeof window.itnWindow.openUrl === "function") {
     window.itnWindow.openUrl(href).then(result => {
       if (result && result.ok === false) toast(result.error || "无法打开链接");
@@ -505,7 +554,7 @@ function installMarkdownLinkInteractions() {
     const href = String(anchor.getAttribute("href") || "");
     let label = href;
     if (anchor.matches("a.md-resource-link")) {
-      label = anchor.dataset.referenceKind === "kb" ? "打开资料引用" : "用系统程序打开";
+      label = anchor.dataset.referenceKind === 'kb' ? '查看资料原文' : anchor.dataset.referenceKind === 'internal' ? '打开 Lumin 内容' : '用系统程序打开';
     } else if (anchor.matches("a[data-kb-document]")) {
       label = "查看资料原文";
     } else {
@@ -524,9 +573,12 @@ function installMarkdownLinkInteractions() {
     const resource = event.target.closest?.("a.md-resource-link");
     if (resource) {
       event.preventDefault();
+      let spec;
+      try { spec = JSON.parse(resource.dataset.reference || 'null'); } catch (_) { spec = null; }
+      if (spec) { Promise.resolve(activateReference(spec, resource)).catch(error => toast(error.message)); return; }
       if (resource.dataset.referenceKind === "kb") {
         openCitationReference({
-          kbId: resource.dataset.kbId || state.kb || "",
+          kbId: resource.dataset.kbId || "",
           docPath: resource.dataset.docPath || resource.dataset.resourcePath || "",
           docTitle: resource.dataset.referenceTitle || resource.textContent || resource.dataset.docPath || "资料引用",
           text: "",
@@ -539,7 +591,7 @@ function installMarkdownLinkInteractions() {
     const kbDocument = event.target.closest?.("a[data-kb-document]");
     if (kbDocument && !(current === "kb" && kbDocument.closest("#view"))) {
       event.preventDefault();
-      openCitationReference({kbId: state.kb, docPath: kbDocument.dataset.kbDocument, docTitle: kbDocument.textContent || "资料引用", text: ""});
+      openCitationReference({kbId: kbDocument.dataset.kbId || '', docPath: kbDocument.dataset.kbDocument, docTitle: kbDocument.textContent || "资料引用", text: ""});
       return;
     }
     const anchor = event.target.closest?.("a.md-external-link");
@@ -556,26 +608,54 @@ function referenceBasePath() {
   } catch (e) { return ""; }
 }
 
-function resolveSystemReference(raw) {
+function resolveSystemReference(raw, baseDir = referenceBasePath()) {
   let path = String(raw || "").trim().replace(/^<|>$/g, "");
-  try { path = decodeURIComponent(path); } catch (e) { /* keep raw */ }
-  if (/^file:\/\//i.test(path)) path = path.replace(/^file:\/\//i, "").replace(/^\/([A-Za-z]:)/, "$1");
+  if (/^file:\/\//i.test(path)) {
+    try { path = decodeURIComponent(path.replace(/^file:\/\//i, '').replace(/^\/([A-Za-z]:)/, '$1')); } catch (_) { return path; }
+  }
   if (/^[A-Za-z]:[\\/]/.test(path) || /^\\\\/.test(path) || /^\//.test(path)) return path;
-  const base = referenceBasePath();
+  const base = baseDir;
   return base ? base + (/[\\/]/.test(base) ? "\\" : "/") + path.replace(/^[\\/]+/, "") : path;
 }
 
-function openSystemReference(raw) {
-  const path = resolveSystemReference(raw);
-  if (!path) { toast("没有可打开的路径"); return false; }
-  if (window.itnWindow && typeof window.itnWindow.openPath === "function") {
-    window.itnWindow.openPath(path).then(result => {
-      if (result && result.ok === false) toast(result.error || "无法打开路径");
-    }).catch(() => toast("无法打开路径"));
+const openingReferences = new Map();
+async function openSystemReference(raw, baseDir = referenceBasePath()) {
+  const key = JSON.stringify([raw, baseDir]);
+  if (openingReferences.has(key)) return openingReferences.get(key);
+  const pending = (async () => {
+    const bridge = window.itnWindow;
+    if (!bridge?.openPath) { toast('打开文件或文件夹只在桌面窗口中可用'); return false; }
+    const resolved = bridge.resolveReferencePath ? await bridge.resolveReferencePath({path: raw, baseDir}) : {ok: true, path: resolveSystemReference(raw, baseDir)};
+    if (!resolved?.ok) { toast(resolved?.error || '找不到引用文件'); return false; }
+    const result = await bridge.openPath(resolved.path);
+    if (result?.ok === false) { toast(result.error || '无法打开路径'); return false; }
     return true;
+  })().catch(error => { toast(error.message || '无法打开路径'); return false; }).finally(() => openingReferences.delete(key));
+  openingReferences.set(key, pending);
+  return pending;
+}
+
+async function activateReference(spec, anchor) {
+  if (spec.kind === 'path') return openSystemReference(spec.target, spec.baseDir);
+  if (spec.kind === 'kb') return openCitationReference(spec.citation);
+  if (spec.kind === 'web') return openMarkdownExternalLink(anchor);
+  if (spec.kind === 'anchor') {
+    const root = anchor.closest('.reference-content,.resource-content,.msg-body,.md') || document;
+    const target = [...root.querySelectorAll('[id],h1,h2,h3,h4,h5,h6')].find(node => node.id === spec.target || node.textContent?.trim().toLowerCase().replace(/\s+/g, '-') === spec.target.toLowerCase());
+    if (target) target.scrollIntoView({block: 'start', behavior: 'smooth'}); else toast('这段内容中没有对应标题');
+    return;
   }
-  toast("打开文件或文件夹只在桌面窗口中可用");
-  return false;
+  if (spec.kind !== 'internal') return;
+  const url = new URL(spec.target), kind = url.hostname;
+  const id = decodeURIComponent(url.pathname.replace(/^\//, ''));
+  if (kind === 'thread' && id) return openChatSession(id);
+  if (kind === 'resource' && id) return openLearningResource(id, Number(url.searchParams.get('version') || 0));
+  if (kind === 'personal' && id) return openPersonalEntry(await api('/api/personal/read', {id}));
+  if (kind === 'knowledge' && id) return window.LuminReferencePanel?.open({kind: 'knowledge', citation: {id}});
+  if ((kind === 'note' || kind === 'wrong') && id) return openPersonalSearchHit({type: kind, id});
+  if (kind === 'kb') return openCitationReference({kbId: id, docPath: url.searchParams.get('path') || '', chunkId: url.searchParams.get('chunkId') || ''});
+  if (kind === 'course-resource' && id && typeof openCourseAsset === 'function') return openCourseAsset({id});
+  toast('这个 Lumin 引用没有对应的内容');
 }
 
 function openCitationReference(citation, label) {
@@ -606,8 +686,10 @@ function linkInlineCitations(root, citations) {
     while ((match = re.exec(text))) {
       const mark = match[1];
       const index = Number(String(mark).replace(/^W/i, ""));
-      const source = citations.find((c, i) => Number(c.index || i + 1) === index) ||
-        (mark[0] === "W" ? citations.find(c => c.kind === "web" && Number(c.index || 0) === index) : null);
+      const source = citations.find((c, i) => {
+        const web = c.kind === 'web' || /^W/i.test(String(c.label || ''));
+        return web === /^W/i.test(mark) && Number(c.index || i + 1) === index;
+      });
       if (!source) continue;
       fragment.appendChild(document.createTextNode(text.slice(last, match.index)));
       const button = btn("[" + mark + "]", "citation-link", () => openCitationReference(source, mark));
@@ -924,6 +1006,8 @@ async function saveProfile(patch) {
     nickname: patch.nickname !== undefined ? patch.nickname : (p.nickname || ""),
     goal: patch.goal !== undefined ? patch.goal : (p.goal || ""),
     weeklyHours: patch.weeklyHours !== undefined ? patch.weeklyHours : (p.weeklyHours || 0),
+    mbtiType: patch.mbtiType !== undefined ? patch.mbtiType : (p.mbtiType || ""),
+    luminMbtiType: patch.luminMbtiType !== undefined ? patch.luminMbtiType : (p.luminMbtiType || "ENFJ"),
     preferredFormats: p.preferredFormats || [],
     selfScores: Object.assign({}, p.selfScores || {}, patch.selfScores || {}),
   };
@@ -1480,6 +1564,7 @@ function clearRouteUi() {
   const dock = $('resource-dock');
   if (dock) { dock.hidden = true; dock.replaceChildren(); }
   document.body.classList.remove('resource-open');
+  document.body.classList.remove('reference-compact');
   document.querySelectorAll('#view audio, #view video, #player audio, #player video').forEach(media => media.pause());
   if (ttsPreviewAudio) { ttsPreviewAudio.pause(); ttsPreviewAudio = null; }
   const player = $('player');
@@ -5416,6 +5501,7 @@ const TOOL_LABEL = {
   restore_course_library: "恢复知识库", record_knowledge_point: "记录知识点", read_knowledge_point: "读取知识点",
   get_learning_context: "学习上下文", remember_learning_fact: "记住偏好", forget_learning_fact: "删除记忆",
   read_learning_resource: "读取学习资源", generate_learning_resource: "生成学习资源", revise_learning_resource: "修改学习资源",
+  set_mbti_preference: "设置交流人格",
   research_topic_team: "主题研究小组", plan_study_team: "学习计划小组",
   search_personal_resources: "搜索个人内容", read_personal_resource: "读取个人内容", save_personal_resource: "保存个人内容",
   create_presentation: "制作演示", list_activity_tasks: "查看任务", cancel_activity_task: "停止任务",
@@ -9131,6 +9217,18 @@ async function settingsModels() {
 /* ---------- 档案与知识库 ---------- */
 
 const SELF_SCORE_KEYS = ["概念理解", "逻辑推理", "工程实践", "问题诊断", "系统设计", "学习迁移"];
+const MBTI_TYPES = [
+  ["INTJ", "INTJ · 建筑师"], ["INTP", "INTP · 逻辑学家"], ["ENTJ", "ENTJ · 指挥官"], ["ENTP", "ENTP · 辩论家"],
+  ["INFJ", "INFJ · 提倡者"], ["INFP", "INFP · 调停者"], ["ENFJ", "ENFJ · 主人公"], ["ENFP", "ENFP · 竞选者"],
+  ["ISTJ", "ISTJ · 物流师"], ["ISFJ", "ISFJ · 守卫者"], ["ESTJ", "ESTJ · 总经理"], ["ESFJ", "ESFJ · 执政官"],
+  ["ISTP", "ISTP · 鉴赏家"], ["ISFP", "ISFP · 探险家"], ["ESTP", "ESTP · 企业家"], ["ESFP", "ESFP · 表演者"],
+];
+
+function mbtiOptions(value, includeUnknown) {
+  const options = includeUnknown ? [{value: "", label: "暂不知道"}] : [];
+  for (const [id, label] of MBTI_TYPES) options.push({value: id, label});
+  return selectOf("", options, value || (includeUnknown ? "" : "ENFJ"));
+}
 
 const SETTINGS_SECTIONS = [
   { id: "general", label: "常规", icon: "sliders", title: "常规" },
@@ -9197,6 +9295,8 @@ function settingsGeneral() {
         nickname: $("pf-nick").value.trim(),
         goal: $("pf-goal").value.trim(),
         weeklyHours: Number($("pf-hours").value) || 0,
+        mbtiType: $("pf-mbti").value,
+        luminMbtiType: $("pf-lumin-mbti").value || "ENFJ",
       });
       toast("档案已保存");
       go("settings", "general");
@@ -9211,6 +9311,27 @@ function settingsGeneral() {
   prow1.appendChild(fieldOf("学习目标", inputOf("pf-goal", "例如 两周内讲完提示词工程", p.goal || "")));
   prow1.appendChild(fieldOf("每周投入（小时）", inputOf("pf-hours", "8", p.weeklyHours || "")));
   prof.appendChild(prow1);
+  const mbtiCard = cardOf({
+    title: "交流人格",
+    sub: "MBTI 只影响 Lumin 的表达方式，不用于能力判断或降低学习要求。",
+  });
+  const mbtiRow = el("div", "row");
+  const myMbti = mbtiOptions(p.mbtiType || "", true);
+  myMbti.id = "pf-mbti";
+  myMbti.setAttribute("aria-label", "我的 MBTI");
+  const luminMbti = mbtiOptions(p.luminMbtiType || "ENFJ", false);
+  luminMbti.id = "pf-lumin-mbti";
+  luminMbti.setAttribute("aria-label", "Lumin 的 MBTI");
+  mbtiRow.append(fieldOf("我的 MBTI", myMbti), fieldOf("Lumin 的 MBTI", luminMbti));
+  mbtiCard.appendChild(mbtiRow);
+  const mbtiHint = el("p", "mbti-help");
+  mbtiHint.append(
+    el("span", "muted", "不知道自己的类型？"),
+    btn("用 8 个问题测一测", "link-button", () => startMbtiAssessment()),
+  );
+  mbtiCard.appendChild(mbtiHint);
+  mbtiCard.appendChild(el("p", "muted", "Lumin 默认使用 ENFJ：先接住你的目标，再给出清楚、可执行的下一步。保存档案后生效。"));
+  prof.appendChild(mbtiCard);
   /* 六维自评只在「我的成长 → 能力校准」里改：同一份数据两个入口，改一处漏一处是上一轮的教训 */
   const hint = el("div", "row profile-hint");
   hint.appendChild(el("span", "muted grow", "六维自评在「我的成长」里用一句话一条校准；这里只管称呼、目标与每周投入。"));
@@ -9218,6 +9339,20 @@ function settingsGeneral() {
   prof.appendChild(hint);
   g.appendChild(prof);
   return g;
+}
+
+async function startMbtiAssessment() {
+  try {
+    await newChat("", "chat");
+    const input = $("chat-input");
+    if (!input) return;
+    input.value = "我想做一次简短的 MBTI 小测评。请一次只问我一个问题，每题给 A/B 两个选项并注明对应维度；先问 8 题，再根据我的选择给出四维结果和置信度。未得到我明确确认前不要写入档案。测评结束后请问我是否用 set_mbti_preference 保存结果。";
+    input.dispatchEvent(new Event("input"));
+    input.focus();
+    toast("已打开 MBTI 测评对话，发送后开始");
+  } catch (e) {
+    toast("打开 MBTI 测评失败：" + e.message);
+  }
 }
 
 /**

@@ -492,6 +492,19 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .reference-path-button { max-width:100%; overflow:hidden; padding:0; border:0; background:none; color:var(--brand); text-align:left; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; font:inherit; }
 .reference-path-button:hover { text-decoration:underline; }
 .reference-open-citation { margin:4px 0 8px; }
+.resource-dock.reference-dock { flex:0 1 var(--dock-w,clamp(300px,42vw,600px)); min-height:0; }
+.reference-body { min-height:0; flex:1; }
+.reference-document { display:block; width:100%; padding:12px 0; border:0; border-bottom:1px solid var(--line-soft); background:none; color:var(--ink); text-align:left; cursor:pointer; font:inherit; }
+.reference-document:hover { color:var(--brand); background:var(--panel-soft); }
+.reference-snapshot,.reference-original { margin:16px 0; }
+.reference-snapshot h3,.reference-original h3 { font-size:15px; margin:0 0 12px; }
+.reference-chunk.cited { background:var(--brand-soft); border-radius:8px; padding:12px; }
+body.reference-compact .app > #panel { display:none; }
+@media(max-width:600px) {
+  .app:has(.reference-dock:not([hidden])) > .main { display:none; }
+  .resource-dock.reference-dock { flex:1; width:auto; min-width:0; }
+  .app:has(.reference-dock:not([hidden])) > #panel { display:none; }
+}
 .study-citation { position:fixed; right:18px; top:130px; width:min(390px,calc(100vw - 36px)); max-height:calc(100vh - 160px); overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:22px; z-index:40; }
 .study-citation .md { font-size:14px; line-height:1.8; overflow-wrap:anywhere; }
 .study-citation .path-line { word-break:break-all; }

@@ -790,6 +790,14 @@ public class Api {
             return
         }
 
+        if (path == "/api/kb/reference" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => ok(ctx, resolveKnowledgeReference(store, b))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/kb/document" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -1532,6 +1540,12 @@ public class Api {
                 t.put("usage", JsonString(d.schema))
                 t.put("available", JsonBool(true))
                 arr.add(t)
+            }
+            for (d in referenceTools(store)) {
+                let t = JsonObject()
+                t.put("name", JsonString(d.name)); t.put("title", JsonString(d.label))
+                t.put("desc", JsonString(d.description)); t.put("usage", JsonString(d.schema))
+                t.put("available", JsonBool(true)); arr.add(t)
             }
             for (d in taskTools(store, "", "")) {
                 let t = JsonObject()
@@ -2684,6 +2698,20 @@ public class Api {
                     d.profile.goal = strOf(b, "goal")
                     let wh = intOf(b, "weeklyHours")
                     if (wh > 0) { d.profile.weeklyHours = wh }
+                    match (b.get("mbtiType")) {
+                        case Some(v) =>
+                            let code = strOf(b, "mbtiType").toAsciiUpper()
+                            if (code.size > 0 && !isMbtiType(code)) { fail(ctx, 400, "MBTI 类型不在标准 16 型中"); return }
+                            d.profile.mbtiType = code
+                        case None => ()
+                    }
+                    match (b.get("luminMbtiType")) {
+                        case Some(v) =>
+                            let code = strOf(b, "luminMbtiType").toAsciiUpper()
+                            if (code.size > 0 && !isMbtiType(code)) { fail(ctx, 400, "Lumin 的 MBTI 类型不在标准 16 型中"); return }
+                            d.profile.luminMbtiType = if (code.size == 0) { "ENFJ" } else { code }
+                        case None => if (d.profile.luminMbtiType.size == 0) { d.profile.luminMbtiType = "ENFJ" }
+                    }
                     d.profile.preferredFormats = strArrayOf(b, "preferredFormats")
                     match (b.get("selfScores")) {
                         case Some(sv) =>
@@ -3527,6 +3555,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/kb/build",
         "/api/kb/stats",
         "/api/kb/document",
+        "/api/kb/reference",
         "/api/kb/image",
         "/api/kb/search",
         "/api/agent/ask",

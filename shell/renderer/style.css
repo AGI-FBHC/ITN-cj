@@ -354,6 +354,18 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand-soft)
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row > * { min-width: 0; }
 .row .grow { flex: 1; }
+.mbti-help { display: flex; align-items: baseline; gap: 7px; margin: 8px 0 2px; font-size: calc(13px * var(--fs, 1)); }
+.link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.link-button:hover { color: var(--ink); }
 
 /* ---------- 进度 / 标签 ---------- */
 .bar { height: 6px; border-radius: 999px; background: var(--panel-sunk); overflow: hidden; }

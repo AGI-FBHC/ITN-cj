@@ -17,6 +17,8 @@ public class LearnerProfile {
     public var nickname: String = ""
     public var goal: String = ""
     public var weeklyHours: Int64 = 8
+    public var mbtiType: String = ""
+    public var luminMbtiType: String = "ENFJ"
     public var preferredFormats: ArrayList<String> = ArrayList<String>()
     // 自评能力，键为维度名，值为 0-100
     public var selfScores: ArrayList<String> = ArrayList<String>()
@@ -54,6 +56,8 @@ public class LearnerProfile {
         o.put("nickname", JsonString(nickname))
         o.put("goal", JsonString(goal))
         o.put("weeklyHours", JsonInt(weeklyHours))
+        o.put("mbtiType", JsonString(mbtiType))
+        o.put("luminMbtiType", JsonString(if (luminMbtiType.size == 0) { "ENFJ" } else { luminMbtiType }))
         o.put("updatedAt", JsonString(updatedAt))
         let fmts = JsonArray()
         for (f in preferredFormats) {
@@ -81,6 +85,11 @@ public class LearnerProfile {
                     p.weeklyHours = 8
                 }
                 p.updatedAt = strOf(o, "updatedAt")
+                p.mbtiType = strOf(o, "mbtiType").toAsciiUpper()
+                p.luminMbtiType = strOf(o, "luminMbtiType").toAsciiUpper()
+                if (p.luminMbtiType.size == 0) {
+                    p.luminMbtiType = "ENFJ"
+                }
                 p.preferredFormats = strArrayOf(o, "preferredFormats")
                 match (o.get("selfScores")) {
                     case Some(sv) =>
@@ -97,6 +106,41 @@ public class LearnerProfile {
         }
         return p
     }
+}
+
+public func isMbtiType(value: String): Bool {
+    let code = value.toAsciiUpper()
+    for (item in [
+        "INTJ", "INTP", "ENTJ", "ENTP",
+        "INFJ", "INFP", "ENFJ", "ENFP",
+        "ISTJ", "ISFJ", "ESTJ", "ESFJ",
+        "ISTP", "ISFP", "ESTP", "ESFP"
+    ]) {
+        if (code == item) { return true }
+    }
+    return false
+}
+
+/** Short style guidance used by the host prompt; MBTI never changes facts or permissions. */
+public func mbtiStyleText(value: String): String {
+    let code = value.toAsciiUpper()
+    if (code == "ENFJ") { return "先接住用户此刻的目标和感受，再给清晰的方向与下一步；多用邀请式提问，语气温暖但不空泛。" }
+    if (code == "ENFP") { return "先展开可能性与灵感，再主动收束成一个可执行下一步；语气有活力，避免只发散不落地。" }
+    if (code == "INFJ") { return "先点出深层模式与意义，再给温和、可执行的路径；用少量有洞察力的问题引导。" }
+    if (code == "INFP") { return "尊重用户的价值感与节奏，用具体例子和故事讲清概念，先理解再给建议。" }
+    if (code == "ENTJ") { return "先给结论、目标和里程碑，再拆成有优先级的行动；表达直接、有决断感。" }
+    if (code == "INTJ") { return "先给模型、依据和边界，再给精简的推进路线；少寒暄，多条件与因果。" }
+    if (code == "ENTP") { return "先用反常识问题和多种方案打开思路，最后明确比较标准并收敛选择。" }
+    if (code == "INTP") { return "先拆概念、变量和反例，再给可以继续探索的问题；保持精确与好奇。" }
+    if (code == "ESFJ") { return "先确认共同目标与协作方式，再用清楚的步骤、反馈和关照推进。" }
+    if (code == "ISFJ") { return "语气稳、细、可依赖；先复述已知事实，再按顺序给具体步骤和小提醒。" }
+    if (code == "ESTJ") { return "先列目标、规则、验收和负责人，再给清单式行动；避免含糊表达。" }
+    if (code == "ISTJ") { return "先给事实、规则、可复现流程和检查点；表达准确、克制、少跳跃。" }
+    if (code == "ESFP") { return "先用鲜活体验和短例子拉近距离，再给马上能做的一步；节奏轻快。" }
+    if (code == "ISFP") { return "语气柔和，先尊重用户自己的感受和选择，再用具体、可感知的练习推进。" }
+    if (code == "ESTP") { return "先说现实场景和最快的验证办法，再边做边校准；表达简洁、行动优先。" }
+    if (code == "ISTP") { return "先拆机制、工具和可操作步骤，再给一个最小实验；少铺陈，重视手感。" }
+    return "先理解用户当下目标，再给出清楚、可执行的下一步；表达自然，不生搬人格标签。"
 }
 
 public func intValue(v: JsonValue): Int64 {
@@ -534,6 +578,9 @@ public class StudyStore {
         let p = LearnerProfile()
         p.nickname = db().getKv("profile", "nickname", "")
         p.goal = db().getKv("profile", "goal", "")
+        p.mbtiType = db().getKv("profile", "mbtiType", "").toAsciiUpper()
+        p.luminMbtiType = db().getKv("profile", "luminMbtiType", "ENFJ").toAsciiUpper()
+        if (p.luminMbtiType.size == 0) { p.luminMbtiType = "ENFJ" }
         p.updatedAt = db().getKv("profile", "updatedAt", "")
         let hours = db().getKv("profile", "weeklyHours", "")
         if (hours.size > 0) {
@@ -564,6 +611,19 @@ public class StudyStore {
             }
         }
         return p
+    }
+
+    /** Update profile-facing keys without rewriting study progress, notes or quiz records. */
+    public func saveProfile(p: LearnerProfile): Unit {
+        ensureDir(dataDir)
+        db().putKv("profile", "nickname", p.nickname)
+        db().putKv("profile", "goal", p.goal)
+        db().putKv("profile", "weeklyHours", p.weeklyHours.toString())
+        db().putKv("profile", "updatedAt", if (p.updatedAt.size > 0) { p.updatedAt } else { nowStamp() })
+        db().putKv("profile", "formats", joinList(p.preferredFormats))
+        db().putKv("profile", "selfScores", selfScoresJson(p))
+        db().putKv("profile", "mbtiType", if (isMbtiType(p.mbtiType)) { p.mbtiType.toAsciiUpper() } else { "" })
+        db().putKv("profile", "luminMbtiType", if (isMbtiType(p.luminMbtiType)) { p.luminMbtiType.toAsciiUpper() } else { "ENFJ" })
     }
 
     public func load(): StudyData {
@@ -643,6 +703,8 @@ public class StudyStore {
         ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("nickname"), tv(d.profile.nickname)])))
         ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("goal"), tv(d.profile.goal)])))
         ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("weeklyHours"), tv(d.profile.weeklyHours.toString())])))
+        ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("mbtiType"), tv(d.profile.mbtiType)])))
+        ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("luminMbtiType"), tv(if (d.profile.luminMbtiType.size == 0) { "ENFJ" } else { d.profile.luminMbtiType })])))
         ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("updatedAt"), tv(d.profile.updatedAt)])))
         ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("formats"), tv(joinList(d.profile.preferredFormats))])))
         ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("selfScores"), tv(selfScoresJson(d.profile))])))
