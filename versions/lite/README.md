@@ -157,7 +157,6 @@ node --test --test-concurrency=1 tests/ingestion-v2.test.mjs
 - `apps/web/src/tutor.js`：用户端 AI 导师的请求封装，由阅读页提问面板调用。
 - `tools/`、`scripts/`：静态源码恢复、课程导入、启动与管理员账号脚本。
 - `deployed/`：线上发布产物原件，保持逐字节不变。
-- `TRACE.md`：跨会话操作记录。
 
 ## 原始页面
 
