@@ -39,6 +39,7 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
   check('folder choice clearly shows how files are used',await page.locator('#kb-source-mode').innerText()==='文件夹 · 原地使用');
   await page.fill('#kb-import-name','工具课程');await page.getByRole('button',{name:'添加并索引',exact:true}).click();
   await until(async()=>{const s=(await (await fetch(base+'/api/settings')).json()).data;return s.knowledgeBases.some(k=>k.id==='legacy-manual'&&k.chunkCount>0);});
+  if(await page.locator('.app-modal').count())await page.locator('.app-modal-actions').getByRole('button',{name:'关闭',exact:true}).click();
   const before=(await (await fetch(base+'/api/settings')).json()).data.knowledgeBases;
   const kb=before.find(k=>k.id==='legacy-manual');
   check('import reuses a legacy manually registered directory',before.filter(k=>k.rootDir===source).length===1&&kb.name==='工具课程');

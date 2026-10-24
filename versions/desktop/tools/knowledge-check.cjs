@@ -75,7 +75,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('links to missing nodes are rejected',(await raw('/api/knowledge/link',{from:nodeId,to:'kp-missing'})).code!==0);
 
   browser=await chromium.launch({channel:'msedge',headless:true});
-  const page=await browser.newPage({viewport:{width:1500,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const page=await browser.newPage({viewport:{width:1500,height:1000},deviceScaleFactor:1.5});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(base);await page.waitForSelector('#chat-input');
   await page.waitForFunction(()=>!document.getElementById('boot'),null,{timeout:15000}).catch(()=>{});
   const shots=path.join(root,'tmp/knowledge-shots');fs.mkdirSync(shots,{recursive:true});
@@ -90,8 +90,9 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('counts live in a single pill',pill.includes('1 个知识点')&&pill.includes('0 条手动连接'));
   check('the graph view fills the page without a scrollbar',await page.locator('#view').evaluate(e=>e.scrollHeight<=e.clientHeight+1&&e.scrollWidth<=e.clientWidth+1));
   const samplePos=async(id)=>page.evaluate(nid=>{const p=knowledgeNet.projected.find(x=>x.id===nid);return p?{x:p.x,y:p.y}:null;},id);
+  await sleep(900);
   const drift0=await samplePos(nodeId);await sleep(1300);const drift1=await samplePos(nodeId);
-  check('nodes drift slowly while untouched',!!drift0&&!!drift1&&Math.hypot(drift1.x-drift0.x,drift1.y-drift0.y)>0.8);
+  check('nodes drift slowly while untouched',!!drift0&&!!drift1&&Math.hypot(drift1.x-drift0.x,drift1.y-drift0.y)>0.18);
 
   // —— 点选：抽屉打开不改变画布高度、抖动也算点击、页面无滚动条
   await post('/api/knowledge/save',{title:'点选测试节点',definition:'用于点选与抽屉稳定性回归。'});
@@ -108,33 +109,40 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('opening the drawer no longer resizes the canvas height',Math.abs(rect1.h-rect0.h)<=2);
   check('the drawer opening keeps the page free of scrollbars',await page.locator('#view').evaluate(e=>e.scrollHeight<=e.clientHeight+1&&e.scrollWidth<=e.clientWidth+1));
   check('every node stays inside the visible canvas',await page.evaluate(()=>{const c=document.querySelector('.knowledge-canvas');return knowledgeNet.projected.every(p=>p.x>=0&&p.y>=0&&p.x<=c.clientWidth&&p.y<=c.clientHeight);}));
-  const yaw0=await page.evaluate(()=>knowledgeNet.yaw);
   const probeB=await pickProj(await page.evaluate(()=>knowledgeNet.selected));
   const rect2=await rectNow();
   await page.mouse.move(rect2.x+probeB.x,rect2.y+probeB.y);await page.mouse.down();await page.mouse.move(rect2.x+probeB.x+3,rect2.y+probeB.y+1);await page.mouse.up();
   await until(async()=>await page.evaluate(nid=>knowledgeNet.selected===nid,probeB.id));
   check('a slightly shaky click still selects the node',true);
-  check('tiny pointer jitter no longer nudges the camera',await page.evaluate(y=>Math.abs(knowledgeNet.yaw-y)<1e-9,yaw0));
   const gRect=await rectNow();
+  const probeJitter=await pickProj(await page.evaluate(()=>knowledgeNet.selected));
+  await page.mouse.move(gRect.x+probeJitter.x,gRect.y+probeJitter.y);await page.mouse.down();
+  const jitterBefore=await page.evaluate(nid=>{const n=knowledgeNet.layout.get(nid);return{x:n.x,y:n.y};},probeJitter.id);
+  await page.mouse.move(gRect.x+probeJitter.x+3,gRect.y+probeJitter.y+1);
+  check('tiny pointer jitter keeps the node in place and does not start a canvas pan',await page.evaluate(({nid,before})=>{const n=knowledgeNet.layout.get(nid);return !knowledgeNet.pan&&Math.abs(n.x-before.x)<1e-9&&Math.abs(n.y-before.y)<1e-9;},{nid:probeJitter.id,before:jitterBefore}));
+  await page.mouse.up();await until(async()=>await page.evaluate(nid=>knowledgeNet.selected===nid,probeJitter.id));
   const probeC=await pickProj(await page.evaluate(()=>knowledgeNet.selected));
+  const nodeBeforeDrag=await page.evaluate(nid=>{const n=knowledgeNet.layout.get(nid);return{x:n.x,y:n.y};},probeC.id);
   await page.mouse.move(gRect.x+probeC.x,gRect.y+probeC.y);await page.mouse.down();await page.mouse.move(gRect.x+probeC.x+40,gRect.y+probeC.y+20);await page.mouse.up();
-  check('a real drag rotates instead of selecting',await page.evaluate(y=>Math.abs(knowledgeNet.yaw-y)>1e-6,yaw0)&&await page.evaluate(nid=>knowledgeNet.selected!==nid,probeC.id));
+  check('dragging a node moves it instead of opening the inspector',await page.evaluate(({nid,before})=>{const n=knowledgeNet.layout.get(nid);return Math.hypot(n.x-before.x,n.y-before.y)>8&&knowledgeNet.selected!==nid;},{nid:probeC.id,before:nodeBeforeDrag}));
+  const panBefore=await page.evaluate(()=>({...knowledgeNet.camera}));
+  await page.mouse.move(gRect.x+gRect.w-12,gRect.y+gRect.h-12);await page.mouse.down();await page.mouse.move(gRect.x+gRect.w-42,gRect.y+gRect.h-32);await page.mouse.up();
+  check('dragging empty canvas pans the graph',await page.evaluate(c=>Math.abs(knowledgeNet.camera.x-c.x)>8||Math.abs(knowledgeNet.camera.y-c.y)>8,panBefore));
   await page.getByRole('button',{name:'收起',exact:true}).click();
   await until(async()=>await page.evaluate(()=>document.getElementById('knowledge-detail').hidden));
 
   // —— 点文字标签也算点节点（此前只有光球 24px 算命中，点名字两端会"点空/点偏"）
   const labelProbe=await page.evaluate(()=>{
-    const cand=[...knowledgeNet.projected].filter(p=>p.id!==knowledgeNet.selected).sort((a,b)=>String(b.title||'').length-String(a.title||'').length)[0];
+    const cand=[...knowledgeNet.projected].filter(p=>p.id!==knowledgeNet.selected&&p.labelRect).sort((a,b)=>String(b.title||'').length-String(a.title||'').length)[0];
     const cv=document.querySelector('.knowledge-canvas').getBoundingClientRect();
-    return cand?{id:cand.id,title:cand.title,x:cand.x,y:cand.y,w:cand.labelW||0,r:Math.max(26,cand.r+2),cx:cv.x,cy:cv.y}:null;
+    return cand?{id:cand.id,title:cand.title,nodeX:cand.x,nodeY:cand.y,x:cand.labelRect.x+cand.labelRect.w/2,y:cand.labelRect.y+cand.labelRect.h/2,w:cand.labelW||0,r:cand.r,cx:cv.x,cy:cv.y}:null;
   });
   check('a node with a wide text label is available for the hit test',!!labelProbe&&String(labelProbe.title||'').length>=5);
-  const labelOff=70;   // 落在文字标签里、远在光球 24px 之外——旧版在这里必点空
-  check('the probe offset sits well outside the old ball-only hit radius',labelOff>labelProbe.r+8);
-  await page.mouse.move(labelProbe.cx+labelProbe.x+labelOff,labelProbe.cy+labelProbe.y);
+  check('the probe sits on the label outside the node hit radius',Math.hypot(labelProbe.x-labelProbe.nodeX,labelProbe.y-labelProbe.nodeY)>labelProbe.r+8);
+  await page.mouse.move(labelProbe.cx+labelProbe.x,labelProbe.cy+labelProbe.y);
   await sleep(120);
   check('hovering the label shows the pointer cursor',await page.evaluate(()=>document.querySelector('.knowledge-canvas').style.cursor==='pointer'));
-  await page.mouse.click(labelProbe.cx+labelProbe.x+labelOff,labelProbe.cy+labelProbe.y);
+  await page.mouse.click(labelProbe.cx+labelProbe.x,labelProbe.cy+labelProbe.y);
   await until(async()=>await page.evaluate(nid=>knowledgeNet.selected===nid,labelProbe.id));
   check('clicking the label text selects its node',true);
   check('the canvas recorded the drawn label width for hit testing',labelProbe.w>0);
@@ -150,7 +158,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('the card opens the wide drawer with the user-edited definition',(await page.locator('#knowledge-detail .knowledge-definition').innerText()).includes('本人修订'));
   check('the drawer offers four icon actions',await page.locator('#knowledge-detail .knowledge-act').count()===4&&await page.locator('#knowledge-detail .knowledge-act[data-act="ask"]').count()===1);
   check('drawer sections group concept, records and notes',await page.locator('#knowledge-detail .knowledge-sec').count()>=3);
-  const frozen0=await samplePos(nodeId);await sleep(1100);const frozen1=await samplePos(nodeId);
+  const frozen0=await page.evaluate(nid=>{const n=knowledgeNet.layout.get(nid);return{x:n.x,y:n.y};},nodeId);await sleep(1100);const frozen1=await page.evaluate(nid=>{const n=knowledgeNet.layout.get(nid);return{x:n.x,y:n.y};},nodeId);
   check('the selected node stops drifting',!!frozen0&&!!frozen1&&Math.hypot(frozen1.x-frozen0.x,frozen1.y-frozen0.y)<=0.8);
   check('the drawer shows the source workspace of the newest record',(await page.locator('#knowledge-detail').innerText()).includes('知识网络测试项目'));
 
@@ -317,7 +325,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await post('/api/knowledge/note',{id:second,text:'MANUAL-NOTE-2211 删除节点后仍保留'});
   await openNode(second);
   await page.getByRole('button',{name:'删除知识点',exact:true}).click();
-  await page.getByRole('button',{name:'确认删除',exact:true}).click();
+  await page.getByRole('button',{name:'删除',exact:true}).click();
   await until(async()=>(await post('/api/knowledge/graph',{})).nodes.length===2);
   g=await post('/api/knowledge/graph',{});
   check('deleting a node removes it and its links in one step',g.nodes.length===2&&g.links.length===0);

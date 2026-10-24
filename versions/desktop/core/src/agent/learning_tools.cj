@@ -6,6 +6,7 @@ import itn_desktop_core.store.Store
 import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.knowledge.KnowledgeStore
 import itn_desktop_core.course.CourseStore
+import itn_desktop_core.study.StudyStore
 import itn_desktop_core.learning.arrOf
 import itn_desktop_core.resource.ResourceRequest
 import itn_desktop_core.resource.generateResourceWithCancel
@@ -27,6 +28,7 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
     userText: String, emit: (String, JsonObject) -> Unit): ArrayList<DomainTool> {
     let ls = LearningStore(store.dataDir)
     let out = ArrayList<DomainTool>()
+    for (tool in mbtiTools(store, sid, turnId, userText)) { out.add(tool) }
     out.add(makeTool("resolve_knowledge_image", "定位知识库图片", "读取文档配图的实际来源、路径与格式",
         "doc_path 来自知识库文档或切片，source 来自原文 img src 或 Markdown 图片链接。优先定位同库本地配图，返回本地路径或原网络链接及大小；不返回 base64，定位成功不代表已理解图像内容。",
         "{\"type\":\"object\",\"properties\":{\"kb_id\":{\"type\":\"string\"},\"doc_path\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"}},\"required\":[\"doc_path\",\"source\"]}", "read", { args: JsonObject =>

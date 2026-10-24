@@ -388,6 +388,7 @@ public class ToolBox {
             let o = JsonObject()
             o.put("docPath", JsonString(paths[i]))
             o.put("docTitle", JsonString(titles[i]))
+            o.put("kbId", JsonString(idx.kbId))
             o.put("chunkCount", JsonInt(counts[i]))
             out.add(o)
             i = i + 1
@@ -406,6 +407,8 @@ public class ToolBox {
             if (c.id == chunkId) {
                 let o = JsonObject()
                 o.put("id", JsonString(c.id))
+                o.put("chunkId", JsonString(c.id))
+                o.put("kbId", JsonString(kbId))
                 o.put("docTitle", JsonString(c.docTitle))
                 o.put("docPath", JsonString(c.docPath))
                 o.put("headingPath", JsonString(c.headingPath))
@@ -434,6 +437,7 @@ public class ToolBox {
                     let kbName = if (kb.name.size > 0) { kb.name } else { kb.id }
                     let o = JsonObject()
                     o.put("id", JsonString(c.id))
+                    o.put("chunkId", JsonString(c.id))
                     o.put("docTitle", JsonString(c.docTitle))
                     o.put("docPath", JsonString(c.docPath))
                     o.put("headingPath", JsonString(c.headingPath))

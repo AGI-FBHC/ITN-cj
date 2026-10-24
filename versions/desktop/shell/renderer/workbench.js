@@ -1,12 +1,12 @@
 /* Personal learning workspace. Data and task truth come from the Cangjie API. */
 const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz: '分阶测试', ppt: 'PPT 演示', legacy:'历史资料'};
 const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', completed: '已完成', failed: '未完成', cancelled: '已取消', interrupted: '上次任务已中断'};
-const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
+const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null, reference: null};
 
 // Keep the lock outside any particular dialog so reopening it cannot repeat a write.
-function workbenchRequestButton(label,cls,key,busyLabel,task) {
+function workbenchRequestButton(label,cls,key,busyLabel,task,options) {
   const button=btn(label,cls,null);
-  button.onclick=()=>runGuarded(typeof key==='function'?key():key,button,busyLabel,task).catch(e=>toast(e.message));
+  button.onclick=()=>runGuarded(typeof key==='function'?key():key,button,busyLabel,task,options).catch(e=>toast(e.message));
   return button;
 }
 
@@ -71,7 +71,7 @@ Object.assign(TOOL_LABEL, {
   read_learning_resource: '读取学习资源', get_learning_context: '读取学习上下文',
   remember_learning_fact: '记录学习偏好', forget_learning_fact: '忘记学习记忆',
 });
-for (const name of ['generate_learning_resource', 'revise_learning_resource', 'read_learning_resource', 'get_learning_context', 'remember_learning_fact', 'forget_learning_fact']) TOOL_GROUP[name] = '学习资源';
+for (const name of ['generate_learning_resource', 'revise_learning_resource', 'read_learning_resource', 'get_learning_context', 'remember_learning_fact', 'forget_learning_fact', 'set_mbti_preference']) TOOL_GROUP[name] = '学习资源';
 if (!TOOL_GROUP_ORDER.includes('学习资源')) TOOL_GROUP_ORDER.push('学习资源');
 
 function promptLearning(text) {
@@ -105,12 +105,14 @@ function ensureResourceDock() {
     // 成果面板的宽度也要能拖：面板是动态创建的，拖动条得在这时候挂
     if (typeof installSplitters === 'function') installSplitters();
   }
-  const reader = current === 'resources' ? $('outcome-reader') : null;
+  const referenceMode = !!workbench.reference;
+  const reader = !referenceMode && current === 'resources' ? $('outcome-reader') : null;
   const embedded = !!reader;
   if (embedded && dock.parentElement !== reader) reader.appendChild(dock);
   if (!embedded && dock.parentElement !== document.querySelector('.app')) document.querySelector('.app').appendChild(dock);
   dock.classList.toggle('embedded-resource', embedded);
-  dock.hidden = !workbench.open || (!embedded && current !== 'chat');
+  dock.classList.toggle('reference-dock', referenceMode);
+  dock.hidden = !workbench.open || (!embedded && !referenceMode && current !== 'chat');
   if (reader) reader.classList.toggle('has-selection', !dock.hidden);
   document.body.classList.toggle('resource-open', !embedded && !dock.hidden);
   return dock;
@@ -124,9 +126,13 @@ renderResourceDock = function () {
 };
 
 function closeResourceDock() {
+  const origin = workbench.reference?.origin;
   ++workbench.loadToken;
   workbench.open = false;
+  workbench.reference = null;
   ensureResourceDock();
+  document.body.classList.remove('reference-compact');
+  origin?.isConnected && origin.focus({preventScroll: true});
   (current === 'resources' ? document.querySelector('.outcome-grid .resource-entry.selected') : $('wb-artifacts'))?.focus();
 }
 
@@ -141,7 +147,7 @@ async function openLearningResource(id, version) {
       await navigation;
       if (generation !== state.navigationGeneration) return;
     }
-    workbench.file=null;workbench.selected = resource;
+    workbench.file=null;workbench.reference=null;workbench.selected = resource;
     workbench.open = true;
     renderResourceDock();
     document.querySelectorAll('.outcome-grid .resource-entry').forEach(node => {
@@ -161,6 +167,8 @@ async function startAgentTask(question,projectId) {
 function openPresentationBrief(res) {
   document.querySelector('.presentation-brief')?.remove();
   const overlay=el('div','task-modal presentation-brief'),dialog=el('section','task-modal-card');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','确认PPT制作需求');
+  let unbindEscape=()=>{};
+  const close=()=>{unbindEscape();overlay.remove();};
   dialog.append(el('h2',null,'这份 PPT 要讲给谁？'),el('p','muted','Lumin 会按确认的需求重新设计页面，制作可编辑的 PowerPoint 文件。'));
   const audience=inputOf('ppt-audience','例如：初学者、项目评审','初学者'),purpose=inputOf('ppt-purpose','例如：课堂讲解、项目汇报','清楚讲解核心概念与应用'),pages=inputOf('ppt-pages','页数','8'),style=inputOf('ppt-style','配色、版式或参考风格','简洁，墨绿与暖金，图文结合');
   pages.type='number';pages.min='1';pages.max='60';
@@ -173,16 +181,18 @@ function openPresentationBrief(res) {
   const submit=async waive=>{
     if(!waive&&(!audience.value.trim()||!purpose.value.trim()||!style.value.trim()||Number(pages.value)<1||Number(pages.value)>60)){toast('请填写完整需求，页数1至60');return;}
     const details=waive?'无需确认PPT细节，受众、页数和风格由你决定，直接制作。':'已确认PPT细节：受众='+audience.value+'；用途='+purpose.value+'；页数='+pages.value+'；风格='+style.value+'；背景样式='+background.value+'；内容密度='+detail.value+'。';
-    overlay.remove();try{await startAgentTask(details+source+'请使用create_presentation逐页设计并制作真实.pptx文件，包括合适的版式与讲者备注。先提供候选产物让我看，不要自动存入个性资源。');}catch(e){toast(e.message);}
+    close();try{await startAgentTask(details+source+'请使用create_presentation逐页设计并制作真实.pptx文件，包括合适的版式与讲者备注。先提供候选产物让我看，不要自动存入个性资源。');}catch(e){toast(e.message);}
   };
-  const actions=el('div','row');actions.append(btn('按要求制作','primary',()=>submit(false)),btn('直接制作','ghost',()=>submit(true)),btn('取消','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);audience.focus();
-  overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  const actions=el('div','row');actions.append(btn('按要求制作','primary',()=>submit(false)),btn('直接制作','ghost',()=>submit(true)),btn('取消','ghost',close));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);unbindEscape=bindModalEscape(overlay,close);audience.focus();
+  overlay.onclick=e=>{if(e.target===overlay)close();};
 }
 const PERSONAL_FORMAT={pptx:'PowerPoint',ppt:'PowerPoint',md:'Markdown',markdown:'Markdown',html:'网页',htm:'网页',docx:'Word',pdf:'PDF',png:'图片',jpg:'图片',jpeg:'图片',svg:'SVG',txt:'文本'};
 async function offerPersonalSave(file) {
   if(typeof offerCourseSave==='function'&&await offerCourseSave(file))return;
   document.querySelector('.personal-save-confirm')?.remove();
   const settings=await api('/api/personal/settings',{}),overlay=el('div','task-modal personal-save-confirm'),dialog=el('section','task-modal-card');
+  let unbindEscape=()=>{};
+  const close=()=>{unbindEscape();overlay.remove();};
   dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','确认存入个性资源');
   dialog.append(el('h2',null,'满意这版，再存入个性资源'),el('p','muted','确认后会创建这一版的独立副本；后续修改候选稿不会覆盖它。'));
   const title=inputOf('personal-save-title','资源名称',file.title || file.name || '个性资源');dialog.appendChild(fieldOf('资源名称',title));
@@ -190,11 +200,11 @@ async function offerPersonalSave(file) {
   const actions=el('div','row'),confirm=workbenchRequestButton('确认存入','primary','personal:save:'+file.path,'正在存入…',async()=>{
     try{
       const saved=await api('/api/personal/save',{path:file.path,title:title.value.trim() || file.name,text:file.indexText || file.text || '',learningId:file.learningId || '',learningVersion:file.learningVersion || 0,sessionId:file.sessionId || state.chatSessionId || '',turnId:file.turnId || '',confirmed:true});
-      overlay.remove();toast('已存入个性资源 · 确认版本 '+saved.version);if(current==='resources')await go('resources');
+      close();toast('已存入个性资源 · 确认版本 '+saved.version);if(current==='resources')await go('resources');
     }catch(e){toast('保存失败：'+e.message);}
   });
-  actions.append(confirm,btn('这版先不存','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);title.focus();
-  overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  actions.append(confirm,btn('这版先不存','ghost',close));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);unbindEscape=bindModalEscape(overlay,close);title.focus();
+  overlay.onclick=e=>{if(e.target===overlay)close();};
 }
 async function openPersonalEntry(item) {
   if(!['chat','resources'].includes(current))await go('resources');
@@ -234,8 +244,8 @@ function fileArtifactCard(artifact) {
 async function openFilePreview(file,metadata={}) {
   if(!window.itnWindow?.readResourceFile){toast('文件预览只在桌面窗口中可用');return;}
   const generation=state.navigationGeneration,token=++workbench.loadToken,data=await window.itnWindow.readResourceFile(file);if(token!==workbench.loadToken||generation!==state.navigationGeneration)return;
-  if(!data.ok){workbench.file={kind:'file',path:file,name:String(file).replace(/\\/g,'/').split('/').pop(),error:data.error,...metadata};workbench.selected=null;workbench.open=true;renderResourceDock();return;}
-  workbench.file={...data,...metadata,path:data.path};workbench.selected=null;workbench.open=true;renderResourceDock();
+  if(!data.ok){workbench.file={kind:'file',path:file,name:String(file).replace(/\\/g,'/').split('/').pop(),error:data.error,...metadata};workbench.selected=null;workbench.reference=null;workbench.open=true;renderResourceDock();return;}
+  workbench.file={...data,...metadata,path:data.path};workbench.selected=null;workbench.reference=null;workbench.open=true;renderResourceDock();
 }
 function renderFilePreview(dock,file) {
   const head=el('header','resource-dock-head');head.append(el('strong','grow',file.title || file.name),btn('关闭','ghost sm',closeResourceDock));dock.appendChild(head);
@@ -252,8 +262,178 @@ function renderFilePreview(dock,file) {
     box.append(el('strong',null,'这份 PPT 没有版面预览'),el('p',null,'不再用文字提纲冒充幻灯片。用 PowerPoint 打开可查看完整排版。'));
     if(window.itnWindow?.openPath)box.appendChild(btn('用 PowerPoint 打开','primary sm',async()=>{const result=await window.itnWindow.openPath(file.path);if(result&&result.ok===false)toast(result.error||'无法打开 PPT');}));
     body.appendChild(box);
-  }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '');else article.textContent=file.text || file.error || '';body.appendChild(article);}
+  }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '',{baseDir:String(file.path || '').replace(/[\\/][^\\/]+$/, '')});else article.textContent=file.text || file.error || '';body.appendChild(article);}
 }
+
+function referenceKb(citation) {
+  const list = state.cfg?.knowledgeBases || [];
+  return list.find(k => k.id === citation?.kbId) || null;
+}
+
+function referencePath(citation) {
+  const raw = String(citation?.docPath || "").trim();
+  if (!raw) return "";
+  if (/^[A-Za-z]:[\\/]/.test(raw) || /^\\\\/.test(raw) || /^\//.test(raw)) return raw;
+  return citation.absolutePath || '';
+}
+
+function openReferencePath(path) {
+  if (!path) { toast("没有可打开的原文件"); return; }
+  if (!window.itnWindow?.openPath) { toast("打开原文件只在桌面窗口中可用"); return; }
+  window.itnWindow.openPath(path).then(result => {
+    if (result?.ok === false) toast(result.error || "无法打开原文件");
+  }).catch(() => toast("无法打开原文件"));
+}
+
+function renderReferenceDock(dock, ref) {
+  const citation = ref?.citation || ref || {};
+  const isWeb = citation.kind === "web" || /^https?:\/\//i.test(citation.docPath || citation.url || "");
+  const token = workbench.loadToken;
+  const alive = () => workbench.open && workbench.reference === ref && token === workbench.loadToken && dock.isConnected;
+  const title = citation.docTitle || citation.title || citation.url || citation.docPath || "资料引用";
+  const head = el("header", "resource-dock-head reference-dock-head");
+  const heading = el("div", "grow reference-heading");
+  const titleNode = el('strong', 'reference-title', title);
+  heading.append(el("span", "reference-kicker", ref.kind === 'knowledge' ? '知识点' : isWeb ? "网页引用" : "知识库引用"), titleNode);
+  head.append(heading, btn("关闭", "ghost sm", closeResourceDock));
+  dock.appendChild(head);
+
+  const body = el("div", "resource-dock-body reference-body");
+  dock.appendChild(body);
+  const meta = el("div", "reference-meta");
+  if (citation.headingPath) meta.appendChild(el("span", null, citation.headingPath));
+  if (citation.docPath) meta.appendChild(el("span", "reference-path-text", citation.docPath));
+  if (meta.childElementCount) body.appendChild(meta);
+
+  const actions = el("div", "reference-actions");
+  const openOriginal = btn('打开原文件', 'primary sm', () => openReferencePath(referencePath(citation)));
+  openOriginal.disabled = !referencePath(citation);
+  if (isWeb) {
+    const href = citation.docPath || citation.url || "";
+    actions.appendChild(btn("用浏览器打开", "primary sm", () => {
+      if (!window.itnWindow?.openUrl) { window.open(href, '_blank', 'noopener,noreferrer'); return; }
+      window.itnWindow.openUrl(href).then(result => {
+        if (result?.ok === false) toast(result.error || "无法打开网页");
+      }).catch(() => toast("无法打开网页"));
+    }));
+  } else {
+    if (ref.kind !== 'knowledge') actions.appendChild(openOriginal);
+    actions.appendChild(btn(ref.kind === 'knowledge' ? '查看知识网络' : '打开资料库', 'ghost sm', async () => {
+      if (ref.kind === 'knowledge') { await go('home'); await openKnowledgePoint(citation.id); }
+      else { if (citation.kbId) state.kb = citation.kbId; await go('kb'); }
+    }));
+  }
+  if (citation.chunkId) actions.appendChild(btn("复制引用位置", "ghost sm", () => navigator.clipboard.writeText(citation.chunkId).then(() => toast("已复制引用位置")).catch(() => toast("复制失败"))));
+  if (actions.childElementCount) body.appendChild(actions);
+
+  const content = el("div", "reference-content");
+  body.appendChild(content);
+  if (citation.text) {
+    const saved = el('section', 'reference-snapshot');
+    saved.appendChild(el('h3', '', '引用片段'));
+    const article = el('article', 'md');
+    article.innerHTML = md(citation.text, {document: !!citation.kbId && !isWeb, kbId: citation.kbId, docPath: citation.docPath});
+    saved.appendChild(article); content.appendChild(saved); hydrateKnowledgeImages(article);
+  }
+  const status = el('p', 'muted reference-status', isWeb ? (citation.text ? '' : '在浏览器中查看来源全文。') : '正在读取资料…');
+  content.appendChild(status);
+
+  if (ref?.kind === "knowledge" && citation.id) {
+    api("/api/knowledge/node", {id: citation.id}).then(node => {
+      if (!alive()) return;
+      content.replaceChildren();
+      titleNode.textContent = node.title || '知识点';
+      content.append(el("h3", null, node.title || "知识点"), el("p", null, node.definition || "还没有定义。"));
+      for (const record of node.records || []) {
+        const row = el("section", "reference-chunk");
+        row.appendChild(el("h4", null, record.question || "对话记录"));
+        if (record.note) row.appendChild(el("p", null, record.note));
+        if (record.workspaceRoot) row.appendChild(btn(record.workspaceRoot, "reference-path-button", () => openReferencePath(record.workspaceRoot)));
+        content.appendChild(row);
+      }
+    }).catch(error => toast("读取知识点失败：" + error.message));
+    return;
+  }
+  if (isWeb) return;
+  const load = async () => {
+    if (citation.kbId && !citation.docPath && !citation.chunkId) {
+      const kb = await api('/api/kb/stats', {id: citation.kbId});
+      if (!alive()) return;
+      titleNode.textContent = kb.name || title; status.textContent = '';
+      for (const doc of kb.docs || []) content.appendChild(btn(doc.title || doc.path, 'reference-document', () => openReference({kind: 'citation', citation: {kbId: citation.kbId, docPath: doc.path, docTitle: doc.title}})));
+      if (!kb.docs?.length) status.textContent = '这个知识库还没有资料。';
+      return;
+    }
+    const result = await api('/api/kb/reference', {kbId: citation.kbId || '', docPath: citation.docPath || '', chunkId: citation.chunkId || '', headingPath: citation.headingPath || ''});
+    if (!alive()) return;
+    if (result.status === 'ambiguous') {
+      status.textContent = '找到多份同名资料，选择要查看的来源。';
+      for (const item of result.candidates || []) content.appendChild(btn((item.kbName || item.kbId) + ' · ' + (item.docTitle || item.docPath), 'reference-document', () => openReference({kind: 'citation', citation: {...citation, ...item, text: citation.text || ''}})));
+      return;
+    }
+    if (result.status !== 'found') { status.textContent = citation.text ? '原资料暂不可用，引用片段仍保留。' : '没有找到这份资料，可以检查知识库来源。'; return; }
+    Object.assign(citation, {kbId: result.kbId, docPath: result.docPath, absolutePath: result.absolutePath || ''});
+    titleNode.textContent = result.docTitle || title;
+    openOriginal.disabled = !referencePath(citation);
+    status.textContent = '';
+    const original = el('section', 'reference-original'); original.appendChild(el('h3', '', '资料原文')); content.appendChild(original);
+    const chunks = el('div', 'reference-chunks'); original.appendChild(chunks);
+    let offset = Number(result.pageOffset || 0), loading = false;
+    const more = btn('加载更多', 'ghost sm reference-more', () => read());
+    original.appendChild(more);
+    async function read() {
+      if (loading || offset < 0) return;
+      loading = true; more.disabled = true; more.textContent = '读取中…';
+      try {
+        const page = await api('/api/kb/document', {id: result.kbId, path: result.docPath, offset, limit: 24});
+        if (!alive()) return;
+        for (const chunk of page.chunks || []) {
+          const section = el('section', 'reference-chunk' + (chunk.id === (citation.chunkId || result.chunkId) ? ' cited' : ''));
+          section.dataset.chunkId = chunk.id;
+          if (chunk.headingPath) section.appendChild(el('h4', '', chunk.headingPath));
+          const article = el('article', 'md'); article.innerHTML = md(chunk.text || '', {document: true, kbId: result.kbId, docPath: result.docPath});
+          section.appendChild(article); chunks.appendChild(section); hydrateKnowledgeImages(article);
+        }
+        offset = Number(page.nextOffset); more.hidden = offset < 0; more.textContent = '加载更多';
+      } catch (error) { if (alive()) { more.textContent = '重试'; toast('读取原文失败：' + error.message); } }
+      finally { loading = false; more.disabled = false; }
+    }
+    if (offset > 0) original.insertBefore(btn('从文档开头阅读', 'ghost sm', () => { chunks.replaceChildren(); offset = 0; more.hidden = false; read(); }), chunks);
+    await read();
+  };
+  load().catch(error => { if (alive()) status.textContent = '读取原文失败：' + error.message; });
+}
+
+function openReference(ref) {
+  ref = {...ref, citation: {...(ref.citation || ref)}};
+  ++workbench.loadToken;
+  ref.origin = document.activeElement;
+  workbench.file = null;
+  workbench.selected = null;
+  workbench.reference = ref;
+  workbench.open = true;
+  renderResourceDock();
+  updateReferenceLayout();
+}
+
+window.LuminReferencePanel = {
+  open: openReference,
+  close: closeResourceDock,
+  isOpen: () => !!workbench.reference && !!workbench.open,
+};
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && workbench.open && workbench.reference && !document.querySelector('.app-modal-layer,.task-modal')) {
+    event.preventDefault(); event.stopImmediatePropagation(); closeResourceDock();
+  }
+}, true);
+function updateReferenceLayout() {
+  const app = document.querySelector('.app'), rail = document.getElementById('rail'), panel = document.getElementById('panel');
+  if (!app) return;
+  const panelWidth = panel?.hidden ? 0 : parseFloat(getComputedStyle(panel).width) || 0;
+  document.body.classList.toggle('reference-compact', !!workbench.reference && workbench.open && app.clientWidth - (rail?.offsetWidth || 0) - panelWidth < 660);
+}
+window.addEventListener('resize', updateReferenceLayout);
+window.addEventListener('lumin:ui-zoom', updateReferenceLayout);
 
 async function exportResourceAs(res, kind) {
   if(kind==='pptx'){openPresentationBrief(res);return;}
@@ -273,6 +453,7 @@ function renderResourceDock() {
   const dock = ensureResourceDock();
   // innerHTML 一清，挂在面板边缘的拖动条也没了：刷完内容再挂一次（installSplitters 是幂等的）
   dock.innerHTML = '';
+  if(workbench.reference){renderReferenceDock(dock,workbench.reference);return;}
   if(workbench.file){renderFilePreview(dock,workbench.file);return;}
   const res = workbench.selected;
   const head = el('header', 'resource-dock-head');
@@ -344,11 +525,12 @@ function renderResourceDock() {
   else if (res.kind === 'practice') renderResourcePractice(content, res);
   else if (res.kind === 'ppt') renderPptResourcePreview(content, res);
   else {
-    const article = el('article', 'md'); article.innerHTML = md(res.markdown || '');
+    const article = el('article', 'md'); article.innerHTML = md(res.markdown || '', {citations: res.citations || []});
     if (article.querySelector('h1')?.textContent === res.title) article.querySelector('h1').remove();
     content.appendChild(article);
   }
   body.appendChild(content);
+  linkInlineCitations(content, res.citations || []);
   if (res.kind !== 'quiz') {
     const done = workbenchRequestButton(res.progress?.done ? '已标记完成 · 撤销' : '标记本次学习完成', 'sm ghost', 'resource:progress:'+res.id+':'+res.version, '正在记录…', async () => {
       try {
@@ -365,6 +547,7 @@ function renderResourceDock() {
   for (const c of res.citations || []) {
     const source = el('details', 'resource-source');
     source.appendChild(el('summary', null, '[' + c.index + '] ' + (c.docTitle || '') + ' · ' + (c.headingPath || '')));
+    source.appendChild(btn('打开引用', 'ghost sm reference-open-citation', () => openReference({kind: 'citation', citation: c})));
     source.appendChild(el('p', 'muted sm', (c.docPath || '') + ' · 生成时的资料切片'));
     const article = el('article', 'md'); article.innerHTML = md(c.text || '此历史资源没有保存切片快照，请回到知识库核实原文。');
     source.appendChild(article); provenance.appendChild(source);
@@ -623,7 +806,7 @@ function syncWorkbenchEvents(events) {
     if (workbench.seenSaved.has(key)) continue;
     workbench.seenSaved.add(key);
     // Only newly produced resources open automatically; historic cards remain clickable.
-    if (current==='chat' && state.chatRequest && e.turnId === state.chatRequest.turnId) openLearningResource(e.payload.id, e.payload.version);
+    if (current==='chat' && state.chatRequest && !workbench.reference && e.turnId === state.chatRequest.turnId) openLearningResource(e.payload.id, e.payload.version);
   }
 }
 
@@ -776,7 +959,8 @@ PAGES.kb.render = async function() {
   const browser = el('div', 'document-browser'); browser.append(documents, preview); view.insertBefore(browser, view.querySelector('.harvest-entry'));
   preview.setAttribute('aria-label', '资料阅读区');
   const results = view.querySelector('.library-results'); documents.appendChild(results);
-  documents.appendChild(btn('返回文档列表', 'ghost sm search-reset', () => { results.innerHTML = ''; view.querySelector('[aria-label="搜索资料内容"]').value = ''; }));
+  // 返回按钮放在结果上方：长结果列表时它仍第一眼可见，而不是沉到卡片底部。
+  documents.insertBefore(btn('返回文档列表', 'ghost sm search-reset', () => { results.innerHTML = ''; view.querySelector('[aria-label="搜索资料内容"]').value = ''; }), results);
   const first = documents.querySelector('.library-document[data-status="ready"] button:not([disabled])') || documents.querySelector('.library-document button:not([disabled])');
   if (first) { first.dataset.autoPreview='true'; first.click(); delete first.dataset.autoPreview; }
 };
@@ -813,6 +997,10 @@ PAGES.kb.render=async function(){
 const studyJobs = new Map();
 const studyQuizCache = new Map();
 function openStudyCitation(source, index, origin) {
+  if (window.LuminReferencePanel?.open) {
+    window.LuminReferencePanel.open({kind: "citation", citation: source, label: String(index)});
+    return;
+  }
   document.querySelector('.study-citation')?.remove();
   const drawer=el('aside','study-citation'); drawer.setAttribute('aria-label','引用原文'); drawer.setAttribute('role','dialog');
   const head=el('div','row'); head.append(el('strong','grow','['+index+'] '+(source.docTitle || '资料原文')));
@@ -1047,20 +1235,32 @@ PAGES.notes.render = async function() {
 
 boot();
 
-/* Main-node knowledge network: visual language adapted from the existing web KnowledgeGraph3D.
-   The desktop projection keeps its soft purple orbs and spatial orbit, with no inferred edges.
-   这一页现在是"知识网络"主页：网络图 / 时间线两种视图共用右侧宽抽屉与编辑弹层。 */
-const knowledgeNet={data:{nodes:[],links:[]},selected:'',yaw:.28,pitch:.12,zoom:1,canvas:null,draw:null,projected:[],visible:null,showLinkLabels:true,linkLabels:[],view:'graph',range:0,timeline:null,timelineQuery:'',introSpinRequested:false,autoSpinStart:0,autoSpinUntil:0,userInteracted:false};
+/* Main-node knowledge network.
+   视觉和交互参考 Obsidian Graph view 的克制关系图语言：小型节点、低对比连线、
+   标签渐隐、力导向布局、悬停突出关联；不复制品牌外观，也不自动推断业务连线。
+   网络图 / 时间线两种视图仍共用右侧检查器与编辑弹层。 */
+const knowledgeNet={data:{nodes:[],links:[]},selected:'',hover:'',camera:{x:0,y:0,zoom:1},layout:new Map(),canvas:null,draw:null,fit:null,rebuild:null,projected:[],visible:null,showLinkLabels:true,linkLabels:[],view:'graph',range:0,timeline:null,timelineQuery:'',introMotionRequested:false,introMotionStart:0,introMotionUntil:0,userInteracted:false,alpha:0,reducedMotion:false,pan:null,dragNode:null};
 const KNOWLEDGE_SWATCHES=['#8B7DA8','#5A8DEE','#2FB8A6','#E4B363','#E07A5F','#C77DFF','#7BC96F','#E5679B'];
 function normalizeKnowledgeColor(v){const m=/^#?([0-9a-f]{6})$/i.exec(String(v||'').trim());return m?('#'+m[1].toUpperCase()):'';}
 function knowledgeRgb(node){const c=normalizeKnowledgeColor(node?.color);if(!c)return null;const n=parseInt(c.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255];}
 function knowledgePhase(id){let h=0;const s=String(id||'');for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return (h%1000)/1000*Math.PI*2;}
+function knowledgeHash(value){let h=2166136261;const s=String(value||'');for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function knowledgeParseCssColor(value,fallback){
+  const text=String(value||'').trim(),hex=/^#([0-9a-f]{6})$/i.exec(text);
+  if(hex){const n=parseInt(hex[1],16);return[(n>>16)&255,(n>>8)&255,n&255];}
+  const rgb=/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(text);
+  return rgb?[Number(rgb[1]),Number(rgb[2]),Number(rgb[3])]:fallback;
+}
+function knowledgeRgba(rgb,alpha){return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+alpha+')';}
+function knowledgeScaleRgb(rgb,scale){return rgb.map(v=>Math.max(0,Math.min(255,Math.round(v*scale))));}
+function knowledgeMixRgb(a,b,t){return a.map((v,i)=>Math.round(v+(b[i]-v)*t));}
 function knowledgeQuestion(q){const t=String(q||'');const i=t.indexOf('\n\n知识点背景');return i>0?t.slice(0,i):t;}
 function knowledgeHM(at){const d=new Date(at);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function knowledgeDay(at){const d=new Date(at),t=new Date(),y=new Date(Date.now()-864e5);const same=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();if(same(d,t))return '今天';if(same(d,y))return '昨天';return (d.getMonth()+1)+' 月 '+d.getDate()+' 日';}
 function knowledgeDialog(title,build,wide){
   const overlay=el('div','task-modal knowledge-dialog'),panel=el('section','task-modal-card'+(wide?' wide':''));panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',title);panel.appendChild(el('h2',null,title));overlay.appendChild(panel);document.body.appendChild(overlay);
-  const close=()=>overlay.remove();overlay.onkeydown=e=>{if(e.key==='Escape')close();};overlay.onclick=e=>{if(e.target===overlay)close();};build(panel,close);return overlay;
+  let unbindEscape=()=>{};
+  const close=()=>{unbindEscape();overlay.remove();};unbindEscape=bindModalEscape(overlay,close);overlay.onclick=e=>{if(e.target===overlay)close();};build(panel,close);return overlay;
 }
 async function openKnowledgeLinkSuggestions(button){
   return runGuarded('knowledge:suggest-links',button,'分析中…',async()=>{
@@ -1100,7 +1300,7 @@ async function openKnowledgeLinkSuggestions(button){
 }
 async function refreshKnowledgeNetwork(){
   knowledgeNet.data=await api('/api/knowledge/graph',{});knowledgeNet.visible=null;
-  if(current==='home'){knowledgeNet.draw?.();paintKnowledgePill();}
+  if(current==='home'){knowledgeNet.rebuild?.();knowledgeNet.fit?.(true);knowledgeNet.draw?.();paintKnowledgePill();}
 }
 function knowledgeSwatchRow(picked,onPick){
   const row=el('div','knowledge-color-row'),swatches=[],mark=()=>swatches.forEach(b=>b.classList.toggle('active',b.dataset.color===picked()));
@@ -1111,7 +1311,7 @@ function knowledgeSwatchRow(picked,onPick){
 function knowledgeQuickColor(node,anchor){
   const menu=popoverAt(anchor,(box)=>{
     box.appendChild(el('div','knowledge-pop-title','节点颜色'));
-    const native=el('input');native.type='color';native.className='knowledge-pop-picker';native.value=normalizeKnowledgeColor(node.color)||'#8B7DA8';
+    const native=el('input');native.type='color';native.className='knowledge-pop-picker';native.value=normalizeKnowledgeColor(node.color)||'#6F877E';
     const save=(color)=>runGuarded('knowledge:save:'+node.id,null,null,async()=>{const controls=[...box.querySelectorAll('button,input')];controls.forEach(b=>b.disabled=true);box.setAttribute('aria-busy','true');try{await api('/api/knowledge/save',{id:node.id,title:node.title,definition:node.definition,aliases:node.aliases||[],color});closePopover();await refreshKnowledgeNetwork();await openKnowledgePoint(node.id);toast(color?'已换色 '+color:'已恢复默认色');}catch(e){toast(e.message);}finally{controls.forEach(b=>b.disabled=false);box.removeAttribute('aria-busy');}});
     const row=knowledgeSwatchRow(()=>normalizeKnowledgeColor(node.color),(color)=>{save(color);});
     box.appendChild(row);
@@ -1127,9 +1327,9 @@ function editKnowledgePoint(node){
     const cols=el('div','knowledge-edit-cols'),left=el('div','knowledge-edit-col'),right=el('div','knowledge-edit-col');
     left.append(fieldOf('名称',title),fieldOf('简明定义',definition),fieldOf('确切别名',aliases));
     const orb=el('div','knowledge-preview-orb'),orbName=el('span',null,node?.title || '知识点'),preview=el('div','knowledge-preview');orb.appendChild(orbName);preview.appendChild(orb);
-    const paintOrb=()=>{const rgb=knowledgeRgb({color:picked});orb.style.background=rgb?('radial-gradient(circle at 35% 32%,rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',.95),rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',.5) 62%,rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0))'):'radial-gradient(circle at 35% 32%,rgba(181,170,205,.95),rgba(155,141,184,.5) 62%,rgba(155,141,184,0))';orbName.textContent=title.value.trim()||'知识点';};
-    const native=el('input');native.type='color';native.id='knowledge-color-picker';native.value=picked||'#8B7DA8';native.title='调色盘：选一个自定义颜色';native.setAttribute('aria-label','自定义节点颜色');
-    const row=knowledgeSwatchRow(()=>picked,(color)=>{picked=color;native.value=color||'#8B7DA8';paintOrb();});
+    const paintOrb=()=>{orb.style.background=picked||'#6F877E';orbName.textContent=title.value.trim()||'知识点';};
+    const native=el('input');native.type='color';native.id='knowledge-color-picker';native.value=picked||'#6F877E';native.title='调色盘：选一个自定义颜色';native.setAttribute('aria-label','自定义节点颜色');
+    const row=knowledgeSwatchRow(()=>picked,(color)=>{picked=color;native.value=color||'#6F877E';paintOrb();});
     right.append(fieldOf('节点颜色',row),preview,fieldOf('调色盘',native));
     native.oninput=()=>{picked=native.value.toUpperCase();row.querySelectorAll('.knowledge-swatch').forEach(b=>b.classList.toggle('active',b.dataset.color===picked));paintOrb();};
     title.oninput=paintOrb;paintOrb();
@@ -1177,15 +1377,21 @@ async function askKnowledgePoint(node){
     const validate=()=>{const deleted=!!source.selectedOptions[0]?.disabled;start.disabled=deleted;info.textContent=deleted?'原工作区已删除，请明确选择新的去向。':origin?.workspaceRoot?'来源记录中的目录：'+origin.workspaceRoot:'会建立一段新会话，原对话保持原样。';};source.onchange=validate;validate();panel.append(start,btn('取消','ghost',close));question.focus();
   });
 }
+function refitKnowledgeNetworkSoon(){
+  const fit=()=>{knowledgeNet.fit?.(true);knowledgeNet.draw?.();};
+  requestAnimationFrame(fit);setTimeout(fit,240);
+}
 async function openKnowledgePoint(id){
   if(current!=='home')await go('home');
   const generation=state.navigationGeneration,node=await api('/api/knowledge/node',{id});if(generation!==state.navigationGeneration||current!=='home')return;
   knowledgeNet.selected=id;const drawer=$('knowledge-detail');if(!drawer)return;
+  const selectedLayout=knowledgeNet.layout.get(id);if(selectedLayout){selectedLayout.vx=0;selectedLayout.vy=0;}
   drawer.hidden=false;const workspace=$('knowledge-workspace');workspace?.classList.add('has-detail');drawer.replaceChildren();
+  refitKnowledgeNetworkSoon();
   // 节点色作为抽屉的主题色：头部柔光、色点光环、主操作按钮都跟着它走
-  drawer.style.setProperty('--k-aura',node.color || '#B5AACD');
+  drawer.style.setProperty('--k-aura',node.color || '#6F877E');
   const head=el('div','knowledge-detail-head'),dot=el('button','knowledge-color-dot'+(node.color?'':' hollow'));dot.type='button';dot.title=node.color?('节点颜色 '+node.color+'（点击换色）'):'未设颜色（点击换色）';dot.setAttribute('aria-label','换节点颜色');if(node.color)dot.style.background=node.color;dot.onclick=()=>knowledgeQuickColor(node,dot);
-  const h2=el('h2',null,node.title);const closeBtn=btn('','ghost sm knowledge-close',()=>{drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';knowledgeNet.draw?.();});closeBtn.innerHTML=icon('close');closeBtn.title='收起';closeBtn.setAttribute('aria-label','收起');
+  const h2=el('h2',null,node.title);const closeBtn=btn('','ghost sm knowledge-close',()=>{drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';refitKnowledgeNetworkSoon();});closeBtn.innerHTML=icon('close');closeBtn.title='收起';closeBtn.setAttribute('aria-label','收起');
   head.append(dot,h2,closeBtn);drawer.appendChild(head);
   const sub=el('div','knowledge-detail-sub');sub.appendChild(el('span',null,(node.userEdited?'含本人编辑':'AI 记录')+' · '+node.recordCount+' 次相关讨论'));
   for(const a of (node.aliases || []))sub.appendChild(el('span','knowledge-alias',a));drawer.appendChild(sub);
@@ -1202,7 +1408,7 @@ async function openKnowledgePoint(id){
   if(!node.records?.length)recSec.appendChild(el('p','muted sm','这个知识点由你添加，还没有关联对话。'));
   for(const record of node.records || []){
     const item=el('article','knowledge-record');item.dataset.record=record.id;
-    const rh=el('div','knowledge-record-head');if(record.color||true){const rd=el('span','knowledge-record-dot');rd.style.background=node.color||'#B5AACD';rh.appendChild(rd);}
+    const rh=el('div','knowledge-record-head');if(record.color||true){const rd=el('span','knowledge-record-dot');rd.style.background=node.color||'#6F877E';rh.appendChild(rd);}
     rh.append(el('strong','grow',knowledgeQuestion(record.question)),el('span','muted sm',knowledgeHM(record.at)));item.appendChild(rh);
     item.appendChild(el('p',null,record.note));
     const rf=el('div','knowledge-record-foot');rf.append(el('span','muted sm',record.workspaceName || '普通对话'),el('span','muted grow',record.workspaceRoot || ''));
@@ -1222,7 +1428,7 @@ async function openKnowledgePoint(id){
     body.appendChild(linkSec);
   }
   drawer.appendChild(body);
-  drawer.appendChild(btn('删除知识点','ghost sm knowledge-delete',()=>confirmDialog('删除这个知识点？','将删除节点、关联的AI记录和连线；本人笔记会保留在笔记页。',async()=>{await api('/api/knowledge/delete',{id});drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';await refreshKnowledgeNetwork();})));
+  drawer.appendChild(btn('删除知识点','ghost sm knowledge-delete',()=>confirmDialog('删除这个知识点？','将删除节点、关联的AI记录和连线；本人笔记会保留在笔记页。',async()=>{await api('/api/knowledge/delete',{id});drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';await refreshKnowledgeNetwork();refitKnowledgeNetworkSoon();},{confirmLabel:'删除',busyLabel:'正在删除…',errorPrefix:'删除失败：'})));
   knowledgeNet.draw?.();paintKnowledgePill();
 }
 function knowledgeAct(act,label,cls,fn){
@@ -1234,78 +1440,230 @@ function paintKnowledgePill(){
   const pill=$('knowledge-count');if(!pill)return;
   const matched=knowledgeNet.visible?knowledgeNet.visible.length:0;
   const base=knowledgeNet.data.nodes.length+' 个知识点 · '+knowledgeNet.data.links.length+' 条手动连接';
-  pill.textContent=(knowledgeNet.visible?matched+' / '+base:base)+' · 拖动旋转 · 滚轮缩放';
+  const hint=knowledgeNet.view==='graph'?' · 拖动空白处移动 · 滚轮缩放':'';
+  pill.textContent=(knowledgeNet.visible?matched+' / '+base:base)+hint;
 }
 function installKnowledgeCanvas(canvas){
-  const ctx=canvas.getContext('2d'),host=canvas.parentElement;knowledgeNet.canvas=canvas;let hovered='',drag=null;
-  const project=()=>{
-    const nodes=knowledgeNet.visible || knowledgeNet.data.nodes,n=Math.max(1,nodes.length),w=host.clientWidth,h=host.clientHeight,scale=Math.min(w*.34,h*.36)*knowledgeNet.zoom;
-    const tick=performance.now()/1000;
-    knowledgeNet.offsets=knowledgeNet.offsets||{};
-    return nodes.map((node,i)=>{
-      const y=n===1?0:1-2*(i+.5)/n,r=Math.sqrt(Math.max(0,1-y*y)),angle=i*Math.PI*(3-Math.sqrt(5));let x=Math.cos(angle)*r,z=Math.sin(angle)*r;
-      const cy=Math.cos(knowledgeNet.yaw),sy=Math.sin(knowledgeNet.yaw),cp=Math.cos(knowledgeNet.pitch),sp=Math.sin(knowledgeNet.pitch),xx=x*cy+z*sy,zz=z*cy-x*sy,yy=y*cp-zz*sp,depth=y*sp+zz*cp,perspective=3.4/(3.4-depth*.45);
-      // 漂浮：每个节点按自己的相位缓慢浮动；选中的节点冻结在当前偏移（不再动）
-      let off=knowledgeNet.offsets[node.id];
-      if(node.id===knowledgeNet.selected){if(!off){off={x:0,y:0};knowledgeNet.offsets[node.id]=off;}}
-      else{const ph=knowledgePhase(node.id);off={x:Math.sin(tick*.22+ph)*7+Math.sin(tick*.09+ph*2.1)*3,y:Math.cos(tick*.19+ph*1.7)*6+Math.cos(tick*.07+ph*3.3)*2.5};knowledgeNet.offsets[node.id]=off;}
-      return {...node,x:w/2+xx*scale*perspective+off.x,y:h/2+yy*scale*perspective+off.y,z:depth,r:(23+Math.min(7,node.recordCount||0))*perspective,labelW:0};
-    }).sort((a,b)=>a.z-b.z);
-  };
-  const draw=()=>{
-    if(!canvas.isConnected)return;const w=host.clientWidth,h=host.clientHeight,dpr=Math.min(2,devicePixelRatio || 1);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
-    const css=getComputedStyle(document.body),ink=css.getPropertyValue('--ink').trim() || '#203C35',panel=css.getPropertyValue('--panel').trim() || '#ffffff',line=css.getPropertyValue('--line').trim() || '#dddddd',points=project();knowledgeNet.projected=points;
-    const dimmed=knowledgeNet.visible?new Set(knowledgeNet.visible.map(n=>n.id)):null;
-    for(const link of knowledgeNet.data.links){const a=points.find(n=>n.id===link.from),b=points.find(n=>n.id===link.to);if(!a||!b)continue;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle='rgba(139,125,168,.4)';ctx.lineWidth=1.2;ctx.stroke();}
-    knowledgeNet.linkLabels=[];
-    if(knowledgeNet.showLinkLabels){
-      ctx.font='500 11px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-      for(const link of knowledgeNet.data.links){const a=points.find(n=>n.id===link.from),b=points.find(n=>n.id===link.to);if(!a||!b)continue;const text=String(link.label || '关联') || '关联',mx=(a.x+b.x)/2,my=(a.y+b.y)/2,tw=ctx.measureText(text).width+14,th=18;
-        ctx.beginPath();if(ctx.roundRect){ctx.roundRect(mx-tw/2,my-th/2,tw,th,9);}else{ctx.rect(mx-tw/2,my-th/2,tw,th);}ctx.fillStyle=panel;ctx.fill();ctx.strokeStyle=line;ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=ink;ctx.fillText(text,mx,my);knowledgeNet.linkLabels.push({text,from:link.from,to:link.to,x:Math.round(mx),y:Math.round(my)});
+  const ctx=canvas.getContext('2d'),host=canvas.parentElement;knowledgeNet.canvas=canvas;
+
+  const physicsTick=()=>{
+    const nodes=[...knowledgeNet.layout.values()],alpha=knowledgeNet.alpha;
+    if(alpha<.004)return;
+    const n=nodes.length,repel=n>160?620:920;
+    for(let i=0;i<n;i++){
+      const a=nodes[i];
+      for(let j=i+1;j<n;j++){
+        const b=nodes[j];let dx=b.x-a.x,dy=b.y-a.y,d2=dx*dx+dy*dy;
+        if(d2<.01){dx=.1+((knowledgeHash(a.id+b.id)%17)/100);dy=.1;d2=dx*dx+dy*dy;}
+        if(d2>260000)continue;
+        const d=Math.sqrt(d2),force=repel/d2;
+        const fx=dx/d*force,fy=dy/d*force;
+        a.vx-=fx;a.vy-=fy;b.vx+=fx;b.vy+=fy;
       }
     }
-    for(const p of points){const selected=p.id===knowledgeNet.selected,hover=p.id===hovered,r=p.r*(selected||hover?1.16:1),gradient=ctx.createRadialGradient(p.x-r*.2,p.y-r*.2,0,p.x,p.y,r);
-      const base=knowledgeRgb(p)||[169,155,196],deepen=selected?.72:1,ce=[Math.round(base[0]*deepen),Math.round(base[1]*deepen),Math.round(base[2]*deepen)];
-      if(knowledgeRgb(p)||selected){const[cr,cg,cb]=ce;gradient.addColorStop(0,`rgba(${cr},${cg},${cb},${selected?.96:.92})`);gradient.addColorStop(.35,`rgba(${cr},${cg},${cb},.78)`);gradient.addColorStop(.55,`rgba(${cr},${cg},${cb},.56)`);gradient.addColorStop(.72,`rgba(${cr},${cg},${cb},.3)`);gradient.addColorStop(.88,`rgba(${cr},${cg},${cb},.12)`);gradient.addColorStop(1,`rgba(${cr},${cg},${cb},0)`);}
-      else{gradient.addColorStop(0,'rgba(181,170,205,.9)');gradient.addColorStop(.35,'rgba(169,155,196,.78)');gradient.addColorStop(.55,'rgba(155,141,184,.56)');gradient.addColorStop(.72,'rgba(155,141,184,.3)');gradient.addColorStop(.88,'rgba(155,141,184,.12)');gradient.addColorStop(1,'rgba(155,141,184,0)');}
-      ctx.globalAlpha=dimmed&&!dimmed.has(p.id)?0.22:1;
-      ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();
-      if(selected){ctx.beginPath();ctx.arc(p.x,p.y,r*.65,0,Math.PI*2);ctx.strokeStyle='rgba(184,146,70,.8)';ctx.lineWidth=1.5;ctx.stroke();}
-      if(points.length<80||selected||hover||(dimmed&&dimmed.has(p.id))){ctx.fillStyle=ink;ctx.font=(selected||hover?'600 ':'500 ')+(selected?15:13)+'px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';let label=p.title;while(ctx.measureText(label).width>160&&label.length>3)label=label.slice(0,-2)+'…';p.labelW=ctx.measureText(label).width;ctx.fillText(label,p.x,p.y);}
-      ctx.globalAlpha=1;
+    for(const link of knowledgeNet.data.links){
+      const a=knowledgeNet.layout.get(link.from),b=knowledgeNet.layout.get(link.to);if(!a||!b)continue;
+      const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,target=92+Math.min(26,(a.degree+b.degree)*2),force=(d-target)*.00125*alpha;
+      const fx=dx/d*force,fy=dy/d*force;
+      a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;
+    }
+    for(const node of nodes){
+      node.vx-=node.x*.00075*alpha;node.vy-=node.y*.00075*alpha;
+      if(node.id===knowledgeNet.selected||node.id===knowledgeNet.dragNode?.id){node.vx=0;node.vy=0;continue;}
+      node.vx=Math.max(-6,Math.min(6,node.vx*.88));node.vy=Math.max(-6,Math.min(6,node.vy*.88));
+      node.x=Math.max(-2200,Math.min(2200,node.x+node.vx));node.y=Math.max(-2200,Math.min(2200,node.y+node.vy));
+    }
+    knowledgeNet.alpha*=.975;
+  };
+
+  const rebuild=()=>{
+    const old=knowledgeNet.layout instanceof Map?knowledgeNet.layout:new Map(),nodes=knowledgeNet.data.nodes;
+    const degree=new Map(nodes.map(node=>[node.id,0]));
+    for(const link of knowledgeNet.data.links){if(degree.has(link.from))degree.set(link.from,degree.get(link.from)+1);if(degree.has(link.to))degree.set(link.to,degree.get(link.to)+1);}
+    const next=new Map();
+    nodes.forEach((node,index)=>{
+      let item=old.get(node.id);
+      if(!item){
+        const neighbours=knowledgeNet.data.links.flatMap(link=>{
+          if(link.from===node.id&&old.has(link.to))return [old.get(link.to)];
+          if(link.to===node.id&&old.has(link.from))return [old.get(link.from)];
+          return [];
+        });
+        let x,y;
+        if(neighbours.length){x=neighbours.reduce((sum,p)=>sum+p.x,0)/neighbours.length;y=neighbours.reduce((sum,p)=>sum+p.y,0)/neighbours.length;}
+        else{const angle=index*2.399963229728653,radius=34*Math.sqrt(index+1);x=Math.cos(angle)*radius;y=Math.sin(angle)*radius;}
+        const phase=knowledgePhase(node.id);x+=Math.cos(phase)*8;y+=Math.sin(phase)*8;
+        item={id:node.id,x,y,vx:0,vy:0};
+      }
+      item.degree=degree.get(node.id)||0;
+      item.radius=4.6+Math.min(7.5,Math.sqrt(item.degree)*2.45)+Math.min(2.8,Number(node.recordCount||0)*.32);
+      if(node.id===knowledgeNet.selected){item.vx=0;item.vy=0;}
+      next.set(node.id,item);
+    });
+    knowledgeNet.layout=next;knowledgeNet.alpha=1;
+    const settleIterations=nodes.length>160?42:nodes.length>80?68:110;
+    for(let i=0;i<settleIterations;i++)physicsTick();
+    if(knowledgeNet.introMotionRequested){
+      const now=performance.now();knowledgeNet.introMotionRequested=false;knowledgeNet.introMotionStart=now;knowledgeNet.introMotionUntil=now+1700;knowledgeNet.alpha=.72;
+      for(const node of next.values()){const phase=knowledgePhase(node.id);node.vx+=Math.cos(phase)*.42;node.vy+=Math.sin(phase)*.42;}
     }
   };
-  // 命中区 = 光球（比可见半径再放宽一点）∪ 文字标签的包围盒。
-  // 用户经常直接点节点名字：此前只有 24px 光圈算命中，点文字两端就会"点空/点偏"。
+
+  const fit=(force=false)=>{
+    if(knowledgeNet.userInteracted&&!force)return;
+    const nodes=[...knowledgeNet.layout.values()],w=host.clientWidth,h=host.clientHeight;
+    if(!nodes.length||w<2||h<2)return;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const node of nodes){minX=Math.min(minX,node.x-node.radius);minY=Math.min(minY,node.y-node.radius);maxX=Math.max(maxX,node.x+node.radius);maxY=Math.max(maxY,node.y+node.radius);}
+    const spanX=Math.max(80,maxX-minX),spanY=Math.max(80,maxY-minY),padX=Math.min(96,Math.max(48,w*.075)),padY=Math.min(84,Math.max(46,h*.08));
+    const zoom=Math.max(.32,Math.min(1.55,(w-padX*2)/spanX,(h-padY*2)/spanY));
+    knowledgeNet.camera.zoom=zoom;
+    knowledgeNet.camera.x=-((minX+maxX)/2)*zoom;
+    knowledgeNet.camera.y=-((minY+maxY)/2)*zoom;
+  };
+
+  const project=()=>{
+    const nodes=knowledgeNet.visible||knowledgeNet.data.nodes,n=Math.max(1,nodes.length),w=host.clientWidth,h=host.clientHeight,now=performance.now(),zoom=knowledgeNet.camera.zoom;
+    const idle=!knowledgeNet.reducedMotion&&(knowledgeNet.alpha<.9||now>knowledgeNet.introMotionStart+450);
+    return nodes.flatMap(node=>{
+      const item=knowledgeNet.layout.get(node.id);if(!item)return [];
+      const phase=knowledgePhase(node.id),frozen=node.id===knowledgeNet.selected||node.id===knowledgeNet.dragNode?.id;
+      const driftX=idle&&!frozen?Math.sin(now*.00023+phase)*2+Math.sin(now*.00009+phase*2.3)*.6:0;
+      const driftY=idle&&!frozen?Math.cos(now*.0002+phase*1.7)*1.75+Math.cos(now*.000075+phase*3.1)*.5:0;
+      return [{...node,x:w/2+knowledgeNet.camera.x+item.x*zoom+driftX,y:h/2+knowledgeNet.camera.y+item.y*zoom+driftY,r:Math.max(3.8,item.radius*Math.pow(zoom,.34)),degree:item.degree,labelAlpha:0,labelW:0,labelRect:null}];
+    }).sort((a,b)=>a.y-b.y||a.x-b.x);
+  };
+
+  const draw=()=>{
+    if(!canvas.isConnected)return;
+    const w=host.clientWidth,h=host.clientHeight,dpr=Math.min(2,devicePixelRatio||1);
+    if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+    const css=getComputedStyle(document.body),ink=knowledgeParseCssColor(css.getPropertyValue('--ink'),[35,57,51]),panel=knowledgeParseCssColor(css.getPropertyValue('--panel'),[255,255,255]),line=knowledgeParseCssColor(css.getPropertyValue('--line'),[214,222,218]),brand=knowledgeParseCssColor(css.getPropertyValue('--brand'),[64,111,93]);
+    const points=project(),byId=new Map(points.map(point=>[point.id,point])),activeId=knowledgeNet.hover||knowledgeNet.selected,nodes=knowledgeNet.data.nodes.length,visibleSet=knowledgeNet.visible?new Set(knowledgeNet.visible.map(node=>node.id)):null;
+    const neighbours=new Set();if(activeId){neighbours.add(activeId);for(const link of knowledgeNet.data.links){if(link.from===activeId)neighbours.add(link.to);if(link.to===activeId)neighbours.add(link.from);}}
+    knowledgeNet.linkLabels=[];
+    for(const link of knowledgeNet.data.links){
+      const a=byId.get(link.from),b=byId.get(link.to);if(!a||!b)continue;
+      const dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy)||1,bend=(knowledgeHash(link.from+':'+link.to)%2?1:-1)*(9+Math.min(34,distance*.075));
+      const cx=(a.x+b.x)/2+(-dy/distance)*bend,cy=(a.y+b.y)/2+(dx/distance)*bend;
+      const active=!!activeId&&(link.from===activeId||link.to===activeId),searchMuted=visibleSet&&!visibleSet.has(link.from)&&!visibleSet.has(link.to),focusMuted=!!activeId&&!active;
+      const aColor=knowledgeRgb(a)||knowledgeRgb(b)||brand,bColor=knowledgeRgb(b)||aColor,edgeColor=knowledgeMixRgb(aColor,bColor,.45);
+      ctx.save();ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.quadraticCurveTo(cx,cy,b.x,b.y);
+      const passiveEdge=knowledgeMixRgb(line,ink,.18);
+      ctx.strokeStyle=knowledgeRgba(active?edgeColor:passiveEdge,searchMuted?.035:active?.78:focusMuted?.075:.24);
+      ctx.lineWidth=active?1.9:.95;ctx.stroke();
+      if(active){ctx.beginPath();ctx.arc((a.x+2*cx+b.x)/4,(a.y+2*cy+b.y)/4,1.65,0,Math.PI*2);ctx.fillStyle=knowledgeRgba(edgeColor,.9);ctx.fill();}
+      ctx.restore();
+      const labelAllowed=knowledgeNet.showLinkLabels&&!searchMuted&&(active||(knowledgeNet.camera.zoom>=1.24&&nodes<=60));
+      if(labelAllowed){
+        const text=String(link.label||'关联')||'关联',tx=(a.x+2*cx+b.x)/4,ty=(a.y+2*cy+b.y)/4-8;
+        ctx.save();ctx.font='500 11px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        const width=ctx.measureText(text).width;
+        ctx.lineJoin='round';ctx.lineWidth=4;ctx.strokeStyle=knowledgeRgba(panel,.94);ctx.strokeText(text,tx,ty);
+        ctx.fillStyle=active?knowledgeRgba(edgeColor,.96):knowledgeRgba(ink,.62);ctx.fillText(text,tx,ty);ctx.restore();
+        knowledgeNet.linkLabels.push({text,from:link.from,to:link.to,x:Math.round(tx),y:Math.round(ty),active});
+      }
+    }
+    const threshold=nodes<=24?.5:nodes<=60?.82:nodes<=120?1.06:1.3;
+    const fade=Math.max(0,Math.min(1,(knowledgeNet.camera.zoom-threshold)/.22+.28));
+    const importantDegree=Math.max(3,Math.ceil(Math.sqrt(Math.max(1,nodes))));
+    for(const p of points){
+      const selected=p.id===knowledgeNet.selected,hover=p.id===knowledgeNet.hover,searchHit=visibleSet?.has(p.id)||false;
+      const dim=!!activeId&&!neighbours.has(p.id)||!!visibleSet&&!searchHit;
+      const custom=knowledgeRgb(p),base=custom||brand,scale=selected?.8:hover?.9:1,color=knowledgeScaleRgb(base,scale),radius=p.r*(selected?1.38:hover?1.18:1);
+      ctx.save();ctx.globalAlpha=dim?.14:1;
+      if(selected){ctx.beginPath();ctx.arc(p.x,p.y,radius+5,0,Math.PI*2);ctx.strokeStyle=knowledgeRgba(color,.25);ctx.lineWidth=2;ctx.stroke();}
+      ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fillStyle=knowledgeRgba(color,selected?.98:hover?.96:.9);ctx.fill();
+      ctx.strokeStyle=knowledgeRgba(panel,.82);ctx.lineWidth=1.25;ctx.stroke();
+      if(selected||hover){ctx.beginPath();ctx.arc(p.x,p.y,radius+2.2,0,Math.PI*2);ctx.strokeStyle=knowledgeRgba(color,.68);ctx.lineWidth=1.2;ctx.stroke();}
+      const labelAlpha=selected||hover||searchHit?1:dim?0:Math.max(fade,p.degree>=importantDegree?.72:0);
+      if(labelAlpha>.04){
+        let label=String(p.title||'知识点');ctx.font=(selected?'600 13px':'500 12px')+' "Microsoft YaHei",sans-serif';
+        while(ctx.measureText(label).width>170&&label.length>3)label=label.slice(0,-2)+'…';
+        const labelW=ctx.measureText(label).width,toLeft=p.x+radius+9+labelW>w-10,lx=toLeft?p.x-radius-9-labelW:p.x+radius+9,ly=p.y;
+        ctx.globalAlpha=(dim?.1:1)*labelAlpha;ctx.textAlign='left';ctx.textBaseline='middle';ctx.lineJoin='round';ctx.lineWidth=4;
+        ctx.strokeStyle=knowledgeRgba(panel,.92);ctx.strokeText(label,lx,ly);ctx.fillStyle=knowledgeRgba(ink,selected?.98:hover?.94:.78);ctx.fillText(label,lx,ly);
+        p.labelW=labelW;p.labelAlpha=labelAlpha;p.labelRect={x:lx-3,y:ly-9,w:labelW+6,h:18};
+      }
+      ctx.restore();
+    }
+    knowledgeNet.projected=points.slice().sort((a,b)=>{
+      const order=p=>(p.id===knowledgeNet.selected?2:p.id===knowledgeNet.hover?1:0);
+      return order(a)-order(b)||a.y-b.y;
+    });
+  };
+
   const hit=e=>{
     const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
-    // clientX/Y 与 rect 是屏幕 CSS 坐标，节点是 ctx 绘图坐标。
-    // 先按显示尺寸还原到位图，再逆变换掉 DPR；同时覆盖 body.zoom、CSS 缩放与位图取整。
-    // 只减 rect.left/top 在页面缩放 != 100% 时会产生随节点位置增大的偏移。
-    const {x,y}=ctx.getTransform().inverse().transformPoint({
-      x:(e.clientX-rect.left)*canvas.width/rect.width,
-      y:(e.clientY-rect.top)*canvas.height/rect.height
-    });
+    const x=(e.clientX-rect.left)*canvas.clientWidth/rect.width,y=(e.clientY-rect.top)*canvas.clientHeight/rect.height;
     return [...knowledgeNet.projected].reverse().find(p=>{
-      const dx=Math.abs(p.x-x),dy=Math.abs(p.y-y),r=Math.max(26,p.r+2);
-      if(dx*dx+dy*dy<r*r){return true;}
-      return p.labelW>0&&dx<=p.labelW/2+8&&dy<=13;
-    });};
-  canvas.onpointerdown=e=>{knowledgeNet.userInteracted=true;knowledgeNet.autoSpinUntil=0;drag={x:e.clientX,y:e.clientY,moved:false,dist:0};canvas.setPointerCapture(e.pointerId);};
-  canvas.onpointermove=e=>{if(drag){
-      const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.dist+=Math.abs(dx)+Math.abs(dy);
-      // 4px 死区：手抖不转相机（否则每次想点节点都会把视角蹭偏，"定位飘"就是这么来的）
-      if(drag.dist>4){drag.moved=true;knowledgeNet.yaw+=dx*.006;knowledgeNet.pitch=Math.max(-1.25,Math.min(1.25,knowledgeNet.pitch+dy*.006));draw();}
-      drag.x=e.clientX;drag.y=e.clientY;
-    }else{const p=hit(e);if((p?.id || '')!==hovered){hovered=p?.id || '';canvas.style.cursor=p?'pointer':'grab';canvas.title=p?.title || '拖动旋转，滚轮缩放';draw();}}};
-  // 6px 以内的抖动仍算"点击"（选节点优先于转视角）；超过 6px 才认定是拖拽
-  canvas.onpointerup=e=>{const wasDrag=drag&&drag.dist>6;drag=null;if(!wasDrag){const node=hit(e);if(node)openKnowledgePoint(node.id).catch(err=>toast(err.message));}};canvas.onpointercancel=()=>{drag=null;};
-  canvas.addEventListener('wheel',e=>{e.preventDefault();knowledgeNet.userInteracted=true;knowledgeNet.autoSpinUntil=0;knowledgeNet.zoom=Math.max(.55,Math.min(1.8,knowledgeNet.zoom*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
-  knowledgeNet.stop?.();
-  state.knowledgeObserver?.disconnect();state.knowledgeObserver=new ResizeObserver(draw);state.knowledgeObserver.observe(host);knowledgeNet.draw=draw;
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(reduced){draw();}
-  else{let raf=0;const frame=()=>{raf=0;if(!canvas.isConnected){return;}const now=performance.now();if(!knowledgeNet.userInteracted && knowledgeNet.autoSpinUntil>now){const progress=Math.max(0,Math.min(1,(now-knowledgeNet.autoSpinStart)/3200));knowledgeNet.yaw+=.0042*Math.pow(1-progress,1.8);}draw();raf=requestAnimationFrame(frame);};raf=requestAnimationFrame(frame);knowledgeNet.stop=()=>{if(raf)cancelAnimationFrame(raf);raf=0;};}
+      const r=Math.max(13,p.r+5);
+      if((p.x-x)**2+(p.y-y)**2<r*r)return true;
+      const label=p.labelRect;
+      return !!label&&x>=label.x&&x<=label.x+label.w&&y>=label.y&&y<=label.y+label.h;
+    });
+  };
+
+  canvas.onpointerdown=e=>{
+    if(e.button!==0)return;
+    knowledgeNet.userInteracted=true;knowledgeNet.introMotionUntil=0;
+    const node=hit(e);canvas.setPointerCapture(e.pointerId);
+    if(node){
+      const item=knowledgeNet.layout.get(node.id);
+      knowledgeNet.dragNode={id:node.id,startX:e.clientX,startY:e.clientY,x:item?.x||0,y:item?.y||0,moved:false};
+      canvas.style.cursor='grabbing';
+    }else{
+      knowledgeNet.pan={x:e.clientX,y:e.clientY,cameraX:knowledgeNet.camera.x,cameraY:knowledgeNet.camera.y,moved:false};
+      canvas.style.cursor='grabbing';
+    }
+  };
+  canvas.onpointermove=e=>{
+    if(knowledgeNet.dragNode){
+      const drag=knowledgeNet.dragNode,dx=e.clientX-drag.startX,dy=e.clientY-drag.startY;
+      if(Math.hypot(dx,dy)>5){drag.moved=true;const item=knowledgeNet.layout.get(drag.id);if(item){item.x=drag.x+dx/knowledgeNet.camera.zoom;item.y=drag.y+dy/knowledgeNet.camera.zoom;item.vx=0;item.vy=0;}draw();}
+      return;
+    }
+    if(knowledgeNet.pan){
+      const pan=knowledgeNet.pan,dx=e.clientX-pan.x,dy=e.clientY-pan.y;
+      if(Math.abs(dx)+Math.abs(dy)>3)pan.moved=true;
+      knowledgeNet.camera.x=pan.cameraX+dx;knowledgeNet.camera.y=pan.cameraY+dy;draw();return;
+    }
+    const node=hit(e),next=node?.id||'';
+    if(next!==knowledgeNet.hover){knowledgeNet.hover=next;canvas.style.cursor=next?'pointer':'grab';canvas.title=next?.title||'拖动空白处移动，滚轮缩放';draw();}
+  };
+  canvas.onpointerup=e=>{
+    const drag=knowledgeNet.dragNode;
+    knowledgeNet.dragNode=null;knowledgeNet.pan=null;canvas.style.cursor=hit(e)?'pointer':'grab';
+    if(drag&&!drag.moved)openKnowledgePoint(drag.id).catch(err=>toast(err.message));
+  };
+  canvas.onpointercancel=()=>{knowledgeNet.dragNode=null;knowledgeNet.pan=null;canvas.style.cursor='grab';};
+  canvas.onpointerleave=()=>{if(!knowledgeNet.dragNode&&!knowledgeNet.pan&&knowledgeNet.hover){knowledgeNet.hover='';canvas.style.cursor='grab';draw();}};
+  canvas.oncontextmenu=e=>e.preventDefault();
+  canvas.addEventListener('wheel',e=>{
+    e.preventDefault();knowledgeNet.userInteracted=true;knowledgeNet.introMotionUntil=0;
+    const rect=canvas.getBoundingClientRect(),sx=(e.clientX-rect.left)*canvas.clientWidth/rect.width,sy=(e.clientY-rect.top)*canvas.clientHeight/rect.height;
+    const oldZoom=knowledgeNet.camera.zoom,newZoom=Math.max(.28,Math.min(2.8,oldZoom*Math.exp(-e.deltaY*.0012)));
+    const worldX=(sx-host.clientWidth/2-knowledgeNet.camera.x)/oldZoom,worldY=(sy-host.clientHeight/2-knowledgeNet.camera.y)/oldZoom;
+    knowledgeNet.camera.zoom=newZoom;knowledgeNet.camera.x=sx-host.clientWidth/2-worldX*newZoom;knowledgeNet.camera.y=sy-host.clientHeight/2-worldY*newZoom;draw();
+  },{passive:false});
+  canvas.ondblclick=e=>{if(!hit(e)){knowledgeNet.userInteracted=false;fit(true);draw();}};
+
+  knowledgeNet.stop?.();state.knowledgeObserver?.disconnect();
+  knowledgeNet.rebuild=rebuild;knowledgeNet.fit=fit;knowledgeNet.draw=draw;
+  knowledgeNet.reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  rebuild();fit(true);draw();
+  state.knowledgeObserver=new ResizeObserver(()=>{fit(false);draw();});state.knowledgeObserver.observe(host);
+  if(!knowledgeNet.reducedMotion){
+    let raf=0,last=performance.now(),physicsAccumulator=0;
+    const frame=now=>{
+      if(!canvas.isConnected)return;
+      const elapsed=Math.min(50,now-last);last=now;physicsAccumulator+=elapsed;
+      if(physicsAccumulator>=32){physicsTick();physicsAccumulator=0;}
+      draw();raf=requestAnimationFrame(frame);
+    };
+    raf=requestAnimationFrame(frame);knowledgeNet.stop=()=>{if(raf)cancelAnimationFrame(raf);raf=0;};
+  }
 }
 function renderKnowledgeGraphStage(stage){
   const scene=el('div','knowledge-scene'),canvas=el('canvas','knowledge-canvas');canvas.setAttribute('aria-hidden','true');scene.appendChild(canvas);
@@ -1383,9 +1741,8 @@ async function setKnowledgeView(view){
 const homeBeforeKnowledgeNetwork=PAGES.home.render;
 PAGES.home.render=async function(){
   const generation=state.navigationGeneration;await homeBeforeKnowledgeNetwork.call(this);if(generation!==state.navigationGeneration)return;
-  if(knowledgeNet.introSpinRequested){
-    state.knowledgeView='graph';knowledgeNet.introSpinRequested=false;knowledgeNet.userInteracted=false;
-    knowledgeNet.yaw=.28;knowledgeNet.autoSpinStart=performance.now();knowledgeNet.autoSpinUntil=knowledgeNet.autoSpinStart+3200;
+  if(knowledgeNet.introMotionRequested){
+    state.knowledgeView='graph';knowledgeNet.introMotionRequested=false;knowledgeNet.userInteracted=false;knowledgeNet.hover='';
   }
   knowledgeNet.view=state.knowledgeView==='timeline'?'timeline':'graph';
   knowledgeNet.showLinkLabels=state.knowledgeLinkLabels!==false;knowledgeNet.linkLabels=[];
@@ -1402,9 +1759,9 @@ PAGES.home.render=async function(){
   const actions=el('div','knowledge-toolbar-actions');
   if(knowledgeNet.view==='graph'){
     const labelToggle=btn('','ghost sm knowledge-labels-toggle',()=>{const next=!knowledgeNet.showLinkLabels;knowledgeNet.showLinkLabels=next;state.knowledgeLinkLabels=next;savePrefs({knowledgeLinkLabels:next?'1':'0'});syncLabelToggle();knowledgeNet.draw?.();});
-    const syncLabelToggle=()=>{const on=knowledgeNet.showLinkLabels;labelToggle.setAttribute('aria-pressed',on?'true':'false');const tip=on?'关系说明：显示中，点击隐藏':'关系说明：已隐藏，点击显示';labelToggle.title=tip;labelToggle.setAttribute('aria-label',tip);};
+    const syncLabelToggle=()=>{const on=knowledgeNet.showLinkLabels;labelToggle.setAttribute('aria-pressed',on?'true':'false');const tip=on?'关系说明：按需显示，点击隐藏':'关系说明：已隐藏，点击显示';labelToggle.title=tip;labelToggle.setAttribute('aria-label',tip);};
     labelToggle.innerHTML=icon('label');syncLabelToggle();
-    const reset=btn('','ghost sm knowledge-reset',()=>{knowledgeNet.yaw=.28;knowledgeNet.pitch=.12;knowledgeNet.zoom=1;knowledgeNet.draw?.();});reset.innerHTML=icon('refresh');reset.title='重置视角';reset.setAttribute('aria-label','重置视角');
+    const reset=btn('','ghost sm knowledge-reset',()=>{knowledgeNet.userInteracted=false;knowledgeNet.fit?.(true);knowledgeNet.draw?.();});reset.innerHTML=icon('refresh');reset.title='适配画布';reset.setAttribute('aria-label','适配画布');
     actions.append(labelToggle,reset);
   }
   const suggestLinks=btn('连线建议','ghost sm',()=>openKnowledgeLinkSuggestions(suggestLinks));

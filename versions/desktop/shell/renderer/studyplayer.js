@@ -85,7 +85,7 @@ function spSources(res){
   if(!cites.length)return null;
   const box=el('section','sp-sources');
   box.appendChild(el('h3','sp-sec-title','资料出处'));
-  for(const c of cites)box.appendChild(el('p','sp-source','· '+(c.docTitle||c.title||'资料')+(c.headingPath?(' · '+c.headingPath):'')));
+  for(const c of cites)box.appendChild(btn('['+(c.label || c.index)+'] '+(c.docTitle||c.title||'资料')+(c.headingPath?(' · '+c.headingPath):''),'sp-source',()=>openCitationReference(c,c.label || c.index)));
   box.appendChild(el('p','muted sm','出处编号对应正文里的 [n]；资料原文仍在本地知识库中。'));
   return box;
 }
@@ -126,7 +126,7 @@ function spRenderLecture(page,res,asset){
     const mark=btn(marks.has(b.key)?'已读 ✓':'标记已读','ghost sm sp-mark',async()=>{try{await spMark(res,marks,b.key,!marks.has(b.key));mark.textContent=marks.has(b.key)?'已读 ✓':'标记已读';mark.classList.toggle('on',marks.has(b.key));paint();}catch(e){toast(e.message);}});
     if(marks.has(b.key))mark.classList.add('on');
     line.appendChild(mark);block.appendChild(line);
-    const body=el('article','md sp-body');body.innerHTML=md(b.body||'');block.appendChild(body);
+    const body=el('article','md sp-body');body.innerHTML=md(b.body||'',{citations:res.citations || []});linkInlineCitations(body,res.citations || []);block.appendChild(body);
     page.appendChild(block);
   }
   page.appendChild(el('p','sp-hint','读完可在学·练里「标记学完」；阅读本身不换算成掌握度。'));
@@ -163,7 +163,7 @@ function spRenderPractice(page,res,asset){
     const mark=btn(marks.has(key)?'完成 ✓':'完成步骤','ghost sm sp-mark',async()=>{try{await spMark(res,marks,key,!marks.has(key));mark.textContent=marks.has(key)?'完成 ✓':'完成步骤';mark.classList.toggle('on',marks.has(key));paint();}catch(e){toast(e.message);}});
     if(marks.has(key))mark.classList.add('on');
     line.appendChild(mark);block.appendChild(line);
-    if(s.instruction){const body=el('article','md sp-body');body.innerHTML=md(s.instruction);block.appendChild(body);}
+    if(s.instruction){const body=el('article','md sp-body');body.innerHTML=md(s.instruction,{citations:res.citations || []});linkInlineCitations(body,res.citations || []);block.appendChild(body);}
     if(s.code)block.appendChild(el('pre','sp-code',s.code));
     if(s.expectedOutput)block.appendChild(el('p','sp-expected','预期结果：'+s.expectedOutput));
     if(s.warning)block.appendChild(el('p','sp-warning','提醒：'+s.warning));
@@ -535,7 +535,7 @@ function spRenderPpt(page,res,asset){
       for(const it of t.items||[]){
         if(it.t==='a'){
           const bubble=el('article','sp-chat-msg assistant'+(it.streaming?' streaming':''));
-          const body=el('div','md');body.innerHTML=md(it.text||'');bubble.appendChild(body);
+          const body=el('div','md');body.innerHTML=md(it.text||'',{citations:t.citations || []});linkInlineCitations(body,t.citations || []);bubble.appendChild(body);
           if(it.streaming&&typeof markStreamTail==='function')markStreamTail(body);
           thread.appendChild(bubble);
         }else if(it.t==='tool'){
@@ -902,7 +902,7 @@ async function renderStudyPlayer(){
   else if(res.kind==='ppt')await spRenderPpt(page,res,asset);
   else{
     page.appendChild(spHead(res,asset,'',[]));
-    const article=el('article','md sp-body');article.innerHTML=md(res.markdown||'');page.appendChild(article);
+    const article=el('article','md sp-body');article.innerHTML=md(res.markdown||'',{citations:res.citations || []});linkInlineCitations(article,res.citations || []);page.appendChild(article);
     const sources=spSources(res);if(sources)page.appendChild(sources);
   }
   const foot=el('footer','sp-foot');

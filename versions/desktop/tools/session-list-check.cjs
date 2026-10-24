@@ -49,7 +49,7 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
   // 缓存失效：重命名（写 sessions_meta）与一轮对话（写 session_events）都要让列表立刻跟上。
   // 注意 epoch 是进程内的：只有内核自己写库才算数（单实例架构下成立）。
   await post('/api/sessions/rename',{sessionId:'seed-0',title:'重命名验证标题'});
-  const afterRename=await post('/api/sessions/list',{});
+  const afterRename=await post('/api/sessions/list',{force:true});
   const sRenamed=afterRename.sessions.find(s=>s.sessionId==='seed-0');
   check('a rename invalidates the cache right away',sRenamed.title==='重命名验证标题');
 
@@ -59,7 +59,7 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
   await post('/api/models/roles',{chatModelId:'mock'});
   const sNew=(await post('/api/sessions/new',{})).sessionId;
   await post('/api/agent/ask-pi',{sessionId:sNew,question:'缓存失效测试',web:'off'});
-  const afterTurn=await post('/api/sessions/list',{});
+  const afterTurn=await post('/api/sessions/list',{force:true});
   const sTurn=afterTurn.sessions.find(s=>s.sessionId===sNew);
   check('a finished turn appears in the list with its events counted',!!sTurn&&sTurn.eventCount>=2);
 

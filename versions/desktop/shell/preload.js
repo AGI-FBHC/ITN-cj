@@ -17,8 +17,10 @@ contextBridge.exposeInMainWorld("itnWindow", {
   pickImage: () => ipcRenderer.invoke("dlg:pick-image"),
   readSelectedImage: (p) => ipcRenderer.invoke("image:read-selected", String(p || "")),
   /** 用系统默认程序打开一个路径（文件夹 → 资源管理器，文件 → 关联的应用）。 */
-  openPath: (p) => ipcRenderer.invoke("shell:open-path", String(p || "")),
-  /** 用系统默认浏览器打开 http(s) 链接。 */
+  openPath: (p) => ipcRenderer.invoke("shell:open-path", p),
+  /** 只读解析文件引用；相对路径传 {path, baseDir}，返回规范路径和文件/目录类型。 */
+  resolveReferencePath: (reference) => ipcRenderer.invoke("shell:resolve-reference-path", reference),
+  /** 用系统默认应用打开 http(s) 或 mailto 链接；Lumin 会话由界面内部打开。 */
   openUrl: (url) => ipcRenderer.invoke("shell:open-url", String(url || "")),
   /** 打开系统的"选演示文稿"对话框（.pptx / .ppt）。 */
   pickDeck: () => ipcRenderer.invoke("dlg:pick-deck"),

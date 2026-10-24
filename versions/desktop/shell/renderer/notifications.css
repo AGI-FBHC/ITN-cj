@@ -1,0 +1,283 @@
+/* 顶部通知中心：与任务中心并列，负责“历史结果”，任务中心负责“可停止的当前任务”。 */
+.notification-center {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-left: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.notification-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.notification-btn:hover,
+.notification-btn[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--line));
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+
+.notification-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.notification-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.notification-btn.has-running svg {
+  color: var(--brand);
+  animation: notification-bell-breathe 1.8s ease-in-out infinite;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-size: 13px;
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
+}
+
+.notification-badge[hidden] {
+  display: none;
+}
+
+.notification-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 410px;
+  max-width: min(410px, calc(100vw - 40px));
+  max-height: min(580px, calc(100vh - 120px));
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 24px 64px -28px rgba(0, 0, 0, .45);
+  z-index: 1500;
+}
+
+.notification-pop[hidden] {
+  display: none;
+}
+
+.notification-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 4px 10px;
+}
+
+.notification-head strong {
+  font-size: 14px;
+}
+
+.notification-head-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.notification-read-all {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.notification-read-all:hover:not(:disabled) {
+  border-color: var(--brand-line);
+  color: var(--ink);
+}
+
+.notification-read-all:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.notification-list {
+  display: grid;
+  gap: 4px;
+}
+
+.notification-empty {
+  padding: 28px 10px 30px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.notification-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 9px 8px;
+  border-radius: 12px;
+}
+
+.notification-row:hover {
+  background: color-mix(in srgb, var(--panel-soft) 72%, transparent);
+}
+
+.notification-row.unread {
+  background: color-mix(in srgb, var(--brand-soft) 55%, transparent);
+}
+
+.notification-row.running {
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--line));
+}
+
+.notification-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 2px;
+  border-radius: 8px;
+  background: var(--panel-sunk);
+  color: var(--muted);
+}
+
+.notification-status svg {
+  width: 15px;
+  height: 15px;
+}
+
+.notification-row.running .notification-status {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.notification-row.success .notification-status {
+  background: color-mix(in srgb, var(--ok) 14%, var(--panel));
+  color: var(--ok);
+}
+
+.notification-row.failed .notification-status {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.notification-main {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-title {
+  display: block;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 650;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-detail {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.notification-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.notification-state {
+  font-weight: 600;
+}
+
+.notification-row.running .notification-state {
+  color: var(--brand);
+}
+
+.notification-row.failed .notification-state {
+  color: var(--danger);
+}
+
+.notification-toggle {
+  align-self: center;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.notification-toggle:hover {
+  border-color: var(--brand-line);
+  color: var(--ink);
+}
+
+.notification-toggle:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+@keyframes notification-bell-breathe {
+  0%, 100% { transform: rotate(0deg); opacity: .7; }
+  45% { transform: rotate(-5deg); opacity: 1; }
+  55% { transform: rotate(5deg); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-btn.has-running svg {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .notification-pop {
+    width: min(350px, calc(100vw - 24px));
+  }
+}

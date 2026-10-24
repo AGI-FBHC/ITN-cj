@@ -67,6 +67,7 @@ Copy-Item -LiteralPath (Join-Path $repo "shell\deck-export.js") -Destination $ap
 Copy-Item -LiteralPath (Join-Path $repo "shell\presentation-builder.js") -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $repo "shell\desktop-bridge.js") -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $repo "shell\resource-reader.js") -Destination $appDir -Force
+Copy-Item -LiteralPath (Join-Path $repo "shell\reference-paths.cjs") -Destination $appDir -Force
 # npm resolves the complete production dependency graph, including platform PDF bindings.
 $productionModules = & npm --prefix (Join-Path $repo 'shell') ls --omit=dev --all --parseable
 if ($LASTEXITCODE -ne 0) { throw "生产依赖不完整，请先在shell中npm install" }
@@ -139,7 +140,7 @@ if ([string]::IsNullOrWhiteSpace($Build)) {
 $assetHashes = [ordered]@{}
 $assetFiles = @(
     'Lumin.exe', 'resources/app/assets/lumin.ico', 'resources/app/assets/logo.png',
-    'resources/app/main.js', 'resources/app/preload.js', 'resources/app/pptx.js',
+    'resources/app/main.js', 'resources/app/preload.js', 'resources/app/pptx.js', 'resources/app/reference-paths.cjs',
     'resources/app/renderer/index.html', 'resources/app/renderer/app.js',
     'resources/app/renderer/style.css', 'resources/app/renderer/workbench.js',
     'resources/app/renderer/workbench.css', 'resources/kernel/lumin-core.exe',
@@ -153,6 +154,7 @@ $assetFiles = @(
     'resources/app/renderer/mascot/xiaoyuanlong-working.png', 'resources/app/renderer/mascot/xiaoyuanlong-success.png',
     'resources/app/renderer/studyplayer.js', 'resources/app/renderer/studyplayer.css',
     'resources/app/renderer/tasks.js', 'resources/app/renderer/tasks.css',
+    'resources/app/renderer/notifications.js', 'resources/app/renderer/notifications.css',
     'resources/app/renderer/team-panel.js', 'resources/app/renderer/team-panel.css',
     'resources/app/renderer/ppt-renderer/render_ppt.py',
     'resources/app/renderer/ppt-renderer/legacy_agent.py',

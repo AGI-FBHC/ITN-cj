@@ -1030,7 +1030,7 @@ fs.writeFileSync(singleFile, [
     assert(quiz, '应有一份练习册可供删除');
     await page.evaluate((n) => fetch('/api/artifacts/progress/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n, page: 2, pageCount: 5 }) }), quiz.name);
     await page.locator('.item', { hasText: quiz.name }).getByRole('button', { name: '删除' }).click();
-    await page.getByRole('button', { name: '确认删除' }).click();
+    await page.getByRole('button', { name: '删除', exact: true }).click();
     // 删除后会 go('resources') 重渲染，重渲染瞬间 .list 还不存在，判断要容错
     await page.waitForFunction((n) => {
       const l = document.querySelector('.list');
@@ -1542,12 +1542,12 @@ fs.writeFileSync(singleFile, [
     await page.waitForSelector('.item:has-text("自测课程资料")', { timeout: 15000 });
     const kbBefore = await page.evaluate(() => fetch('/api/settings').then((r) => r.json()).then((j) => (j.data.knowledgeBases || []).length));
     await page.locator('.item', { hasText: '自测课程资料' }).getByRole('button', { name: '删除' }).first().click();
-    await page.waitForSelector('#view .card.dialog', { timeout: 10000 });
-    const dlgText = await page.locator('#view .card.dialog').first().innerText();
+    await page.waitForSelector('.app-modal', { timeout: 10000 });
+    const dlgText = await page.locator('.app-modal').first().innerText();
     assert(dlgText.indexOf('删除知识库登记') >= 0, '应弹出确认弹层，实际：' + dlgText.replace(/\s+/g, ' ').slice(0, 60));
     await shot('38-确认弹层');
     await page.keyboard.press('Escape');
-    await page.waitForFunction(() => !document.querySelector('#view .card.dialog'), null, { timeout: 8000 });
+    await page.waitForFunction(() => !document.querySelector('.app-modal'), null, { timeout: 8000 });
     const kbAfter = await page.evaluate(() => fetch('/api/settings').then((r) => r.json()).then((j) => (j.data.knowledgeBases || []).length));
     assert(kbAfter === kbBefore, 'Esc 只是关弹层，不该真的删掉知识库：前 ' + kbBefore + ' 后 ' + kbAfter);
     return '弹层被 Esc 关掉，知识库仍是 ' + kbAfter + ' 个';
@@ -1585,7 +1585,7 @@ fs.writeFileSync(singleFile, [
     await shot('25-数据与备份');
 
     await page.locator('.backup-item', { hasText: newest.name }).getByRole('button', { name: '删除' }).click();
-    await page.getByRole('button', { name: '确认删除' }).click();
+    await page.getByRole('button', { name: '删除', exact: true }).click();
     await waitBackups(before);
     assert(!fs.existsSync(bkPath), '删除后备份文件应没了');
     return '库 ' + Math.round(st1.dbSize / 1024) + ' KB；备份 ' + newest.name + '（磁盘同大小）→ 已删除';

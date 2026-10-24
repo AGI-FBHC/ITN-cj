@@ -244,7 +244,7 @@ class LearningTeamRun {
 
     public init(store: Store, toolName: String, goal: String, kbId: String, sessionId: String,
         turnId: String, emit: (String, JsonObject) -> Unit, shouldAbort: () -> Bool,
-        maxDepth: Int64, maxNodes: Int64, maxConcurrency: Int64) {
+        maxDepth: Int64, maxNodes: Int64, maxConcurrency: Int64, runtimeModel!: ?ModelConfig = None) {
         this.store = store
         this.toolName = toolName
         this.goal = goal
@@ -256,7 +256,7 @@ class LearningTeamRun {
         this.maxDepth = if (maxDepth > 0 && maxDepth < 5) { maxDepth } else { 3 }
         this.maxNodes = if (maxNodes > 3 && maxNodes < 13) { maxNodes } else { 9 }
         this.maxConcurrency = if (maxConcurrency > 0 && maxConcurrency < 5) { maxConcurrency } else { 3 }
-        this.model = teamModel(store)
+        this.model = match (runtimeModel) { case Some(cfg) => cfg; case None => teamModel(store) }
         this.runId = "team-" + Random().nextUInt64().toString()
     }
 
@@ -553,7 +553,7 @@ class LearningTeamRun {
 
 func learningTeamTool(store: Store, toolName: String, kbId: String, sessionId: String, turnId: String,
     userText: String, emit: (String, JsonObject) -> Unit, shouldAbort: () -> Bool,
-    args: JsonObject): DomainToolRun {
+    args: JsonObject, runtimeModel!: ?ModelConfig = None): DomainToolRun {
     var goal = trimStr(strOf(args, "goal"))
     if (goal.size == 0) {
         goal = trimStr(strOf(args, "topic"))
@@ -569,24 +569,24 @@ func learningTeamTool(store: Store, toolName: String, kbId: String, sessionId: S
         return r
     }
     let run = LearningTeamRun(store, toolName, goal, kbId, sessionId, turnId, emit, shouldAbort,
-        intOf(args, "max_depth"), intOf(args, "max_nodes"), intOf(args, "max_concurrency"))
+        intOf(args, "max_depth"), intOf(args, "max_nodes"), intOf(args, "max_concurrency"), runtimeModel: runtimeModel)
     return run.run()
 }
 
 public func learningTeamTools(store: Store, kbId: String, shouldAbort: () -> Bool, sid: String,
-    turnId: String, userText: String, emit: (String, JsonObject) -> Unit): ArrayList<DomainTool> {
+    turnId: String, userText: String, emit: (String, JsonObject) -> Unit, runtimeModel!: ?ModelConfig = None): ArrayList<DomainTool> {
     let out = ArrayList<DomainTool>()
     out.add(makeTool("research_topic_team", "主题研究小组", "用多级智能体协作树完成主题研究",
         "当用户需要多角度研究、概念对比、资料综述或需要多个独立视角时使用。工具会规划多级协作树，并行研究并由汇总节点形成最终回答；右侧会自动打开协作树。简单的一问一答不要调用。",
         "{\"type\":\"object\",\"properties\":{\"goal\":{\"type\":\"string\",\"description\":\"要研究的主题或问题\"},\"max_depth\":{\"type\":\"integer\",\"description\":\"最大树深度，默认3\"},\"max_nodes\":{\"type\":\"integer\",\"description\":\"最大节点数，默认9\"},\"max_concurrency\":{\"type\":\"integer\",\"description\":\"最大并行节点数，默认3\"}},\"required\":[\"goal\"]}",
         "read",
         { args: JsonObject => learningTeamTool(store, "research_topic_team", kbId, sid, turnId, userText,
-            emit, shouldAbort, args) }))
+            emit, shouldAbort, args, runtimeModel: runtimeModel) }))
     out.add(makeTool("plan_study_team", "学习计划小组", "用多级智能体协作树制定学习计划",
         "当用户需要根据学习目标、基础、时间或测验记录制定多阶段学习计划时使用。工具会规划多级协作树，由学情、目标、计划和审查节点协作；右侧会自动打开协作树。简单时间换算不要调用。",
         "{\"type\":\"object\",\"properties\":{\"goal\":{\"type\":\"string\",\"description\":\"学习目标或计划要求\"},\"max_depth\":{\"type\":\"integer\",\"description\":\"最大树深度，默认3\"},\"max_nodes\":{\"type\":\"integer\",\"description\":\"最大节点数，默认9\"},\"max_concurrency\":{\"type\":\"integer\",\"description\":\"最大并行节点数，默认3\"}},\"required\":[\"goal\"]}",
         "read",
         { args: JsonObject => learningTeamTool(store, "plan_study_team", kbId, sid, turnId, userText,
-            emit, shouldAbort, args) }))
+            emit, shouldAbort, args, runtimeModel: runtimeModel) }))
     return out
 }

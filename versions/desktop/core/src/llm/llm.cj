@@ -9,6 +9,7 @@ import std.convert.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.*
 import itn_desktop_core.util.*
+import itn_desktop_core.reasoning.applyReasoningParameters
 
 // 用 open：上层需要区分"网络/模型报错"与"用户取消"（取消例外继承它，
 // 这样 postStream 的 catch (e: LlmException) 会把它原样重抛，不会被包成网络错误）
@@ -226,8 +227,8 @@ public class LlmClient {
         let payload = JsonObject()
         payload.put("model", JsonString(modelName()))
         payload.put("messages", messages)
-        payload.put("temperature", JsonFloat(0.3))
         payload.put("stream", JsonBool(true))
+        applyReasoningParameters(payload, cfg, cfg.reasoningMode, 0)
         let content = postStream("/chat/completions", payload, onDelta)
         if (content.size == 0) {
             throw LlmException("模型返回内容为空")

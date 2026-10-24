@@ -8,6 +8,7 @@ import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.llm.LlmClient
 import itn_desktop_core.resource.jsonObjectFromModel
 import itn_desktop_core.store.Store
+import itn_desktop_core.store.ModelConfig
 import itn_desktop_core.util.*
 
 func presentationText(o: JsonObject, key: String): String {
@@ -37,9 +38,11 @@ func presentationArray(o: JsonObject, key: String): JsonArray {
  */
 public class PresentationAgent {
     let store: Store
+    let runtimeModel: ?ModelConfig
 
-    public init(store: Store) {
+    public init(store: Store, runtimeModel!: ?ModelConfig = None) {
         this.store = store
+        this.runtimeModel = runtimeModel
     }
 
     func chooseSlideCount(args: JsonObject): Int64 {
@@ -146,10 +149,12 @@ func requestJson(args: JsonObject, requirement: String, title: String, slideCoun
 
     func generateOutline(request: JsonObject, context: String, shouldAbort: () -> Bool): JsonObject {
         let settings = store.load()
-        if (settings.chatModelId.size == 0) { throw Exception("请先在设置中配置对话模型") }
-        let cfg = match (settings.findModel(settings.chatModelId)) {
-            case Some(v) => v
-            case None => throw Exception("找不到对话模型配置")
+        let cfg = match (runtimeModel) {
+            case Some(snapshot) => snapshot
+            case None => match (settings.findModel(settings.chatModelId)) {
+                case Some(v) => v
+                case None => throw Exception("找不到对话模型配置")
+            }
         }
         if (shouldAbort()) { throw Exception("已取消PPT生成") }
         let client = LlmClient(cfg)

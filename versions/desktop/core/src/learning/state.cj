@@ -24,14 +24,24 @@ public func structuredLearningState(dataDir: String, kbId: String): JsonObject {
     out.put("progress", progress)
 
     let reading = JsonArray()
-    for (r in db.query("SELECT p.kb_id,p.item_key,p.kind,p.at,COALESCE(c.doc_title,''),COALESCE(c.heading_path,'') FROM progress p LEFT JOIN chunks c ON p.kind='chunk' AND c.kb_id=p.kb_id AND c.chunk_key=p.item_key WHERE (?='' OR p.kb_id=?) ORDER BY datetime(p.at) DESC,p.rowid DESC LIMIT 6", scope)) {
+    // 先取最近 6 条进度再按唯一索引逐条补文档信息：LEFT JOIN 在真实库上会退化成 chunks 全表扫描（EXPLAIN 为 SCAN p; SCAN c，6 行结果耗 6 秒以上）。
+    let recent = db.query("SELECT kb_id,item_key,kind,at FROM progress WHERE (?='' OR kb_id=?) ORDER BY datetime(at) DESC,rowid DESC LIMIT 6", scope)
+    for (p in recent) {
+        var doc = ""
+        var section = ""
+        if (p.text(2) == "chunk") {
+            for (c in db.query("SELECT COALESCE(doc_title,''),COALESCE(heading_path,'') FROM chunks WHERE kb_id=? AND chunk_key=?", va([tv(p.text(0)), tv(p.text(1))]))) {
+                doc = c.text(0)
+                section = c.text(1)
+            }
+        }
         let item = JsonObject()
-        item.put("kbId", JsonString(r.text(0)))
-        item.put("itemId", JsonString(r.text(1)))
-        item.put("kind", JsonString(r.text(2)))
-        item.put("at", JsonString(r.text(3)))
-        item.put("document", JsonString(byteSafePrefix(r.text(4), 180)))
-        item.put("section", JsonString(byteSafePrefix(r.text(5), 240)))
+        item.put("kbId", JsonString(p.text(0)))
+        item.put("itemId", JsonString(p.text(1)))
+        item.put("kind", JsonString(p.text(2)))
+        item.put("at", JsonString(p.text(3)))
+        item.put("document", JsonString(byteSafePrefix(doc, 180)))
+        item.put("section", JsonString(byteSafePrefix(section, 240)))
         reading.add(item)
     }
     out.put("recentReading", reading)

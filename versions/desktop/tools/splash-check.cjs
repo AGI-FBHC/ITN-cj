@@ -13,14 +13,16 @@ try{
  check('cold-start logo is inlined so no bare text-only frame can show',String(await cold.evaluate(()=>document.querySelector('.splash-mark img').getAttribute('src'))).startsWith('data:image/png;base64,'));
  await cold.waitForFunction(()=>document.body.classList.contains('ready'));
  check('cold-start page reveals only after the mark is decoded',true);
- check('cold-start page includes the Cangjie credit',await cold.locator('.splash-powered').innerText()==='powered by cangjie');
+ check('cold-start page includes the Cangjie credit',await cold.locator('.splash-powered').innerText()==='Powered by Cangjie');
+ check('cold-start credit uses the larger 15px text',await cold.locator('.splash-powered').evaluate(e=>parseFloat(getComputedStyle(e).fontSize))===15);
  // 第二段：应用内动画层（reload 一次，完整看到"出现 → 淡出 → 交接"）
  app=await _electron.launch({executablePath:path.resolve('shell/node_modules/electron/dist/electron.exe'),args:[path.resolve('shell/main.js'),'--ui-check'],env:{...process.env,APPDATA:dir,LOCALAPPDATA:dir,TEMP:dir,TMP:dir},timeout:30000});
  const page=await app.firstWindow();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.waitForSelector('#view',{timeout:60000});await page.waitForTimeout(400);
  await page.reload();
  await page.waitForSelector('#boot',{timeout:15000});
- check('in-app startup includes the same Cangjie credit',await page.locator('.boot-powered').innerText()==='powered by cangjie');
+ check('in-app startup includes the same Cangjie credit',await page.locator('.boot-powered').innerText()==='Powered by Cangjie');
+ check('in-app credit matches the cold-start 15px text',await page.locator('.boot-powered').evaluate(e=>parseFloat(getComputedStyle(e).fontSize))===15);
  const bootShot=await page.evaluate(()=>{const img=document.querySelector('#boot .boot-mark img');const mark=document.querySelector('#boot .boot-mark');const shine=document.querySelector('#boot .boot-shine');return {loaded:img.naturalWidth>0,breathe:getComputedStyle(mark).animationName,shine:getComputedStyle(shine).animationName};});
  check('in-app splash layers the same animation over the first paint',bootShot.loaded&&bootShot.breathe.includes('boot-breathe')&&bootShot.shine.includes('boot-shine'));
  check('in-app splash logo is inlined too',String(await page.evaluate(()=>document.querySelector('#boot .boot-mark img').getAttribute('src'))).startsWith('data:image/png;base64,'));

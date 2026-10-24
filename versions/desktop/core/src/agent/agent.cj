@@ -65,6 +65,11 @@ public func citationsFromHits(hits: JsonArray): JsonArray {
                 c.put("docTitle", JsonString(strOf(h, "docTitle")))
                 c.put("docPath", JsonString(strOf(h, "docPath")))
                 c.put("headingPath", JsonString(strOf(h, "headingPath")))
+                c.put("kbId", JsonString(strOf(h, "kbId")))
+                c.put("kbName", JsonString(strOf(h, "kbName")))
+                c.put("chunkId", JsonString(if (strOf(h, "chunkId").size > 0) { strOf(h, "chunkId") } else { strOf(h, "id") }))
+                c.put("text", JsonString(strOf(h, "text")))
+                if (h.get("ordinal").isSome()) { c.put("ordinal", JsonInt(intOf(h, "ordinal"))) }
                 arr.add(c)
             case None => ()
         }
@@ -165,6 +170,9 @@ public func webCitationsFrom(answer: String, sources: ArrayList<JsonObject>): Js
         c.put("kind", JsonString("web"))
         c.put("docTitle", JsonString(strOf(w, "title")))
         c.put("docPath", JsonString(strOf(w, "url")))
+        c.put("url", JsonString(strOf(w, "url")))
+        c.put("path", JsonString(strOf(w, "path")))
+        c.put("text", JsonString(if (strOf(w, "text").size > 0) { strOf(w, "text") } else { strOf(w, "content") }))
         c.put("headingPath", JsonString("网络资料 · 抓取于 " + strOf(w, "fetchedAt")))
         c.put("fetchedAt", JsonString(strOf(w, "fetchedAt")))
         arr.add(c)
