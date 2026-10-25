@@ -771,6 +771,7 @@ async function runGuarded(key, button, busyLabel, task, options) {
   }
   const noticeId = opts.notice && window.LuminNotifications
     ? window.LuminNotifications.start({
+      source: 'task',
       title: opts.notice.title || busyLabel || "正在处理",
       detail: opts.notice.detail || "",
       page: opts.notice.page || current || "",
@@ -956,11 +957,22 @@ const state = {
 
 function syncNotificationContext() {
   const ready = !!state.notificationViewReady;
+  window.LuminNotifications?.setNavigator?.(openNotificationTarget);
   window.LuminNotifications?.setContext?.({
     page: current,
     sessionId: ready && current === 'chat' && $('chat-thread') ? state.chatSessionId || '' : '',
     guidedSessionId: ready && current === 'study' ? state.guidedNotificationSessionId || '' : '',
   });
+}
+
+async function openNotificationTarget(action) {
+  if (action.kbId) {
+    if (!(state.cfg.knowledgeBases || []).some(kb => kb.id === action.kbId)) await loadCfg(true);
+    if (!(state.cfg.knowledgeBases || []).some(kb => kb.id === action.kbId)) throw Error('原知识库已移除');
+    state.kb = action.kbId;
+    if (action.page === 'learn' && typeof courseUi === 'object') courseUi.kb = action.kbId;
+  }
+  await go(action.page || 'chat', action.section || '');
 }
 
 function setGuidedNotificationSession(sessionId, expectedId) {
@@ -3978,7 +3990,7 @@ async function openUrlFetchDialog() {
         onClick: async () => {
           const url = input.value.trim();
           if (!url) { toast("先贴一个链接"); input.focus(); return false; }
-          const noticeId = window.LuminNotifications?.start({title: "读取网页", detail: url, page: current || ""});
+          const noticeId = window.LuminNotifications?.start({source: 'task', title: "读取网页", detail: url, page: current || ""});
           try {
             const r = await api("/api/web/fetch", { url: url });
             if (noticeId) window.LuminNotifications.finish(noticeId, "success", "已读取《" + r.title + "》");
@@ -10223,9 +10235,11 @@ async function organizeKb(kbId, trigger) {
   if (!kbId) { toast("先选择一个知识库"); return; }
   return runGuarded("kb:organize:" + kbId, trigger, "正在整理…", async () => {
   const noticeId = window.LuminNotifications?.start({
+    source: 'task',
     title: "整理资料",
     detail: "正在整理「" + kbName(kbId) + "」的章节目录",
     page: "kb",
+    action: {page: 'kb', section: 'manage', kbId},
   });
   try {
     const r = await api("/api/kb/organize", { id: kbId });
@@ -10279,9 +10293,11 @@ async function buildIndex(kbId, trigger) {
   if (!kbId) { toast("先选择一个知识库"); return; }
   return runGuarded("kb:build:" + kbId, trigger, "正在准备…", async () => {
   const noticeId = window.LuminNotifications?.start({
+    source: 'task',
     title: "准备资料",
     detail: "正在扫描并索引「" + kbName(kbId) + "」",
     page: "kb",
+    action: {page: 'kb', section: 'manage', kbId},
   });
   try {
     const st = await api("/api/kb/build", { id: kbId });
