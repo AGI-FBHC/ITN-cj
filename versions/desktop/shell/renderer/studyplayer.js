@@ -397,6 +397,9 @@ function spRenderPpt(page,res,asset){
     chat.classList.toggle('open',state.chatOpen);
     chat.setAttribute('aria-hidden',state.chatOpen?'false':'true');
     scrim.hidden=!(state.chatOpen&&innerWidth<=980);
+    if(!state.cleaned&&page.isConnected&&typeof setGuidedNotificationSession==='function'){
+      setGuidedNotificationSession(state.chatOpen?state.sessionId:'',state.chatOpen?undefined:state.sessionId);
+    }
   };
   const syncComposer=()=>{
     const e=activeEntry(),busy=!!e.busy;
@@ -696,7 +699,10 @@ function spRenderPpt(page,res,asset){
     const slide=Math.max(1,Math.min(state.total,Number(resolved.slide||entry.context?.currentSlide||1)));
     state.idx=slide-1;state.focusedSlide=slide;
     if(loadHistory&&!entry.loaded)await loadEntry(entry).catch(e=>{entry.error=e.message;});
+    if(state.cleaned||!page.isConnected)return;
     paintAll();
+    thread.dataset.sessionId=state.sessionId;
+    if(typeof setGuidedNotificationSession==='function')setGuidedNotificationSession(state.chatOpen?state.sessionId:'',state.chatOpen?undefined:state.sessionId);
     pollApprovals(entry).catch(()=>{});
     if(typeof reloadSessions==='function')reloadSessions().catch(()=>{});
   };
@@ -868,6 +874,7 @@ function spRenderPpt(page,res,asset){
 
   const cleanup=()=>{
     if(state.cleaned)return;state.cleaned=true;
+    if(typeof setGuidedNotificationSession==='function')setGuidedNotificationSession('',state.sessionId);
     observer.disconnect();slideObserver.disconnect();window.removeEventListener('keydown',onKey);window.removeEventListener('resize',onResize);
     if(state.saveTimer)clearTimeout(state.saveTimer);if(state.focusTimer)clearTimeout(state.focusTimer);
     document.removeEventListener('click',closeAttachMenu);

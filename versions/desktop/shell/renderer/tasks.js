@@ -34,32 +34,8 @@
       state.data=data;syncNotifications(data);paint();
     }catch(e){ console.warn('tasks refresh failed', e); if(force)toast('读取任务失败：'+e.message); }
   }
-  function taskNoticeDetail(t){
-    const p=t.progress||{},tk=t.tokens||{};
-    const bits=[];
-    if(t.stage)bits.push(t.stage);
-    if(Number.isFinite(Number(p.percent)))bits.push(Math.round(Number(p.percent))+'%');
-    if(Number(tk.total)>0)bits.push('tokens '+fmtTok(tk.total));
-    return bits.join(' · ');
-  }
   function syncNotifications(data){
-    const api=window.LuminNotifications;
-    if(!api)return;
-    const known=new Map(api.list().map(item=>[item.id,item]));
-    for(const task of data.running||[]){
-      const id='task:'+task.id,detail=taskNoticeDetail(task),title=task.title||KIND[task.kind]?.[1]||'后台任务';
-      const old=known.get(id);
-      if(!old)api.start({id,title,detail,page:task.link?.page||''});
-      else if(old.status!=='running'||old.detail!==detail)api.update(id,{status:'running',detail,read:false,page:task.link?.page||''});
-    }
-    for(const task of data.recent||[]){
-      const id='task:'+task.id;
-      const old=known.get(id);
-      if(!old)continue;
-      const detail=taskNoticeDetail(task)||old.detail;
-      const next=task.status==='completed'?'success':task.status==='failed'?'failed':'info';
-      if(old.status!==next||old.detail!==detail)api.update(id,{status:next,detail,read:false,page:task.link?.page||old.page||''});
-    }
+    window.LuminNotifications?.syncTasks?.(data);
   }
   function paint(){
     if(!state.data)return;
