@@ -31,3 +31,7 @@ shell/renderer/ppt-renderer/python/
 
 # Desktop notes and manuals are local-only.
 /docs/
+
+# Local collaboration files.
+AGENTS.md
+TRACE.md
