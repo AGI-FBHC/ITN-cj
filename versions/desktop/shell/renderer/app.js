@@ -771,6 +771,7 @@ async function runGuarded(key, button, busyLabel, task, options) {
   }
   const noticeId = opts.notice && window.LuminNotifications
     ? window.LuminNotifications.start({
+      source: 'task',
       title: opts.notice.title || busyLabel || "正在处理",
       detail: opts.notice.detail || "",
       page: opts.notice.page || current || "",
@@ -954,6 +955,32 @@ const state = {
   theme: "system", dark: false, panelHidden: false, kernel: null, uiZoom: 1, uiFont: 1,
 };
 
+function syncNotificationContext() {
+  const ready = !!state.notificationViewReady;
+  window.LuminNotifications?.setNavigator?.(openNotificationTarget);
+  window.LuminNotifications?.setContext?.({
+    page: current,
+    sessionId: ready && current === 'chat' && $('chat-thread') ? state.chatSessionId || '' : '',
+    guidedSessionId: ready && current === 'study' ? state.guidedNotificationSessionId || '' : '',
+  });
+}
+
+async function openNotificationTarget(action) {
+  if (action.kbId) {
+    if (!(state.cfg.knowledgeBases || []).some(kb => kb.id === action.kbId)) await loadCfg(true);
+    if (!(state.cfg.knowledgeBases || []).some(kb => kb.id === action.kbId)) throw Error('原知识库已移除');
+    state.kb = action.kbId;
+    if (action.page === 'learn' && typeof courseUi === 'object') courseUi.kb = action.kbId;
+  }
+  await go(action.page || 'chat', action.section || '');
+}
+
+function setGuidedNotificationSession(sessionId, expectedId) {
+  if (expectedId !== undefined && state.guidedNotificationSessionId !== expectedId) return;
+  state.guidedNotificationSessionId = String(sessionId || '');
+  syncNotificationContext();
+}
+
 let current = "home";
 let ttsPreviewAudio = null;
 const navigationLoads = new Map();
@@ -1013,34 +1040,33 @@ function projectName(id) {
   return p ? (p.name || p.root || id) : "";
 }
 
+let profileWrites = Promise.resolve();
+let profileRevision = 0;
 async function loadProfile(force) {
   return navigationLoad("profile", async () => {
-    state.profile = (await api("/api/profile/get", {})) || {};
+    let revision, profile;
+    do {
+      await profileWrites;
+      revision = profileRevision;
+      profile = (await api("/api/profile/get", {})) || {};
+    } while (revision !== profileRevision);
+    state.profile = profile;
     return state.profile;
   }, force);
 }
 
-/**
- * 保存档案。
- *
- * 内核的 /api/profile/save 是"整个档案覆盖写"：请求里没带的字段会被写成空。
- * 所以这里统一由一处拼装完整对象，调用方只传要改的部分——否则「保存自评分」会把
- * 昵称、学习目标、偏好格式全清掉（这是个真实的数据丢失口子）。
- */
-async function saveProfile(patch) {
-  const p = state.profile || {};
-  const body = {
-    nickname: patch.nickname !== undefined ? patch.nickname : (p.nickname || ""),
-    goal: patch.goal !== undefined ? patch.goal : (p.goal || ""),
-    weeklyHours: patch.weeklyHours !== undefined ? patch.weeklyHours : (p.weeklyHours || 0),
-    mbtiType: patch.mbtiType !== undefined ? patch.mbtiType : (p.mbtiType || ""),
-    luminMbtiType: patch.luminMbtiType !== undefined ? patch.luminMbtiType : (p.luminMbtiType || "ENFJ"),
-    preferredFormats: p.preferredFormats || [],
-    selfScores: Object.assign({}, p.selfScores || {}, patch.selfScores || {}),
-  };
-  const d = await api("/api/profile/save", body);
-  state.profile = d || state.profile;
-  return state.profile;
+/** Serialize field patches; stale forms must not restore an old MBTI or goal. */
+function saveProfile(patch) {
+  const body = JSON.parse(JSON.stringify(patch || {}));
+  profileRevision++;
+  const pending = profileWrites.then(async () => {
+    const data = await api("/api/profile/save", body);
+    state.profile = data || state.profile;
+    for (const key of navigationLoads.keys()) if (key.endsWith(':profile')) navigationLoads.delete(key);
+    return state.profile;
+  });
+  profileWrites = pending.catch(() => {});
+  return pending;
 }
 async function loadReport(force) {
   return navigationLoad("report:" + (state.kb || ""), async () => {
@@ -1618,6 +1644,9 @@ async function go(page, section, opts) {
   const target = PAGES[page] ? page : "home";
   current = target;
   currentSection = section || "";
+  state.notificationViewReady = false;
+  state.guidedNotificationSessionId = '';
+  syncNotificationContext();
   const persistentDock = $("resource-dock");
   if (persistentDock && persistentDock.parentElement !== document.querySelector(".app")) document.querySelector(".app").appendChild(persistentDock);
   document.body.dataset.page = target;
@@ -1694,7 +1723,11 @@ async function go(page, section, opts) {
   updateNavButtons();
   if (opts && opts.focus) focusInView(opts.focus);
   if (typeof workbenchAfterPage === "function") await workbenchAfterPage();
-  if (navigation === state.navigationGeneration) v.setAttribute("aria-busy", "false");
+  if (navigation === state.navigationGeneration) {
+    v.setAttribute("aria-busy", "false");
+    state.notificationViewReady = true;
+    syncNotificationContext();
+  }
 }
 
 /** 面板里点过的条目：滚到主区对应位置并闪一下描边，不弹窗、不跳页。 */
@@ -3957,7 +3990,7 @@ async function openUrlFetchDialog() {
         onClick: async () => {
           const url = input.value.trim();
           if (!url) { toast("先贴一个链接"); input.focus(); return false; }
-          const noticeId = window.LuminNotifications?.start({title: "读取网页", detail: url, page: current || ""});
+          const noticeId = window.LuminNotifications?.start({source: 'task', title: "读取网页", detail: url, page: current || ""});
           try {
             const r = await api("/api/web/fetch", { url: url });
             if (noticeId) window.LuminNotifications.finish(noticeId, "success", "已读取《" + r.title + "》");
@@ -5642,6 +5675,7 @@ function syncChatBusy() {
     mascotActivity("idle", 0);
   }
   if (typeof state.chatRepaintBusy === "function") state.chatRepaintBusy();
+  syncNotificationContext();
   /* 会话栏的"运行中"转圈要跟着请求开始/结束即时变化：
      以前只在面板整页重渲染时才更新，刚发出去的会话要等下一次刷新才转圈。 */
   if (current === "chat" && typeof PANELS !== "undefined" && PANELS.chat?.refresh) {
@@ -8487,6 +8521,8 @@ PAGES.chat = {
     state.chatOpenSession = async (id) => {
       const selection = state.chatSelectionGeneration = (state.chatSelectionGeneration || 0) + 1;
       state.chatSessionId = id;
+      state.notificationViewReady = false;
+      syncNotificationContext();
       const requestAtOpen = state.chatRequests.get(id);
       reasoningControl.paint(); reasoningControl.refresh(true);
       // 右侧资源栏属于"这一段对话的产物"：换会话就收起，
@@ -8518,6 +8554,8 @@ PAGES.chat = {
       }
       state.stickBottom = true;
       paint();
+      state.notificationViewReady = true;
+      syncNotificationContext();
       for (const node of document.querySelectorAll("#panel-body .panel-item")) {
         node.classList.toggle("active", node.dataset.id === id);
       }
@@ -9320,16 +9358,18 @@ function settingsGeneral() {
 
   const profileSave = btn("保存档案", "primary sm", null);
   profileSave.onclick = () => runGuarded("profile:save", profileSave, "正在保存…", async () => {
+    const generation = state.navigationGeneration;
     try {
-      await saveProfile({
+      const values = {
         nickname: $("pf-nick").value.trim(),
         goal: $("pf-goal").value.trim(),
         weeklyHours: Number($("pf-hours").value) || 0,
-        mbtiType: $("pf-mbti").value,
-        luminMbtiType: $("pf-lumin-mbti").value || "ENFJ",
-      });
+      };
+      const patch = {};
+      for (const [key, value] of Object.entries(values)) if (value !== (p[key] || (key === 'weeklyHours' ? 0 : ''))) patch[key] = value;
+      await saveProfile(patch);
       toast("档案已保存");
-      go("settings", "general");
+      if (profileSave.isConnected && generation === state.navigationGeneration) await go("settings", "general");
     } catch (e) { toast("保存失败：" + e.message); }
   });
   const prof = cardOf({
@@ -9352,13 +9392,40 @@ function settingsGeneral() {
   luminMbti.setAttribute("aria-label", "Lumin 的 MBTI");
   mbtiRow.append(fieldOf("我的 MBTI", myMbti), fieldOf("Lumin 的 MBTI", luminMbti));
   mbtiCard.appendChild(mbtiRow);
+  const saveFeedback = el('div', 'mbti-save-feedback');
+  const saveStatus = el('span', 'mbti-save-status muted', '选择后自动保存');
+  saveStatus.setAttribute('role', 'status');
+  saveStatus.setAttribute('aria-live', 'polite');
+  let choiceRevision = 0;
+  const saveChoices = async patch => {
+    const revision = ++choiceRevision;
+    saveStatus.textContent = '保存中…';
+    saveStatus.classList.remove('error');
+    retry.hidden = true;
+    try {
+      await saveProfile(patch);
+      if (revision === choiceRevision && saveStatus.isConnected) saveStatus.textContent = '已保存';
+    } catch (error) {
+      if (revision !== choiceRevision || !saveStatus.isConnected) return;
+      saveStatus.textContent = '保存失败';
+      saveStatus.classList.add('error');
+      retry.hidden = false;
+      toast('偏好保存失败：' + error.message);
+    }
+  };
+  const retry = btn('重试', 'link-button', () => saveChoices({mbtiType: myMbti.value, luminMbtiType: luminMbti.value}));
+  retry.hidden = true;
+  myMbti.addEventListener('change', () => saveChoices({mbtiType: myMbti.value}));
+  luminMbti.addEventListener('change', () => saveChoices({luminMbtiType: luminMbti.value}));
+  saveFeedback.append(saveStatus, retry);
+  mbtiCard.appendChild(saveFeedback);
   const mbtiHint = el("p", "mbti-help");
   mbtiHint.append(
     el("span", "muted", "不知道自己的类型？"),
     btn("偏好问答", "link-button", event => runGuarded('mbti:start', event.currentTarget, '正在打开…', () => startMbtiAssessment())),
   );
   mbtiCard.appendChild(mbtiHint);
-  mbtiCard.appendChild(el("p", "muted", "Lumin 默认 ENFJ，温暖、主动、有条理。保存后生效。"));
+  mbtiCard.appendChild(el("p", "muted", "Lumin 默认 ENFJ，温暖、主动、有条理。"));
   prof.appendChild(mbtiCard);
   /* 六维自评只在「我的成长 → 能力校准」里改：同一份数据两个入口，改一处漏一处是上一轮的教训 */
   const hint = el("div", "row profile-hint");
@@ -10168,9 +10235,11 @@ async function organizeKb(kbId, trigger) {
   if (!kbId) { toast("先选择一个知识库"); return; }
   return runGuarded("kb:organize:" + kbId, trigger, "正在整理…", async () => {
   const noticeId = window.LuminNotifications?.start({
+    source: 'task',
     title: "整理资料",
     detail: "正在整理「" + kbName(kbId) + "」的章节目录",
     page: "kb",
+    action: {page: 'kb', section: 'manage', kbId},
   });
   try {
     const r = await api("/api/kb/organize", { id: kbId });
@@ -10224,9 +10293,11 @@ async function buildIndex(kbId, trigger) {
   if (!kbId) { toast("先选择一个知识库"); return; }
   return runGuarded("kb:build:" + kbId, trigger, "正在准备…", async () => {
   const noticeId = window.LuminNotifications?.start({
+    source: 'task',
     title: "准备资料",
     detail: "正在扫描并索引「" + kbName(kbId) + "」",
     page: "kb",
+    action: {page: 'kb', section: 'manage', kbId},
   });
   try {
     const st = await api("/api/kb/build", { id: kbId });

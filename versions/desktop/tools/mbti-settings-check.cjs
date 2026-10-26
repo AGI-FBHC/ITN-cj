@@ -16,7 +16,7 @@ const check = (name, ok, detail = '') => { if (!ok) throw new Error(name + (deta
 
 (async () => {
   try {
-    core = spawn(path.join(root, 'dist/core/itn-desktop-core.exe'), ['--data-dir=' + dataDir, '--port-file=' + portFile, '--ui-dir=' + path.join(root, 'shell/renderer')], {windowsHide: true, stdio: 'ignore', env: {...process.env, cjHeapSize: '2GB'}});
+    core = spawn(process.env.MBTI_CORE || path.join(root, 'dist/core/itn-desktop-core.exe'), ['--data-dir=' + dataDir, '--port-file=' + portFile, '--ui-dir=' + (process.env.ITN_UI_DIR || path.join(root, 'shell/renderer'))], {windowsHide: true, stdio: 'ignore', env: {...process.env, cjHeapSize: '2GB'}});
     for (let i = 0; i < 200 && !fs.existsSync(portFile); i++) await sleep(100);
     assert(fs.existsSync(portFile), 'kernel did not start');
     const base = 'http://127.0.0.1:' + fs.readFileSync(portFile, 'utf8').trim();
@@ -40,15 +40,75 @@ const check = (name, ok, detail = '') => { if (!ok) throw new Error(name + (deta
     check('Lumin defaults to ENFJ while the user type is unknown', await page.locator('#pf-mbti').inputValue() === '' && await page.locator('#pf-lumin-mbti').inputValue() === 'ENFJ');
 
     await page.locator('#pf-mbti').selectOption('INFP');
-    await page.locator('#pf-lumin-mbti').selectOption('ENFJ');
-    await page.getByRole('button', {name: '保存档案'}).click();
-    await page.waitForFunction(async () => (await fetch('/api/profile/get', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json())).data?.mbtiType === 'INFP');
+    await page.locator('#pf-lumin-mbti').selectOption('INTJ');
+    await page.evaluate(async()=>{await go('chat');await go('settings','general');});
     const saved = await post('profile/get');
-    check('MBTI selections persist in the learner profile', saved.mbtiType === 'INFP' && saved.luminMbtiType === 'ENFJ');
+    check('changing both MBTI selectors and leaving immediately saves without the profile button', saved.mbtiType === 'INFP' && saved.luminMbtiType === 'INTJ');
 
     await page.evaluate(() => go('settings', 'general'));
-    await page.waitForFunction(() => document.querySelector('#pf-mbti')?.value === 'INFP' && document.querySelector('#pf-lumin-mbti')?.value === 'ENFJ');
+    await page.waitForFunction(() => document.querySelector('#pf-mbti')?.value === 'INFP' && document.querySelector('#pf-lumin-mbti')?.value === 'INTJ');
     check('saved MBTI choices survive a settings rerender', true);
+
+    await page.locator('#pf-mbti').selectOption('INTP');
+    await page.locator('#pf-mbti').selectOption('ISFP');
+    await page.locator('#pf-lumin-mbti').selectOption('ENTP');
+    await page.locator('#pf-lumin-mbti').selectOption('ISTJ');
+    await page.evaluate(async()=>{await go('chat');await go('settings','general');});
+    const rapid=await post('profile/get');
+    check('rapid edits followed by navigation keep the last choice for each side',rapid.mbtiType==='ISFP'&&rapid.luminMbtiType==='ISTJ');
+
+    await post('profile/save',{mbtiType:'ENTJ',luminMbtiType:'ENFP',goal:'外部刚更新的目标'});
+    await page.evaluate(()=>saveProfile({selfScores:{'概念理解':61}}));
+    const external=await post('profile/get');
+    check('saving self scores from a stale page cannot overwrite external MBTI or goal changes',external.mbtiType==='ENTJ'&&external.luminMbtiType==='ENFP'&&external.goal==='外部刚更新的目标'&&external.selfScores['概念理解']===61);
+    await page.locator('#pf-nick').fill('只改称呼');
+    await page.getByRole('button',{name:'保存档案',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('#pf-mbti')?.value==='ENTJ'&&document.querySelector('#pf-lumin-mbti')?.value==='ENFP');
+    const formSaved=await post('profile/get');
+    check('the profile save button sends only edited fields and preserves external MBTI and goal',formSaved.nickname==='只改称呼'&&formSaved.mbtiType==='ENTJ'&&formSaved.luminMbtiType==='ENFP'&&formSaved.goal==='外部刚更新的目标');
+
+    let readReady,releaseRead;
+    const readStarted=new Promise(resolve=>{readReady=resolve;});
+    const readGate=new Promise(resolve=>{releaseRead=resolve;});
+    await page.route('**/api/profile/get',async route=>{const response=await route.fetch();readReady();await readGate;await route.fulfill({response});},{times:1});
+    await page.evaluate(()=>{window.__lateProfile=loadProfile(true);});
+    await readStarted;
+    await page.evaluate(()=>saveProfile({mbtiType:'ISTP'}));
+    releaseRead();
+    await page.evaluate(()=>window.__lateProfile);
+    check('a pre-save read that arrives late cannot roll back the saved profile',await page.evaluate(()=>state.profile.mbtiType==='ISTP'));
+
+    await page.evaluate(()=>go('settings','general'));
+    await page.waitForSelector('#pf-mbti');
+    await page.route('**/api/profile/save',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:503,message:'保存失败测试'})}),{times:1});
+    await page.locator('#pf-mbti').selectOption('ENFP');
+    await page.waitForFunction(()=>document.querySelector('.mbti-save-status')?.textContent==='保存失败');
+    check('save failures are visible and do not pretend to persist',(await post('profile/get')).mbtiType==='ISTP');
+    await page.getByRole('button',{name:'重试',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('.mbti-save-status')?.textContent==='已保存');
+    check('failed selections can be retried without changing them again',(await post('profile/get')).mbtiType==='ENFP');
+
+    let writeReady,releaseWrite;
+    const writeStarted=new Promise(resolve=>{writeReady=resolve;});
+    const writeGate=new Promise(resolve=>{releaseWrite=resolve;});
+    await page.route('**/api/profile/save',async route=>{writeReady();await writeGate;await route.continue();},{times:1});
+    await page.locator('#pf-nick').fill('保存后不抢回页面');
+    await page.getByRole('button',{name:'保存档案',exact:true}).click();
+    await writeStarted;
+    await page.evaluate(()=>go('chat'));
+    releaseWrite();
+    await page.waitForFunction(async()=>{const p=await fetch('/api/profile/get',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());return p.data?.nickname==='保存后不抢回页面';});
+    await page.evaluate(()=>loadProfile(true));
+    check('completing a profile save after navigation does not force the settings page back',await page.evaluate(()=>current==='chat'));
+
+    await page.evaluate(()=>go('settings','general'));
+    await page.waitForSelector('#pf-mbti');
+    await page.locator('#pf-mbti').selectOption('INFP');
+    await page.locator('#pf-lumin-mbti').selectOption('INTJ');
+    await page.waitForFunction(()=>document.querySelector('.mbti-save-status')?.textContent==='已保存');
+    await page.reload();
+    await page.waitForSelector('#pf-mbti');
+    check('saved selections survive an actual browser reload',await page.locator('#pf-mbti').inputValue()==='INFP'&&await page.locator('#pf-lumin-mbti').inputValue()==='INTJ');
 
     let releaseStart;
     const started = new Promise(resolve => { releaseStart=resolve; });
@@ -77,7 +137,7 @@ const check = (name, ok, detail = '') => { if (!ok) throw new Error(name + (deta
     await page.waitForSelector('#pf-mbti');
     await post('profile/save',{goal:'只修改目标'});
     const partial=await post('profile/get');
-    check('partial profile updates preserve both MBTI choices',partial.mbtiType==='INFP'&&partial.luminMbtiType==='ENFJ');
+    check('partial profile updates preserve both MBTI choices',partial.mbtiType==='INFP'&&partial.luminMbtiType==='INTJ');
     for(const theme of ['light','dark']){
       await page.evaluate(t=>applyTheme(t),theme);await page.waitForTimeout(450);
       await page.screenshot({path:path.join(dataDir,'settings-'+theme+'.png')});

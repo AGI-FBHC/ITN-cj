@@ -66,7 +66,7 @@ const freePort=()=>new Promise(resolve=>{
 
     const bell=page.locator('.notification-btn');
     check('the bell is mounted in the title bar',(await bell.count())===1&&await bell.isVisible());
-    await page.evaluate(()=>window.LuminNotifications.start({id:'notice-audit-running',title:'导出学习报告',detail:'正在汇总学习记录',page:'report'}));
+    await page.evaluate(()=>window.LuminNotifications.start({source:'task',id:'notice-audit-running',title:'导出学习报告',detail:'正在汇总学习记录',page:'report'}));
     await until(()=>page.evaluate(()=>document.querySelectorAll('.notification-row').length>=0));
     check('a long action creates a running notification',await page.evaluate(()=>window.LuminNotifications.list().some(n=>n.id==='notice-audit-running'&&n.status==='running')));
     await bell.click();
@@ -84,10 +84,10 @@ const freePort=()=>new Promise(resolve=>{
     const row=page.locator('.notification-row[data-id="notice-audit-running"]');
     await row.locator('.notification-toggle').click();
     await until(()=>page.evaluate(()=>window.LuminNotifications.list().some(n=>n.id==='notice-audit-running'&&n.read)));
-    check('each notification can be marked read individually',(await row.locator('.notification-toggle').innerText())==='标为未读');
-    await page.evaluate(()=>window.LuminNotifications.start({id:'notice-audit-second',title:'整理资料',detail:'正在整理章节目录',page:'kb'}));
+    check('read tasks disappear from the unread-only notification list',await row.count()===0);
+    await page.evaluate(()=>window.LuminNotifications.start({source:'task',id:'notice-audit-second',title:'整理资料',detail:'正在整理章节目录',page:'kb'}));
     await page.evaluate(()=>window.LuminNotifications.finish('notice-audit-second','success','整理完成'));
-    await page.getByRole('button',{name:'一键已读',exact:true}).click();
+    await page.getByRole('button',{name:'全部已读',exact:true}).click();
     await until(()=>page.evaluate(()=>window.LuminNotifications.list().filter(n=>n.status!=='running').every(n=>n.read)));
     check('one-click read clears every unread result',await page.locator('.notification-badge').isHidden());
     await until(async()=>{
