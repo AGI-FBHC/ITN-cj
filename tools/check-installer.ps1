@@ -121,7 +121,10 @@ try {
   # whole installed process tree before testing upgrade.
   Stop-InstalledProcesses
   $node=(Get-Command node.exe -ErrorAction Stop).Source
-  & $node "$PSScriptRoot\check-installed-resources.cjs" $installed $root $PdfFixture
+  # Node's SQLite is still experimental and prints a warning on stderr; under
+  # Windows PowerShell 5.1 that becomes a NativeCommandError and aborts the
+  # whole acceptance run even though the checks are passing.
+  & $node --no-warnings "$PSScriptRoot\check-installed-resources.cjs" $installed $root $PdfFixture
   Check ($LASTEXITCODE -eq 0) 'installed PPT DOCX PDF runtime and isolated database pass'
   $database=Join-Path $data 'itn.db'
   $databaseHash=(Get-FileHash -LiteralPath $database).Hash
