@@ -383,6 +383,28 @@ public func classifyGuidedTool(name: String, args: JsonObject, wsRoot: String): 
     return ("", "", "")
 }
 
+/**
+ * 文件审批口径：
+ *   off   = 保持原规则（工作区内写改不问）
+ *   write = 工作区内写/改要问，读不问
+ *   all   = 读/写/改都要问
+ * 工作区外的写仍按 path-outside 处理，交给沙箱与既有审批语义，不在这里改写。
+ */
+public func classifyFileApprovalTool(name: String, args: JsonObject, wsRoot: String, mode: String): (String, String, String) {
+    if (mode == "all") {
+        return classifyGuidedTool(name, args, wsRoot)
+    }
+    let base = classifyTool(name, args, wsRoot)
+    if (base[0].size > 0) {
+        return base
+    }
+    if (mode == "write" && (name == "write" || name == "edit")) {
+        let path = strOf(args, "path")
+        return ("file-write", if (path.size > 0) { path } else { "." }, "写入文件：" + path)
+    }
+    return base
+}
+
 public func classifyTool(name: String, args: JsonObject, wsRoot: String): (String, String, String) {
     // （下面是实现，checkTool 也走它）
 

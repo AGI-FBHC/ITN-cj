@@ -80,6 +80,8 @@ public class AgentOptions {
     public var compactKeepRecent: Int64 = 2
     /** "sequential"（默认，可复现）或 "parallel"（一步并发跑多个工具） */
     public var toolExecution: String = "sequential"
+    /** 压缩发生（成功或失败）时通知宿主。宿主据此写会话事件，界面才不会“悄悄忘事”。 */
+    public var onCompact: ?(JsonObject) -> Unit = None
 }
 
 public class Agent {
@@ -326,27 +328,47 @@ public class Agent {
             sb.append("\n")
             i = i + 1
         }
+        let beforeBytes = contextBytes()
         let ctx = StepContext()
         ctx.model = options.model
         ctx.system = compactPrompt()
+        ctx.purpose = "compact"
         let um = Message(UserMsg)
         um.text = sb.toString()
         ctx.messages.add(um)
         let r = provider.respond(ctx, quiet)
         if (r.stopReason == "error") {
             lastCompactNote = "压缩失败：" + r.errorMessage
+            notifyCompact(false, beforeBytes, beforeBytes, lastCompactNote)
             return false
         }
         let summary = trimStr(r.text)
         if (summary.size == 0) {
             lastCompactNote = "压缩失败：模型没给摘要"
+            notifyCompact(false, beforeBytes, beforeBytes, lastCompactNote)
             return false
         }
         session.appendCompaction(summary, firstKept)
         compactCount = compactCount + 1
-        lastCompactNote = "已压缩：" + sb.toString().size.toString() + " 字节对话 -> " +
-            summary.size.toString() + " 字节摘要"
+        let afterBytes = contextBytes()
+        lastCompactNote = "已压缩：" + beforeBytes.toString() + " 字节上下文 -> " +
+            afterBytes.toString() + " 字节（摘要 " + summary.size.toString() + " 字节）"
+        notifyCompact(true, beforeBytes, afterBytes, lastCompactNote)
         return true
+    }
+
+    /** 压缩回调：只报事实（前后大小、成功与否），不替界面解释。 */
+    private func notifyCompact(ok: Bool, before: Int64, after: Int64, note: String): Unit {
+        match (options.onCompact) {
+            case Some(f) =>
+                let o = JsonObject()
+                o.put("ok", JsonBool(ok))
+                o.put("beforeBytes", JsonInt(before))
+                o.put("afterBytes", JsonInt(after))
+                o.put("note", JsonString(note))
+                f(o)
+            case None => ()
+        }
     }
 
     /**

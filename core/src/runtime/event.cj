@@ -45,6 +45,43 @@ public func kindText(k: EvKind): String {
     }
 }
 
+/** 线上事件名 → EvKind。录制回放按 JSON 里的 type 还原事件时用。 */
+public func eventKindOf(text: String): ?EvKind {
+    match (text) {
+        case "agent_start" => return Some(AgentStart)
+        case "agent_end" => return Some(AgentEnd)
+        case "turn_start" => return Some(TurnStart)
+        case "turn_end" => return Some(TurnEnd)
+        case "message_start" => return Some(MessageStart)
+        case "message_update" => return Some(MessageUpdate)
+        case "message_end" => return Some(MessageEnd)
+        case "tool_execution_start" => return Some(ToolExecStart)
+        case "tool_execution_update" => return Some(ToolExecUpdate)
+        case "tool_execution_end" => return Some(ToolExecEnd)
+        case _ => return None
+    }
+}
+
+/**
+ * 把一条事件 JSON 还原成 AgentEvent（录制回放用）。
+ * `type` 只用于选 kind，其余字段原样进 payload —— 与 toJson 的合并规则对称。
+ */
+public func eventFromJson(o: JsonObject): ?AgentEvent {
+    let kind = match (eventKindOf(strOf(o, "type"))) {
+        case Some(k) => k
+        case None => return None
+    }
+    let e = AgentEvent(kind)
+    let ts = strOf(o, "ts")
+    if (ts.size > 0) { e.ts = ts }
+    for ((k, v) in o.getFields()) {
+        if (k != "type" && k != "ts") {
+            e.payload.put(k, v)
+        }
+    }
+    return Some(e)
+}
+
 /* 流式增量子类型（Pi 的 AssistantMessageEvent 里我们用得上的几个） */
 public func deltaStart(): String { return "start" }
 public func deltaTextStart(): String { return "text_start" }

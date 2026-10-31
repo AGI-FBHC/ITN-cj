@@ -21,6 +21,8 @@ public class StepContext {
     public var tools = ArrayList<ToolSpec>()
     public var turn: Int64 = 0
     public var cwd: String = ""
+    /** chat = 正常回合；compact = 压缩上下文时的摘要请求。界面按它排除“假步骤”。 */
+    public var purpose: String = "chat"
 }
 
 public class ModelReply {

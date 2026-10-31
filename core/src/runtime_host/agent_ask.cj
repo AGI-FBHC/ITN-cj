@@ -55,6 +55,7 @@ import itn_desktop_core.lumin_cli.Approver
 import itn_desktop_core.lumin_cli.permissionModeText
 import itn_desktop_core.lumin_cli.classifyTool
 import itn_desktop_core.lumin_cli.classifyGuidedTool
+import itn_desktop_core.lumin_cli.classifyFileApprovalTool
 // strOf / objOf / intOf / boolOf / byteSafePrefix 用 pi 包自带的那份（与 util 同名，通配 pi 已经带进来）：
 // 两个包的同名函数同时具名导入会歧义，这是踩过的坑
 import itn_desktop_core.kb.stamp
@@ -260,6 +261,8 @@ public class WorkContext {
     public var attachments: JsonArray = JsonArray()
     /** 导学侧栏：文件读写每一步都必须经过用户确认，即使权限档为 full。 */
     public var confirmFileAccess: Bool = false
+    /** 演示/设置里的文件审批口径：off（默认）/ write（只确认写与改）/ all（读写都确认）。 */
+    public var fileApproval: String = "off"
     /** 空值读取会话设置；显式模式只在本轮开始时校验并固定。 */
     public var reasoningMode: String = ""
 
@@ -454,6 +457,12 @@ public class LuminAgent {
             case p: OpenAiChatProvider => p.onAudit = Some({ kind: String, payload: JsonObject => log(kind, payload) })
             case _ => ()
         }
+        // 演示用录制/回放：只包模型侧，工具仍在本机真实执行。未开环境变量时原样返回。
+        let runProvider = wrapProviderForDemo(provider, store.dataDir, sid, Some({ => sessionHub().isAborted(sid) }))
+        match (runProvider) {
+            case p: ReplayProvider => p.onAudit = Some({ kind: String, payload: JsonObject => log(kind, payload) })
+            case _ => ()
+        }
 
         let typedTask = hasPrefix(taskKind, "resource:")
         if (typedTask) { sessions.rename(sid, "生成" + labelOf(taskKind.replace("resource:", "")) + "：" + taskTitle) }
@@ -532,6 +541,11 @@ public class LuminAgent {
         for(d in taskTools(store,sid,question)){defs.add(d)}
         for(d in referenceTools(store)){defs.add(d)}
         let originalWorkspace=match(work){case Some(w)=>w.dir;case None=>""}
+        // 文件审批口径：显式字段优先；导学侧栏仍用旧的 confirmFileAccess=true 表示读写全问。
+        let fileMode = match (work) {
+            case Some(w) => if (w.fileApproval.size > 0) { w.fileApproval } else if (w.confirmFileAccess) { "all" } else { "off" }
+            case None => "off"
+        }
         for(d in knowledgeTools(store,sid,turnId,question,originalWorkspace,{kind: String,payload: JsonObject=>log(kind,payload)})){defs.add(d)}
         let referenceIndex = TurnReferenceIndex()
         referenceIndex.attach(defs)
@@ -589,15 +603,13 @@ public class LuminAgent {
         opts.maxTurns = 24
         opts.toolExecution = "parallel"
         opts.autoCompactBytes = 120000
+        // 压缩不是静默行为：宿主记录前后大小，界面给一条提示。
+        opts.onCompact = Some({ payload: JsonObject => log("context/compacted", payload) })
         // 模型跑着的时候用户又打字：在"下一次模型请求之前"插进去（pi 的 steering）
         let sidForSteer = sid
         opts.getSteering = Some({ => sessionHub().takeSteering(sidForSteer) })
-        let agent = Agent(provider, session, registry, mode, opts)
+        let agent = Agent(runProvider, session, registry, mode, opts)
         match (work) { case Some(w) => agent.initialAttachments = w.attachments; case None => () }
-        let confirmFileAccess = match (work) {
-            case Some(w) => w.confirmFileAccess
-            case None => false
-        }
         match (ws) {
             case Some(w0) =>
                 agent.workspaceRoot = w0.root
@@ -605,7 +617,8 @@ public class LuminAgent {
                 // lumin 那套（四答、记住规则、批了把目录记进沙箱白名单）原样复用。
                 let approver = Approver(store.dataDir, perm)
                 approver.ws = Some(w0)
-                approver.requireFileApproval = confirmFileAccess
+                // off 之外都走“工作区内也审批”的分类器；write 只升级写与改，all 连读也升级。
+                approver.requireFileApproval = fileMode != "off"
                 // 联网归界面上的"联网档位"管，审批层不再问一次（桌面版的既有语义）
                 approver.askWeb = false
                 match (work) {
@@ -621,12 +634,36 @@ public class LuminAgent {
                         sid, { => sessionHub().isAborted(sid) })
                 })
                 opts.beforeToolCall = Some({ callId: String, name: String, args: JsonObject =>
-                    let cls = if (confirmFileAccess) { classifyGuidedTool(name, args, w0.root) } else { classifyTool(name, args, w0.root) }
+                    let cls = if (fileMode != "off") {
+                        classifyFileApprovalTool(name, args, w0.root, fileMode)
+                    } else {
+                        classifyTool(name, args, w0.root)
+                    }
                     holder.kind = cls[0]
                     holder.value = cls[1]
                     holder.detail = cls[2]
                     holder.tool = name
-                    approver.checkToolClassified(agent, name, args, cls[0], cls[1], cls[2])
+                    if (cls[0].size > 0) {
+                        let aq = JsonObject()
+                        aq.put("tool", JsonString(name))
+                        aq.put("kind", JsonString(cls[0]))
+                        aq.put("value", JsonString(byteSafePrefix(cls[1], 300)))
+                        aq.put("mode", JsonString(approver.mode))
+                        log("approval/request", aq)
+                    }
+                    let asksBefore = approver.askCount
+                    let denial = approver.checkToolClassified(agent, name, args, cls[0], cls[1], cls[2])
+                    if (cls[0].size > 0) {
+                        let ad = JsonObject()
+                        ad.put("tool", JsonString(name))
+                        ad.put("kind", JsonString(cls[0]))
+                        ad.put("value", JsonString(byteSafePrefix(cls[1], 300)))
+                        ad.put("decision", JsonString(if (denial.size == 0) { "allow" } else { "deny" }))
+                        ad.put("asked", JsonBool(approver.askCount > asksBefore))
+                        if (denial.size > 0) { ad.put("reason", JsonString(byteSafePrefix(denial, 300))) }
+                        log("approval/decision", ad)
+                    }
+                    return denial
                 })
             case None => ()
         }
@@ -747,6 +784,8 @@ public class LuminAgent {
                 let p = JsonObject()
                 p.put("tool", JsonString(strOf(e.payload, "toolName")))
                 p.put("callId", JsonString(strOf(e.payload, "toolCallId")))
+                // 这一批工具是否并发执行：界面据此显示“并行”，不靠时间戳猜。
+                p.put("parallel", JsonBool(opts.toolExecution == "parallel"))
                 try { p.put("args", JsonValue.fromStr(strOf(e.payload, "args"))) } catch (ex: Exception) { () }
                 log("tool/call", p)
                 return
@@ -757,6 +796,8 @@ public class LuminAgent {
                 p.put("callId", JsonString(strOf(e.payload, "toolCallId")))
                 p.put("ok", JsonBool(!boolOf(e.payload, "isError", false)))
                 p.put("summary", JsonString(strOf(e.payload, "summary")))
+                // 工具真实耗时：步骤分组、并行重叠判断、汇总卡都靠它。
+                p.put("durationMs", JsonInt(intOf(e.payload, "durationMs")))
                 // 结构化细节（写文件/改文件会带 path 与增删行数）：界面用它渲染"这一轮改了哪些文件"
                 match (e.payload.get("details")) {
                     // JsonNull = 这个工具没有结构化细节，不进事件（别写一堆空对象）

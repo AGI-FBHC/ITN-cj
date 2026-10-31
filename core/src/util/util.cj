@@ -13,6 +13,19 @@ public func ensureDir(dir: String): Unit {
     }
 }
 
+/** 环境变量开关：只有显式设成 1 才算开。演示相关能力默认全关。 */
+public func envFlag(name: String): Bool {
+    return match (getVariable(name)) {
+        case Some(v) => trimStr(v) == "1"
+        case None => false
+    }
+}
+
+/** 演示模式：由启动脚本设置 LUMIN_DEMO=1，普通启动不受影响。 */
+public func demoModeEnabled(): Bool {
+    return envFlag("LUMIN_DEMO")
+}
+
 public func readTextOr(path: String, fallback: String): String {
     if (!exists(path)) {
         return fallback

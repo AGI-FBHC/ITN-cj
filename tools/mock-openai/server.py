@@ -554,6 +554,21 @@ def native_reply(body):
         if any(m.get("role") == "tool" for m in msgs[user_at + 1:]):
             return "慢速任务完成：没有插话。"
         return call("calc", {"expr": "1+1"})
+    # 演示剧本：先读一个不存在的文件，失败后自己换正确路径继续。
+    # 必须放在通用“已有工具结果”分支之前，否则第二条工具调用永远发不出去。
+    if "失败恢复测试" in ask or "读取不存在的文件" in ask:
+        tool_results = [m for m in msgs[user_at + 1:] if m.get("role") == "tool"]
+        if not tool_results:
+            return call("read", {"path": "notes/不存在的文件.md"})
+        read_ok = any("README" in str(m.get("content")) or "演示工作区" in str(m.get("content"))
+            for m in tool_results)
+        if not read_ok and any("不存在的文件" in str(m.get("content")) or "不存在" in str(m.get("content"))
+            for m in tool_results):
+            return call("read", {"path": "README.md"})
+        return "第一次读取的路径不存在；我改成读取 README.md，已经拿到了内容。"
+    # 工具调用能力探测：设置页的“测试工具调用”会发这条请求。
+    if "lumin_probe" in ask:
+        return call("lumin_probe", {"value": "ok"})
     if any(m.get("role") == "tool" for m in msgs[user_at + 1:]):
         last_tools = [m for m in msgs[user_at + 1:] if m.get("role") == "tool"]
         # "读原文"：从上一轮检索结果的 `id: 路径#序号` 里取出切片 id 再读全文（读过了就收尾）。
@@ -622,6 +637,9 @@ def native_reply(body):
     # 写文件：用来验"这一轮改了哪些文件 + 逐文件 +/-"那张卡（details 里带 path/add/del）
     if "写个文件" in ask or "写文件测试" in ask:
         return call("write", {"path": "mock-test.md", "content": "# 测试文件\n\n第一行\n第二行\n第三行\n"})
+    # 演示专用剧本：命令审批 / 失败后自己换方法
+    if "统计行数" in ask or "命令审批测试" in ask:
+        return call("powershell", {"command": "Get-ChildItem -File | Measure-Object | Select-Object -ExpandProperty Count"})
     return reply_for(body)
 
 

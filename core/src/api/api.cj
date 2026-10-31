@@ -34,6 +34,7 @@ import itn_desktop_core.harvest.*
 import std.fs.*
 import itn_desktop_core.util.*
 import itn_desktop_core.runtime.validatedAttachments
+import itn_desktop_core.model_provider.probeToolCalling
 import itn_desktop_core.reasoning.validReasoningProfile
 import itn_desktop_core.tts.*
 
@@ -296,6 +297,27 @@ public class Api {
                                 fail(ctx, 502, "连接失败：" + e.message)
                             }
                         case None => fail(ctx, 404, "找不到模型配置：" + id)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // 工具调用能力探测：连通 ≠ 支持原生 function calling。
+        if (path == "/api/models/tool-test" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    if (id.size > 0) {
+                        match (store.load().findModel(id)) {
+                            case Some(cfg) => ok(ctx, probeToolCalling(cfg))
+                            case None => fail(ctx, 404, "找不到模型配置：" + id)
+                        }
+                    } else {
+                        match (chatModelOf(store)) {
+                            case Some(cfg) => ok(ctx, probeToolCalling(cfg))
+                            case None => fail(ctx, 400, "请先配置对话模型")
+                        }
                     }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1020,6 +1042,8 @@ public class Api {
             o.put("defaultWorkDir", JsonString(defaultWorkDir()))
             o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "auto")))
             o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
+            o.put("agentFileApproval", JsonString(db.getKv("settings", "agent_file_approval", "off")))
+            o.put("demoMode", JsonBool(demoModeEnabled()))
             // 知识网络：连线上的"关系说明"是否显示（默认显示）
             o.put("knowledgeLinkLabels", JsonString(db.getKv("settings", "ui_knowledge_link_labels", "1")))
             // 知识网络默认视图：graph（网络图）/ timeline（时间线）
@@ -1112,6 +1136,10 @@ public class Api {
                     if (execPref == "0" || execPref == "1") {
                         db.putKv("settings", "agent_exec", execPref)
                     }
+                    let fileModePref = strOf(b, "agentFileApproval")
+                    if (fileModePref == "off" || fileModePref == "write" || fileModePref == "all") {
+                        db.putKv("settings", "agent_file_approval", fileModePref)
+                    }
                     let linkLabelsPref = strOf(b, "knowledgeLinkLabels")
                     if (linkLabelsPref == "0" || linkLabelsPref == "1") {
                         db.putKv("settings", "ui_knowledge_link_labels", linkLabelsPref)
@@ -1134,10 +1162,28 @@ public class Api {
                     o.put("defaultWorkDir", JsonString(defaultWorkDir()))
                     o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "auto")))
                     o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
+                    o.put("agentFileApproval", JsonString(db.getKv("settings", "agent_file_approval", "off")))
+                    o.put("demoMode", JsonBool(demoModeEnabled()))
                     o.put("knowledgeLinkLabels", JsonString(db.getKv("settings", "ui_knowledge_link_labels", "1")))
                     o.put("knowledgeView", JsonString(db.getKv("settings", "ui_knowledge_view", "graph")))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // ---------- 演示模式（LUMIN_DEMO=1）----------
+        if (path == "/api/demo/status" && method == "POST") {
+            if (!demoModeEnabled()) { fail(ctx, 404, "演示模式未开启"); return }
+            ok(ctx, demoStatusJson(store))
+            return
+        }
+        if (path == "/api/demo/prepare" && method == "POST") {
+            if (!demoModeEnabled()) { fail(ctx, 404, "演示模式未开启"); return }
+            try {
+                ok(ctx, demoPrepareJson(store))
+            } catch (e: Exception) {
+                fail(ctx, 500, "准备演示环境失败：" + e.message)
             }
             return
         }
@@ -1603,10 +1649,11 @@ public class Api {
                 t.put("available", JsonBool(true))
                 arr.add(t)
             }
-            // 指定了工作目录才把"本机文件"那几个列出来（与真正发给模型的工具一致）
-            let wd = db.getKv("settings", "agent_work_dir", "")
+            // 运行态始终会填默认工作目录，所以清单也要用同一个口径；否则面板会少列本机工具。
+            let wdConfigured = db.getKv("settings", "agent_work_dir", "")
+            let wd = if (wdConfigured.size > 0) { wdConfigured } else { defaultWorkDir() }
             let perm = db.getKv("settings", "agent_perm", "auto")
-            let execOn = db.getKv("settings", "agent_exec", "0") == "1"
+            let execOn = db.getKv("settings", "agent_exec", "1") == "1"
             let wt = workspaceToolList(store.dataDir, wd, execOn, perm)
             var wi = 0
             while (wi < wt.size()) {
@@ -3474,6 +3521,10 @@ func workContextOf(store: Store, b: JsonObject): WorkContext {
     }
     work.attachments = validatedAttachments(b.get("attachments"))
     work.confirmFileAccess = boolOf(b, "confirmFileAccess")
+    let fileModeReq = trimStr(strOf(b, "fileApproval"))
+    if (fileModeReq == "off" || fileModeReq == "write" || fileModeReq == "all") {
+        work.fileApproval = fileModeReq
+    }
     work.dir = db.getKv("settings", "agent_work_dir", "")
     // 会话挂在项目下时，工作目录跟着项目走（项目 = 用户自己选的那个文件夹）
     let projectRoot = ProjectStore(store.dataDir).rootOf(strOf(b, "sessionId"))
@@ -3566,6 +3617,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/models/delete",
         "/api/models/roles",
         "/api/models/test",
+        "/api/models/tool-test",
         "/api/models/tts-test",
         "/api/models/diagnose",
         "/api/models/vision-test",
@@ -3596,6 +3648,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/agent/cancel",
         "/api/prefs/get",
         "/api/prefs/save",
+        "/api/demo/status",
+        "/api/demo/prepare",
         "/api/notifications/get",
         "/api/notifications/save",
         // 联网搜索（Tavily）：新增接口一定要在这里登记，否则分发器按精确路径匹配会直接 404

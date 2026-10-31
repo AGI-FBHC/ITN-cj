@@ -185,6 +185,7 @@ public class OpenAiChatProvider <: ChatProvider {
         }
         requestAudit.put("messageCount", JsonInt(msgs.size()))
         requestAudit.put("turn", JsonInt(ctx.turn))
+        requestAudit.put("purpose", JsonString(ctx.purpose))
         var latestUser = ""
         var resultCount: Int64 = 0
         for (m in ctx.messages) {

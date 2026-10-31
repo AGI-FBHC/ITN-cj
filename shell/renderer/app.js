@@ -132,6 +132,15 @@ function fmtSize(n) {
   return (v / 1024 / 1024).toFixed(2) + " MB";
 }
 
+/** 耗时：小于 1 秒给毫秒，小于 1 分钟给一位小数秒，其余给分秒。 */
+function fmtDuration(ms) {
+  const n = Math.max(0, Number(ms || 0));
+  if (n < 1000) return Math.round(n) + "ms";
+  if (n < 60000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + "s";
+  const m = Math.floor(n / 60000);
+  return m + "m" + Math.round((n % 60000) / 1000) + "s";
+}
+
 /** 内核时间戳形如 2026-10-14T10:18:27+08:00，这里只保留 10-14 10:18。 */
 function fmtStamp(s) {
   const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
@@ -953,6 +962,7 @@ const state = {
   busyTurn: false, pendingQuestion: "", lastQuestion: "", chatRequests: new Map(),
   // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
   theme: "system", dark: false, panelHidden: false, kernel: null, uiZoom: 1, uiFont: 1,
+  demoMode: false,
 };
 
 function syncNotificationContext() {
@@ -4348,10 +4358,13 @@ function applyPrefs(p) {
     agentPerm: p.agentPerm === undefined ? (state.agentPrefs ? state.agentPrefs.agentPerm : "ask") : p.agentPerm,
     // 命令默认开（内核那边 agent_exec 也默认 "1"）；用户关过就按关的来
     agentExec: p.agentExec === undefined ? (state.agentPrefs ? state.agentPrefs.agentExec : "1") : p.agentExec,
+    // 文件审批口径：off（默认）/ write（只问写改）/ all（读写都问）
+    agentFileApproval: p.agentFileApproval === undefined ? (state.agentPrefs ? state.agentPrefs.agentFileApproval : "off") : p.agentFileApproval,
     // 用户没指定工作目录时，界面要显示"现在实际用的是哪个目录"，所以内核把默认目录也回过来
     defaultWorkDir: p.defaultWorkDir === undefined ? (state.agentPrefs ? state.agentPrefs.defaultWorkDir : "") : p.defaultWorkDir,
   };
   Object.assign(state.cfg, state.agentPrefs);
+  state.demoMode = !!p.demoMode;
   // 没存过就用默认（1 / 1）；刷新后按内核里记的来
   applyZoom(p.uiZoom === undefined || p.uiZoom === "" ? 1 : p.uiZoom);
   applyFont(p.uiFont === undefined || p.uiFont === "" ? 1 : p.uiFont);
@@ -6950,15 +6963,30 @@ async function newChat(projectId, mode, trigger) {
 function turnsFromEvents(events) {
   const turns = [];
   const byKey = {};
+  /* 步骤 = 一次模型请求。turn 号由内核的 ctx.turn 提供；重试复用同一个号，不会长出新步骤。
+     没有 model/request（旧事件/脚本 provider）时，调用方按工具段退化处理。 */
+  const ensureStep = (t, turnNo, at) => {
+    const n = Number(turnNo) > 0 ? Number(turnNo) : (t.steps.length + 1);
+    let step = t.steps.find((s) => s.turn === n);
+    if (!step) {
+      step = { turn: n, index: t.steps.length + 1, at: at || "", doneAt: "", tools: [], durationMs: 0, parallel: false };
+      t.steps.push(step);
+    }
+    if (!step.at && at) step.at = at;
+    t.activeStep = step;
+    return step;
+  };
   for (const e of events) {
     const key = e.turnId || "—";
     if (!byKey[key]) {
-      byKey[key] = { id: key, kind: "", user: "", items: [], report: null, citations: [], ok: null, message: "", webMode: "" };
+      byKey[key] = { id: key, kind: "", user: "", items: [], report: null, citations: [], ok: null, message: "", webMode: "",
+        steps: [], activeStep: null, retries: [], approvals: [], compactions: [],
+        toolCalls: 0, toolFailures: 0, modelRequests: 0, endedAt: "" };
       turns.push(byKey[key]);
     }
     const t = byKey[key];
     const p = e.payload || {};
-    if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; }
+    if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; t.activeStep = null; }
     else if (String(e.type || "").startsWith("team/") && p.runId) {
       t.teamRunIds ||= [];
       if (!t.teamRunIds.includes(p.runId)) t.teamRunIds.push(p.runId);
@@ -6972,17 +7000,39 @@ function turnsFromEvents(events) {
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); t.usageReasoning = p.reasoning == null ? null : Number(p.reasoning); }
     else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
     else if (e.type === 'model/retry') {
+      t.retries.push({ reason: p.reason || 'retry', attempt: Number(p.attempt || 0), maxAttempts: Number(p.maxAttempts || 0),
+        tool: p.tool || '', at: e.at || '' });
       t.activity = p.reason === 'network_retry' ? 'network_retry' : p.reason === 'invalid_tool_arguments' ? 'tool_retry' : 'retrying';
       t.retryAttempt = Number(p.attempt || 0);
       t.retryMaxAttempts = Number(p.maxAttempts || 0);
     }
-    else if(e.type==='model/request')t.activity='waiting';
+    else if (e.type === 'model/request') {
+      if ((p.purpose || 'chat') === 'compact') { t.activity = 'compacting'; }
+      else {
+        t.modelRequests = (t.modelRequests || 0) + 1;
+        ensureStep(t, p.turn, e.at);
+        t.activity = 'waiting';
+      }
+    }
+    else if (e.type === 'context/compacted') {
+      t.compactions.push({ ok: p.ok !== false, beforeBytes: Number(p.beforeBytes || 0), afterBytes: Number(p.afterBytes || 0),
+        note: p.note || '', at: e.at || '' });
+    }
+    else if (e.type === 'approval/decision') {
+      /* 自动放行（没弹卡）不占时间线；用户看过的批准和所有拒绝都留下。 */
+      if (p.asked === true || p.decision === 'deny') {
+        const ap = { tool: p.tool || '', kind: p.kind || '', value: p.value || '', decision: p.decision || '',
+          asked: p.asked === true, reason: p.reason || '', at: e.at || '' };
+        t.approvals.push(ap);
+        t.items.push({ t: 'approval', approval: ap, step: t.activeStep ? t.activeStep.turn : 0 });
+      }
+    }
     else if (e.type === "assistant/thinking_delta" || e.type === "assistant/thinking") {
       const streaming = e.type === "assistant/thinking_delta";
       const last = t.items[t.items.length - 1];
       const existing = p.segmentId ? t.items.find(it => it.t === 'think' && it.segmentId === p.segmentId)
         : last?.t === 'think' && last.streaming ? last : null;
-      const item = existing || {t: 'think', text: '', ms: 0, segmentId: p.segmentId || ''};
+      const item = existing || {t: 'think', text: '', ms: 0, segmentId: p.segmentId || '', step: t.activeStep ? t.activeStep.turn : 0};
       item.text = streaming ? item.text + (p.text || '') : (p.text || item.text);
       item.ms = Number(p.ms || 0); item.streaming = streaming;
       if (!existing) t.items.push(item);
@@ -6993,7 +7043,7 @@ function turnsFromEvents(events) {
       t.activity="responding";
       const last = t.items[t.items.length - 1];
       if (last && last.t === "a") last.text += (p.text || "");
-      else t.items.push({ t: "a", text: p.text || "", streaming: true });
+      else t.items.push({ t: "a", text: p.text || "", streaming: true, step: t.activeStep ? t.activeStep.turn : 0 });
     } else if (e.type === "assistant/message") {
       t.answerAt = e.at;
       const last = t.items[t.items.length - 1];
@@ -7002,10 +7052,16 @@ function turnsFromEvents(events) {
         last.text = p.text || last.text;
         last.streaming = false;
       } else {
-        t.items.push({ t: "a", text: p.text || "", streaming: false });
+        t.items.push({ t: "a", text: p.text || "", streaming: false, step: t.activeStep ? t.activeStep.turn : 0 });
       }
     } else if (e.type === "tool/call") {
-      t.items.push({ t: "tool", callId: p.callId || "", name: p.tool || "", args: p.args || {}, summary: "", ok: null, running: true });
+      const step = ensureStep(t, t.activeStep ? t.activeStep.turn : 0, e.at);
+      const toolItem = { t: "tool", callId: p.callId || "", name: p.tool || "", args: p.args || {}, summary: "",
+        ok: null, running: true, step: step.turn, at: e.at || "", durationMs: 0, endedAt: "",
+        parallel: p.parallel === true };
+      t.items.push(toolItem);
+      step.tools.push(toolItem);
+      t.toolCalls = (t.toolCalls || 0) + 1;
       if (["research_topic_team", "plan_study_team"].includes(p.tool)) {
         t.teamEntries ||= [];
         t.teamEntries.push({key: "pending:" + key + ":" + (p.callId || p.tool), tool: p.tool});
@@ -7035,6 +7091,12 @@ function turnsFromEvents(events) {
         target.summary = p.summary || "";
         target.ok = p.ok !== false;
         target.running = false;
+        target.durationMs = Number(p.durationMs || target.durationMs || 0);
+        target.hasDuration = true;
+        target.endedAt = e.at || "";
+        if (target.ok === false) t.toolFailures = (t.toolFailures || 0) + 1;
+        const step = (t.steps || []).find((s) => s.turn === target.step);
+        if (step) step.doneAt = e.at || step.doneAt;
       }
     } else if(e.type==="knowledge/recorded"){
       t.items.push({t:"knowledge",point:p});
@@ -7052,6 +7114,7 @@ function turnsFromEvents(events) {
     } else if (e.type === "turn/end") {
       t.ok = p.ok !== false;
       t.message = p.message || "";
+      t.endedAt = e.at || "";
     }
   }
   // 收尾：还挂在 running 上的工具说明这一轮没跑完（取消/出错）
@@ -7061,9 +7124,36 @@ function turnsFromEvents(events) {
       if (it.t === "tool" && it.running && t.ok === false) {
         it.running = false;
         it.ok = false;
+        it.recoveryLabel = "";
         if (!it.summary) it.summary = "未完成";
       }
     }
+    // 步骤耗时与并行判断：用事件时间算，不靠模型自述。
+    for (let i = 0; i < t.steps.length; i++) {
+      const step = t.steps[i];
+      const next = t.steps[i + 1];
+      const start = step.at ? Date.parse(step.at) : 0;
+      const endText = step.doneAt || (next && next.at) || t.endedAt;
+      const end = endText ? Date.parse(endText) : 0;
+      const toolMs = step.tools.reduce((n, x) => n + Number(x.durationMs || 0), 0);
+      step.durationMs = start && end ? Math.max(0, end - start) : toolMs;
+      // 并发与否由运行时的配置事件说了算，不从时间戳猜。
+      step.parallel = step.tools.length > 1 && step.tools.every((x) => x.parallel === true);
+      step.index = i + 1;
+    }
+    // 失败恢复：只陈述事件顺序，不推断模型“想换方法”。
+    t.items.forEach((it, i) => {
+      if (it.t !== 'tool' || it.ok !== false) return;
+      const later = t.items.slice(i + 1).find((x) => x.t === 'tool' && x.ok === true);
+      if (later) {
+        if (later.name !== it.name) it.recoveryLabel = '已换方法继续';
+        else if (JSON.stringify(later.args || {}) !== JSON.stringify(it.args || {})) it.recoveryLabel = '换了参数后成功';
+        else it.recoveryLabel = '重试后成功';
+      } else if (t.ok !== false) it.recoveryLabel = '已基于现有结果继续';
+      else it.recoveryLabel = '';
+    });
+    t.stepCount = t.steps.length;
+    t.elapsedMs = t.startedAt && t.endedAt ? Math.max(0, Date.parse(t.endedAt) - Date.parse(t.startedAt)) : 0;
   }
   return turns;
 }
@@ -7112,10 +7202,17 @@ function toolCard(tool, live) {
   const state2 = tool.running ? "执行中" : (tool.ok === false ? "失败" : "完成");
   const d = el("details", "tool-card" + (tool.running ? " running" : (tool.ok === false ? " failed" : "")));
   const sum = el("summary", "tool-head");
+  const durationMs = Number(tool.durationMs || 0);
+  const duration = tool.hasDuration || durationMs > 0
+    ? '<span class="tool-time">' + (durationMs > 0 ? fmtDuration(durationMs) : "<1ms") + "</span>"
+    : "";
+  const recovery = tool.recoveryLabel ? '<span class="tool-recovery">' + esc(tool.recoveryLabel) + "</span>" : "";
   sum.innerHTML =
     '<span class="tool-icon">' + (tool.running ? '<span class="spinner"></span>' : icon("gear")) + "</span>" +
     '<span class="tool-title">' + esc(toolLabel(tool)) + "</span>" +
+    recovery +
     '<span class="tool-state">' + esc(state2) + "</span>" +
+    duration +
     '<span class="tool-chev">' + icon("chevron") + "</span>";
   /* 这个调用**自己**结束就折起来，不等整轮回复完 ——
      跑着的时候展开（能看见它在干什么），一旦完成就收起。 */
@@ -7294,6 +7391,143 @@ function chatContinuationPrompt(t) {
     (tail ? '\n以下仅为已输出正文末尾的引用，用于定位续写位置：\n' + JSON.stringify(tail) : '请根据已完成的工具结果直接继续回答。');
 }
 
+const APPROVAL_KIND_LABEL = {
+  "file-read": "读取文件", "file-write": "写入文件", "path-outside": "写工作区外",
+  command: "运行命令", "command-dangerous": "运行有风险命令", web: "访问网络",
+};
+
+function fmtNum(n) {
+  const v = Number(n || 0);
+  return v >= 1000 ? (v / 1000).toFixed(1) + "k" : String(v);
+}
+
+/** 步骤分隔：让观众一眼看到“第几步、这步几个工具、花了多久”。 */
+function stepDivider(t, step, active) {
+  const row = el("div", "step-divider");
+  const tools = (step.tools || []).length;
+  const live = active && step === (t.steps || [])[(t.steps || []).length - 1] && t.ok == null;
+  const meta = [];
+  meta.push(tools ? tools + " 个工具" : "回答");
+  if (step.parallel) meta.push("并行");
+  if (step.durationMs) meta.push(fmtDuration(step.durationMs));
+  if (live) meta.push("进行中");
+  row.innerHTML = '<span class="step-label">第 ' + Number(step.index || 0) + " 步</span>" +
+    '<span class="step-meta">' + esc(meta.join(" · ")) + "</span>";
+  return row;
+}
+
+/** 审批审计行：卡片消失后仍能看到“这一下是批准还是拒绝”。 */
+function approvalAuditRow(ap) {
+  const deny = ap.decision === "deny";
+  const row = el("div", "approval-audit " + (deny ? "deny" : "allow"));
+  row.innerHTML = icon("shield") +
+    '<span class="aa-state">' + (deny ? "已拒绝" : "已批准") + "</span>" +
+    '<span class="aa-kind">' + esc(APPROVAL_KIND_LABEL[ap.kind] || ap.kind || "操作") + "</span>" +
+    (ap.value ? '<code class="aa-value">' + esc(String(ap.value).slice(0, 120)) + "</code>" : "") +
+    (deny && ap.reason ? '<span class="aa-reason">' + esc(String(ap.reason).slice(0, 120)) + "</span>" : "");
+  return row;
+}
+
+/** 一轮结束后的运行汇总：只报真实事件，不补“计划”。 */
+function runSummaryCard(t) {
+  const steps = t.steps || [];
+  const tools = Number(t.toolCalls || 0);
+  const failures = Number(t.toolFailures || 0);
+  const retries = t.retries || [];
+  const compactions = t.compactions || [];
+  const approvals = t.approvals || [];
+  const toolRecoveries = (t.items || []).filter((x) => x.t === "tool" && x.recoveryLabel).length;
+  const tokens = Number(t.usageIn || 0) + Number(t.usageOut || 0);
+  // 普通一问一答不摆汇总卡；有工具、重试、压缩或多步过程时才出现。
+  if (!tools && !retries.length && !compactions.length && steps.length <= 1) return null;
+  const citations = (t.citations || []).length;
+  const artifacts = (t.items || []).filter((x) => x.t === "file" || x.t === "resource").length;
+  const files = (t.fileChanges || []).length;
+  const bits = [];
+  const parallelSteps = steps.filter((s) => s.parallel).length;
+  if (steps.length) bits.push(steps.length + " 步");
+  if (tools) bits.push(tools + " 个工具");
+  if (parallelSteps) bits.push(parallelSteps + " 步并行");
+  if (failures) bits.push(failures + " 次失败");
+  if (toolRecoveries) bits.push(toolRecoveries + " 次工具恢复");
+  if (retries.length) bits.push(retries.length + " 次模型重试");
+  if (compactions.length) bits.push("已压缩");
+  if (t.elapsedMs) bits.push(fmtDuration(t.elapsedMs));
+  if (tokens) bits.push("↑" + fmtNum(t.usageIn) + " ↓" + fmtNum(t.usageOut));
+  if (citations) bits.push(citations + " 条引用");
+  const d = el("details", "run-summary");
+  d.open = failures > 0 || retries.length > 0;
+  const sum = el("summary", "run-summary-head");
+  sum.innerHTML = icon("clock") + '<span class="rs-line">' + esc(bits.join(" · ")) + "</span>" +
+    '<span class="rs-chev">' + icon("chevron") + "</span>";
+  d.appendChild(sum);
+  const body = el("div", "run-summary-body");
+
+  const grid = el("div", "rs-grid");
+  const cell = (k, v, cls) => {
+    const c = el("div", "rs-cell" + (cls ? " " + cls : ""));
+    c.appendChild(el("div", "rs-k", k));
+    c.appendChild(el("div", "rs-v", v));
+    grid.appendChild(c);
+  };
+  cell("步骤", String(steps.length || "—"));
+  cell("工具", String(tools || "—"));
+  cell("失败", String(failures || "—"), failures ? "bad" : "");
+  cell("工具恢复", String(toolRecoveries || "—"), toolRecoveries ? "warn" : "");
+  cell("模型重试", String(retries.length || "—"), retries.length ? "warn" : "");
+  cell("耗时", t.elapsedMs ? fmtDuration(t.elapsedMs) : "—");
+  cell("Token", tokens ? "↑" + fmtNum(t.usageIn) + " ↓" + fmtNum(t.usageOut) : "—");
+  if (citations) cell("引用", String(citations));
+  if (artifacts) cell("产物", String(artifacts));
+  if (files) cell("文件", String(files));
+  body.appendChild(grid);
+
+  if (steps.length) {
+    const list = el("div", "rs-steps");
+    list.appendChild(el("div", "rs-sub", "步骤"));
+    for (const step of steps) {
+      const row = el("div", "rs-step");
+      const names = (step.tools || []).map((x) => TOOL_LABEL[x.name] || x.name);
+      row.innerHTML = "<b>第 " + Number(step.index || 0) + " 步</b>" +
+        "<span>" + esc(names.length ? names.join("、") : "回答") + "</span>" +
+        "<i>" + esc([step.parallel ? "并行" : "", step.durationMs ? fmtDuration(step.durationMs) : ""].filter(Boolean).join(" · ")) + "</i>";
+      list.appendChild(row);
+    }
+    body.appendChild(list);
+  }
+  if (retries.length) {
+    const list = el("div", "rs-retries");
+    list.appendChild(el("div", "rs-sub", "恢复过程"));
+    for (const r of retries) {
+      const reason = r.reason === "network_retry" ? "网络中断" : r.reason === "invalid_tool_arguments" ? "工具参数无效"
+        : r.reason === "tool_arguments_truncated" ? "工具参数被截断" : r.reason === "reasoning_budget_exhausted" ? "思考预算用尽" : r.reason;
+      list.appendChild(el("div", "rs-retry", reason + (r.attempt ? " · 第 " + r.attempt + (r.maxAttempts ? "/" + r.maxAttempts : "") + " 次" : "")));
+    }
+    body.appendChild(list);
+  }
+  if (approvals.length) {
+    const list = el("div", "rs-approvals");
+    list.appendChild(el("div", "rs-sub", "审批"));
+    for (const ap of approvals) {
+      list.appendChild(el("div", "rs-approval", (ap.decision === "deny" ? "拒绝" : "批准") + " · " +
+        (APPROVAL_KIND_LABEL[ap.kind] || ap.kind) + (ap.value ? "：" + String(ap.value).slice(0, 80) : "")));
+    }
+    body.appendChild(list);
+  }
+  if (compactions.length) {
+    const list = el("div", "rs-compactions");
+    list.appendChild(el("div", "rs-sub", "上下文"));
+    for (const c of compactions) {
+      list.appendChild(el("div", "rs-compaction", c.ok
+        ? "已压缩：" + fmtSize(c.beforeBytes) + " → " + fmtSize(c.afterBytes)
+        : (c.note || "压缩失败")));
+    }
+    body.appendChild(list);
+  }
+  d.appendChild(body);
+  return d;
+}
+
 function renderTurnBlock(t, live) {
   live = !!live && t.ok == null;
   const box = el("div", "turn-block");
@@ -7331,6 +7565,7 @@ function renderTurnBlock(t, live) {
     if(it.t==='knowledge'){const button=btn('知识点已记录：'+it.point.title,'ghost sm knowledge-recorded',()=>openKnowledgePoint(it.point.id));box.appendChild(button);}
     else if(it.t==='file')box.appendChild(fileArtifactCard(it.artifact));
     else if(it.t==='resource')box.appendChild(resourceCard(it.resource,true));
+    else if(it.t==='approval')box.appendChild(approvalAuditRow(it.approval));
     else if(it.text){const node=assistantBlock(it.text,live&&it.streaming,{citations:t.citations,kbId:t.citations?.find(c=>c.kbId)?.kbId||state.kb});node.dataset.timelineKind='text';linkInlineCitations(node,t.citations);box.appendChild(node);}
   };
   const flushProcess=()=>{
@@ -7338,12 +7573,17 @@ function renderTurnBlock(t, live) {
     const items=pending;pending=[];
     const tail=items[items.length-1]===processBlocks[processBlocks.length-1]&&answerBlocks.length===0;
     const active=live&&tail,secs=Math.max(0,Math.round(items.reduce((n,x)=>n+Number(x.ms || 0),0)/1000));
-    const steps=items.filter(x=>x.t==='tool').length;
+    const toolCount=items.filter(x=>x.t==='tool').length;
+    const stepCount=new Set(items.map(x=>Number(x.step||0)).filter(Boolean)).size;
     const group=el('details','work-group');group.dataset.timelineKind='process';
     const key=(t.id || 'local')+':'+groupIndex++;
     group.dataset.processKey=key;
-    group.dataset.processSignature=JSON.stringify(items.map(it=>it.t==='think'?['think',it.segmentId || '',t.items.indexOf(it)]:it));
-    const initial=state.workExpansions?.[key] ?? active;
+    group.dataset.processSignature=JSON.stringify({
+      items: items.map(it=>it.t==='think'?['think',it.segmentId || '',t.items.indexOf(it)]:it),
+      steps: (t.steps||[]).map(s=>[s.turn,s.durationMs,s.parallel,s.index]),
+    });
+    // 演示模式下多步过程默认展开：观众不用点就能看到“第几步、做了什么”；普通模式保持收起。
+    const initial=state.workExpansions?.[key] ?? (active || (state.demoMode && (t.steps||[]).length > 1));
     group.dataset.initialOpen=initial?'1':'0';
     group.open=initial;
     group.ontoggle=()=>{
@@ -7353,10 +7593,26 @@ function renderTurnBlock(t, live) {
       group.dataset.userToggled='1';
       state.workExpansions=state.workExpansions || {};state.workExpansions[key]=group.open;
     };
-    const head=el('summary','work-head');head.innerHTML='<span class="work-chev">'+icon('chevron')+'</span><span>工作过程</span><span class="work-stat">'+(active?'进行中':secs?secs+' 秒':'')+(steps?' · '+steps+' 步':'')+'</span>';
+    const head=el('summary','work-head');
+    const statParts=[];
+    if(active)statParts.push('进行中');
+    if(stepCount)statParts.push(stepCount+' 步');
+    if(toolCount)statParts.push(toolCount+' 个工具');
+    if((t.steps||[]).some(s=>s.parallel))statParts.push('并行');
+    if(secs)statParts.push(secs+' 秒');
+    head.innerHTML='<span class="work-chev">'+icon('chevron')+'</span><span>工作过程</span><span class="work-stat">'+esc(statParts.join(' · '))+'</span>';
     const body=el('div','work-body');
-    items.forEach((it,i)=>body.appendChild(it.t==='think'?thinkRow(it,active,active&&i===items.length-1,
-      JSON.stringify([state.chatSessionId,t.id,t.items.indexOf(it)]),t.items.indexOf(it)):toolCard(it,active)));
+    let lastStep=null;
+    items.forEach((it,i)=>{
+      const stepNo=Number(it.step||0);
+      if(stepNo&&stepNo!==lastStep){
+        const step=(t.steps||[]).find(s=>s.turn===stepNo);
+        if(step)body.appendChild(stepDivider(t,step,active));
+        lastStep=stepNo;
+      }
+      body.appendChild(it.t==='think'?thinkRow(it,active,active&&i===items.length-1,
+        JSON.stringify([state.chatSessionId,t.id,t.items.indexOf(it)]),t.items.indexOf(it)):toolCard(it,active));
+    });
     group.append(head,body);box.appendChild(group);
   };
   for(const item of processBlocks){if(item.t==='think'||item.t==='tool')pending.push(item);else{flushProcess();appendContent(item);}}
@@ -7402,6 +7658,17 @@ function renderTurnBlock(t, live) {
     card.appendChild(list);
     box.appendChild(card);
   }
+  for (const c of (t.compactions || [])) {
+    const chip = el("div", "compact-chip" + (c.ok === false ? " failed" : ""));
+    chip.textContent = c.ok === false
+      ? (c.note || "上下文压缩失败")
+      : "上下文已压缩：" + fmtSize(c.beforeBytes) + " → " + fmtSize(c.afterBytes);
+    box.appendChild(chip);
+  }
+  if (!live) {
+    const summary = runSummaryCard(t);
+    if (summary) box.appendChild(summary);
+  }
   if (live && t.resourceProgress) {
     const names = {retrieve: "检索资料", plan: "规划结构", write_section: "撰写讲义", knowledge_points: "梳理知识点", questions: "生成题目", repair: "根据质检修订", artifact_save: "保存成果"};
     box.appendChild(el("div", "resource-progress", names[t.resourceProgress.name] || "正在生成与检查学习资源"));
@@ -7413,6 +7680,7 @@ function renderTurnBlock(t, live) {
     const active = t.items.filter((x) => x.t === "tool" && x.running);
     const phase = active.length ? "正在执行：" + active.map((x) => TOOL_LABEL[x.name] || x.name).join("、")
       : t.activity === 'tool_input' ? '正在接收'+(TOOL_LABEL[t.activityTool] || '工具')+'参数…'+(t.toolInputBytes?'（'+fmtSize(t.toolInputBytes)+'）':'')
+      : t.activity === 'compacting' ? '上下文太长，正在压缩…'
       : t.activity === 'network_retry' ? '网络连接中断，正在重连…' + (t.retryAttempt ? '（' + t.retryAttempt + (t.retryMaxAttempts ? '/' + t.retryMaxAttempts : '') + '）' : '')
       : t.activity === 'tool_retry' ? '正在重新生成工具参数…'
       : t.activity === 'retrying' ? '输出太长，正在重新生成完整参数…'
@@ -7429,6 +7697,9 @@ function renderTurnBlock(t, live) {
     const e = el("div", "msg msg-ai");
     e.appendChild(el("div", "msg-body " + (cancelled ? "muted" : "err-text"), networkError
       ? '模型连接中断，已保留当前结果。' : t.message || "这一轮没有完成"));
+    if ((t.retries || []).length) {
+      e.appendChild(el("div", "muted sm", "本轮自动重试 " + t.retries.length + " 次"));
+    }
     if (networkError) {
       const details = el('details', 'sm muted');
       details.append(el('summary', '', '错误详情'), el('div', '', t.message));
@@ -8105,6 +8376,25 @@ PAGES.chat = {
     const splitHint = el("div", "split-hint");
     splitHint.hidden = true;
     v.appendChild(splitHint);
+    /* 演示模式的预设只“预填”，不自动发送；普通启动看不到。 */
+    if (state.demoMode) {
+      const presets = el("div", "demo-presets");
+      const items = [
+        ["研究小组", "请用研究小组对比 RAG 与长上下文方案的取舍，并给出适用场景。"],
+        ["审批演示", "请用 PowerShell 统计当前目录下每个 Markdown 文件的行数。"],
+        ["失败恢复", "请先读取 notes/不存在的文件.md；如果失败，就自己找正确的文件继续。"],
+      ];
+      for (const [label, text] of items) {
+        const b = btn(label, "chip demo-preset", () => {
+          ta.value = text;
+          ta.focus();
+          ta.dispatchEvent(new Event("input"));
+        });
+        b.type = "button";
+        presets.appendChild(b);
+      }
+      v.appendChild(presets);
+    }
     v.appendChild(inputRow);
     reasoningControl.refresh();
 
@@ -8681,7 +8971,9 @@ PAGES.chat = {
         } catch (e) { /* 轮询失败不打扰用户，最终结果以收尾时那次为准 */ }
         finally { pollInFlight=false; }
         approvalTick = approvalTick + 1;
-        if (approvalTick % 6 === 0) await pollApprovals();
+        // 运行中把审批轮询从 ~1.3s 提到 ~0.44s：演示时卡片出现得快，平时也不至于打爆内核。
+        const every = state.busyTurn ? 2 : 6;
+        if (approvalTick % every === 0) await pollApprovals();
       }, 220);
 
       let failure = "";
@@ -8696,6 +8988,7 @@ PAGES.chat = {
           // 模式由会话决定：普通对话（没项目）＝ 常规聊天，内核据此锁死"只写默认目录"
           mode: (request.projectId ? "work" : "chat"),
           skill: state.skill || "", perm: state.cfg.agentPerm || "auto",
+          fileApproval: state.cfg.agentFileApproval || "off",
           // 界面上下文：用户正在看哪一章——"这一章"才有落点，不用模型反查/反问
           ctxChapter: state.chapter || "",
         };
@@ -9308,6 +9601,20 @@ async function settingsModels() {
             }
             b.disabled = false;
           }));
+          moreActions.appendChild(btn("测试工具调用", "sm", async (ev) => {
+            const b = ev.currentTarget;
+            b.disabled = true;
+            b.textContent = "探测中…";
+            try {
+              const d = await api("/api/models/tool-test", { id: m.id });
+              if (d.ok) toast("支持工具调用" + (d.streamingToolCalls ? "（流式参数）" : ""));
+              else toast("不支持或未通过：" + (d.reason || "模型没有返回工具调用"));
+            } catch (e) {
+              toast("探测失败：" + e.message);
+            }
+            b.disabled = false;
+            b.textContent = "测试工具调用";
+          }));
           const bindChat = btn(state.cfg.chatModelId === m.id ? "使用中" : "启用", "sm", null);
           bindChat.disabled = state.cfg.chatModelId === m.id;
           bindChat.onclick = () => runGuarded("model:bind-chat:" + m.id, bindChat, "绑定中…", async () => {
@@ -9870,6 +10177,84 @@ function settingsAgent() {
   execLine.appendChild(execBtn);
   permCard.appendChild(execLine);
   g.appendChild(permCard);
+
+  /* 文件审批：工作区内写改默认不问；演示“改我的文件”时把这一档打开。 */
+  const fileMode = state.cfg.agentFileApproval || "off";
+  const fileCard = cardOf({
+    title: "文件修改审批",
+    sub: "默认只保护工作区外；打开后，工作区内的写/改也会先问你",
+  });
+  const FILE_MODES = [
+    ["off", "关闭（推荐）", "工作区内直接写；工作区外仍然按权限档位处理"],
+    ["write", "修改文件时确认", "工作区内的 write / edit 先弹审批；读取不打扰"],
+    ["all", "读写文件都确认", "读、写、改都先弹审批；确认次数会明显增多"],
+  ];
+  for (const [id, label, hint] of FILE_MODES) {
+    const line = el("div", "row setting-row");
+    const left = el("div", "grow");
+    left.appendChild(el("div", "switch-label", label));
+    left.appendChild(el("div", "muted sm", hint));
+    line.appendChild(left);
+    const b = btn(id === fileMode ? "已选" : "选它", id === fileMode ? "sm" : "sm primary", async () => {
+      state.cfg.agentFileApproval = id;
+      try {
+        await savePrefs({ agentFileApproval: id });
+        toast("文件审批：" + label);
+        go("settings", "agent");
+      } catch (e) { toast("保存失败：" + e.message); }
+    });
+    if (id === fileMode) b.disabled = true;
+    line.appendChild(b);
+    fileCard.appendChild(line);
+  }
+  g.appendChild(fileCard);
+
+  if (state.demoMode) {
+    const demoCard = cardOf({ title: "演示模式", tag: "已开启", tagCls: "ok",
+      sub: "由 LUMIN_DEMO=1 启动；准备一个可写、可审批的本地工作区" });
+    const status = el("div", "demo-status");
+    const renderStatus = (d) => {
+      status.replaceChildren();
+      const rows = [
+        ["模型", d.modelConfigured ? (d.model || "已配置") : "未配置"],
+        ["知识库", (d.kbCount || 0) + " 个 · " + (d.kbChunkCount || 0) + " 个切片"],
+        ["工作目录", d.workDir || "（未设置）"],
+        ["演示目录", d.demoWorkDirExists ? "已就绪" : "未创建"],
+        ["命令执行", d.agentExec === "1" ? "已允许" : "已关闭"],
+        ["审批规则", (d.approvalRules || 0) + " 条"],
+      ];
+      for (const [k, v] of rows) {
+        const row = el("div", "demo-status-row");
+        row.appendChild(el("span", "demo-k", k));
+        row.appendChild(el("span", "demo-v", v));
+        status.appendChild(row);
+      }
+    };
+    const acts = el("div", "row demo-actions");
+    acts.appendChild(btn("准备演示环境", "sm primary", async (ev) => {
+      const b = ev.currentTarget;
+      b.disabled = true;
+      b.textContent = "准备中…";
+      try {
+        const d = await api("/api/demo/prepare", {});
+        renderStatus(d);
+        toast("演示环境已准备");
+        go("settings", "agent");
+      } catch (e) { toast("准备失败：" + e.message); }
+      b.disabled = false;
+      b.textContent = "准备演示环境";
+    }));
+    acts.appendChild(btn("检查", "sm ghost", async (ev) => {
+      const b = ev.currentTarget;
+      b.disabled = true;
+      try { renderStatus(await api("/api/demo/status", {})); }
+      catch (e) { toast("检查失败：" + e.message); }
+      b.disabled = false;
+    }));
+    demoCard.appendChild(acts);
+    demoCard.appendChild(status);
+    g.appendChild(demoCard);
+  }
 
   const safe = cardOf({ title: "红线" });
   const ul = el("ul", "about-list");

@@ -3702,3 +3702,102 @@ html[data-theme="dark"] {
 .chip:focus-visible,
 .seg-item:focus-visible,
 .palette-item:focus-visible { outline-color: var(--state-focus); }
+
+/* ============================================================
+   Agent 演示可读性：步骤 / 汇总 / 审批审计 / 失败恢复 / 压缩
+   ============================================================ */
+
+/* 1 · 步骤分隔：工作过程里的“第 N 步” */
+.step-divider {
+  display: flex; align-items: center; gap: 8px;
+  margin: 10px 0 4px; padding-top: 7px;
+  border-top: 1px dashed var(--line-soft);
+  font-size: calc(13px * var(--fs, 1)); color: var(--muted);
+}
+.step-divider:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.step-label { color: var(--ink-2); font-weight: 600; }
+.step-meta { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.tool-time { color: var(--muted); font-size: calc(12px * var(--fs, 1)); font-variant-numeric: tabular-nums; }
+.tool-recovery {
+  flex: 0 0 auto; padding: 1px 7px; border-radius: 999px;
+  background: var(--amber-soft); color: var(--amber);
+  font-size: calc(12px * var(--fs, 1)); white-space: nowrap;
+}
+
+/* 2 · 审批审计：卡片消失后仍可回看 */
+.approval-audit {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+  margin: 6px 0; padding: 7px 10px; border-radius: 9px;
+  background: var(--card-lite); box-shadow: inset 0 0 0 1px var(--glass-rim);
+  font-size: calc(13px * var(--fs, 1)); color: var(--ink-2);
+}
+.approval-audit svg { width: 14px; height: 14px; color: var(--muted); }
+.approval-audit.deny { box-shadow: inset 0 0 0 1px var(--danger-soft); }
+.aa-state { font-weight: 600; color: var(--ok); }
+.approval-audit.deny .aa-state { color: var(--danger); }
+.aa-kind { color: var(--ink-2); }
+.aa-value {
+  max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 1px 6px; border-radius: 6px; background: var(--panel-sunk);
+  color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: calc(12px * var(--fs, 1));
+}
+.aa-reason { color: var(--danger); }
+
+/* 3 · 运行汇总卡 */
+.run-summary {
+  margin: 8px 0 10px; border-radius: 11px;
+  background: var(--card-lite); box-shadow: inset 0 0 0 1px var(--glass-rim);
+}
+.run-summary > summary { list-style: none; cursor: pointer; }
+.run-summary > summary::-webkit-details-marker { display: none; }
+.run-summary-head {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  color: var(--muted); font-size: calc(13px * var(--fs, 1)); font-variant-numeric: tabular-nums;
+}
+.run-summary-head:hover { color: var(--ink-2); }
+.run-summary-head svg { width: 14px; height: 14px; }
+.rs-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rs-chev svg { width: 12px; height: 12px; transition: transform 140ms var(--ease-out); }
+.run-summary[open] .rs-chev svg { transform: rotate(180deg); }
+.run-summary-body { padding: 2px 10px 10px; }
+.rs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.rs-cell { padding: 7px 9px; border-radius: 8px; background: var(--panel-sunk); }
+.rs-k { color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
+.rs-v { color: var(--ink-2); font-size: calc(15px * var(--fs, 1)); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.rs-cell.bad .rs-v { color: var(--danger); }
+.rs-cell.warn .rs-v { color: var(--amber); }
+.rs-sub { color: var(--muted); font-size: calc(12px * var(--fs, 1)); margin: 8px 0 4px; }
+.rs-step, .rs-retry, .rs-approval, .rs-compaction {
+  display: flex; gap: 8px; align-items: baseline; padding: 3px 0;
+  font-size: calc(13px * var(--fs, 1)); color: var(--ink-2);
+}
+.rs-step b { flex: 0 0 auto; font-weight: 600; }
+.rs-step span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.rs-step i { flex: 0 0 auto; color: var(--muted); font-style: normal; font-variant-numeric: tabular-nums; }
+.rs-retry { color: var(--amber); }
+.rs-approval { color: var(--muted); }
+
+.compact-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 6px 0; padding: 4px 10px; border-radius: 999px;
+  background: var(--amber-soft); color: var(--amber);
+  font-size: calc(12px * var(--fs, 1));
+}
+.compact-chip.failed { background: var(--danger-soft); color: var(--danger); }
+
+/* 4 · 演示模式预设 */
+.demo-presets { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px 8px; }
+.demo-preset {
+  border: 1px solid var(--glass-rim); background: var(--card-lite);
+  color: var(--ink-2); border-radius: 999px; padding: 4px 11px;
+  font-size: calc(13px * var(--fs, 1)); cursor: pointer;
+}
+.demo-preset:hover { background: var(--state-hover); }
+
+/* 5 · 设置里的演示状态 */
+.demo-status { display: grid; gap: 4px; margin-top: 8px; }
+.demo-status-row { display: flex; gap: 10px; font-size: calc(13px * var(--fs, 1)); }
+.demo-k { flex: 0 0 92px; color: var(--muted); }
+.demo-v { flex: 1; min-width: 0; color: var(--ink-2); word-break: break-all; }
+.demo-actions { margin-top: 8px; }
