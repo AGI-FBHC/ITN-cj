@@ -3,7 +3,7 @@
    固定挂在窗口标题栏，位于连接指示灯右侧。
    不复制任何状态：列表来自 /api/tasks/list，停止走 /api/tasks/cancel（转发到原有取消路径）。 */
 (function(){
-  const state={box:null,button:null,badge:null,pop:null,list:null,data:null,open:false,mountedIn:'',timer:null};
+  const state={box:null,button:null,badge:null,readAll:null,pop:null,list:null,data:null,open:false,mountedIn:'',timer:null};
   const KIND={chat:['chat','对话'],'course-map':['book','思维导图'],ppt:['file','演示文稿'],extract:['db','内容提取']};
   const STATUS={running:'进行中',cancelling:'正在停止',queued:'排队中',completed:'已完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'};
   const mk=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n;};
@@ -16,10 +16,15 @@
     b.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h2.5M11 6h9"/><path d="M4 12h2.5M11 12h9"/><path d="M4 18h2.5M11 18h6"/><circle cx="5.2" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="5.2" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="5.2" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg><span class="task-badge" hidden>0</span>';
     b.addEventListener('click',e=>{e.stopPropagation();toggle(!state.open);});
     const pop=mk('div','task-pop');pop.hidden=true;pop.setAttribute('role','dialog');pop.setAttribute('aria-label','任务中心');
-    const head=mk('div','task-pop-head');head.append(mk('strong',null,'任务中心'),btnRefresh());
+    const head=mk('div','task-pop-head');
+    const actions=mk('div','task-head-actions');
+    const readAll=mk('button','task-refresh','全部已读');readAll.type='button';
+    readAll.addEventListener('click',async e=>{e.stopPropagation();window.LuminNotifications?.markAllRead?.();await refresh(true);});
+    actions.append(readAll,btnRefresh());
+    head.append(mk('strong',null,'任务中心'),actions);
     const list=mk('div','task-list');pop.append(head,list);
     box.append(b,pop);
-    state.box=box;state.button=b;state.badge=b.querySelector('.task-badge');state.pop=pop;state.list=list;
+    state.box=box;state.button=b;state.badge=b.querySelector('.task-badge');state.readAll=readAll;state.pop=pop;state.list=list;
   }
   function btnRefresh(){const b=mk('button','task-refresh','刷新');b.type='button';b.addEventListener('click',async e=>{e.stopPropagation();await refresh(true);});return b;}
   function mount(){
@@ -37,25 +42,36 @@
   function syncNotifications(data){
     window.LuminNotifications?.syncTasks?.(data);
   }
+  function unreadTaskMap(){
+    const entries=window.LuminNotifications?.list?.()||[];
+    return new Map(entries
+      .filter(item=>item.source==='task'&&!item.read)
+      .map(item=>[String(item.id).replace(/^task:/,''),item]));
+  }
   function paint(){
     if(!state.data)return;
     const running=state.data.running||[],recent=state.data.recent||[];
-    const n=running.length;
+    const n=running.length,unread=unreadTaskMap();
     state.badge.hidden=n===0;state.badge.textContent=String(n);
     state.button.classList.toggle('has-running',n>0);
-    state.button.setAttribute('aria-label',n?'任务中心，'+n+' 个进行中':'任务中心');
+    state.button.classList.toggle('has-unread',n===0&&unread.size>0);
+    state.button.setAttribute('aria-label',n||unread.size
+      ?'任务中心，'+n+' 个进行中，'+unread.size+' 条未读'
+      :'任务中心');
+    if(state.readAll)state.readAll.disabled=unread.size===0;
     state.list.replaceChildren();
     const sec1=mk('div','task-section',n?('进行中 · '+n):'进行中');
     state.list.appendChild(sec1);
     if(!n){state.list.appendChild(mk('p','task-empty','当前没有正在运行的任务'));}
-    for(const t of running)state.list.appendChild(row(t,true));
+    for(const t of running)state.list.appendChild(row(t,true,unread.has(String(t.id))));
     if(recent.length){
-      state.list.appendChild(mk('div','task-section','最近完成'));
-      for(const t of recent.slice(0,6))state.list.appendChild(row(t,false));
+      const recentUnread=recent.filter(t=>unread.has(String(t.id))).length;
+      state.list.appendChild(mk('div','task-section',recentUnread?('最近完成 · '+recentUnread+' 条未读'):'最近完成'));
+      for(const t of recent.slice(0,6))state.list.appendChild(row(t,false,unread.has(String(t.id))));
     }
   }
-  function row(t,running){
-    const item=mk('article','task-row'+(t.status==='failed'?' task-failed':''));
+  function row(t,running,unread){
+    const item=mk('article','task-row'+(t.status==='failed'?' task-failed':'')+(unread?' task-unread':''));
     const main=mk('div','task-row-main');
     const GLYPH={chat:'<path d="M4 5h16v10H9l-5 4z"/>','course-map':'<circle cx="12" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M12 8.4v4.1M12 12.5 7.5 15.6M12 12.5l4.5 3.1"/>',ppt:'<path d="M4 4h16v12H4z"/><path d="M8 20h8"/>',extract:'<path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/>'};
     const ic=mk('span','task-ic');ic.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+(GLYPH[t.kind]||GLYPH.chat)+'</svg>';
@@ -89,6 +105,7 @@
     return item;
   }
   function openTask(t){
+    window.LuminNotifications?.markRead?.('task:'+t.id,true,'open');
     toggle(false);
     const link=t.link||{};
     if(link.page==='chat'&&link.sessionId&&typeof openChatSession==='function'){openChatSession(link.sessionId).catch(e=>toast(e.message));return;}

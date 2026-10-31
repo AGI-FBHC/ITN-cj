@@ -192,15 +192,85 @@ function mountCourseTree(stage,map){
     const button=btn('','course-node'+(!n.parentId?' course-root':''),()=>{if(!dragged)openCourseNode(n.id).catch(e=>toast(e.message));});button.dataset.node=n.id;button.setAttribute('aria-pressed',String(n.id===courseUi.selected));button.appendChild(el('span',null,n.title));const own=(courseUi.data.resources||[]).filter(a=>a.nodeId===n.id).length;if(own)button.appendChild(el('small',null,own+' / 4 份资源'));button.style.left=p.x+'px';button.style.top=p.y+'px';world.appendChild(button);
   }
   let view=courseUi.views.get(courseUi.kb);if(view?.mapId!==map.id)view=null;let zoom=view?.zoom||1,x=view?.x||0,y=view?.y||0,drag=null,dragged=false;
+  // 思维导图是平移画布；再给一套可见滚动条，避免只能靠拖动找内容。
+  const scrollPad=60,contentW=width+scrollPad*2,contentH=height+scrollPad*2;
+  const barX=el('div','course-scrollbar course-scrollbar-x'),thumbX=el('span','course-scroll-thumb');
+  const barY=el('div','course-scrollbar course-scrollbar-y'),thumbY=el('span','course-scroll-thumb');
+  barX.setAttribute('role','scrollbar');barX.setAttribute('aria-orientation','horizontal');barX.setAttribute('aria-valuemin','0');barX.setAttribute('aria-valuemax','100');barX.title='横向滚动导图';
+  barY.setAttribute('role','scrollbar');barY.setAttribute('aria-orientation','vertical');barY.setAttribute('aria-valuemin','0');barY.setAttribute('aria-valuemax','100');barY.title='纵向滚动导图';
+  barX.appendChild(thumbX);barY.appendChild(thumbY);stage.append(barX,barY);
+  function updateScrollbars(){
+    if(!stage.isConnected||stage.clientWidth<=0||stage.clientHeight<=0)return;
+    const vw=stage.clientWidth/zoom,vh=stage.clientHeight/zoom,visibleX=-x/zoom,visibleY=-y/zoom;
+    const maxX=Math.max(0,contentW-vw),maxY=Math.max(0,contentH-vh);
+    barX.hidden=maxX<=0.5;barY.hidden=maxY<=0.5;
+    if(maxX>0.5){
+      const track=barX.clientWidth||1,tw=Math.max(36,Math.round(track*Math.min(1,vw/contentW)));
+      const frac=Math.max(0,Math.min(1,(visibleX+scrollPad)/maxX));
+      thumbX.style.width=tw+'px';thumbX.style.left=Math.round(frac*Math.max(0,track-tw))+'px';barX.setAttribute('aria-valuenow',String(Math.round(frac*100)));
+    }
+    if(maxY>0.5){
+      const track=barY.clientHeight||1,th=Math.max(36,Math.round(track*Math.min(1,vh/contentH)));
+      const frac=Math.max(0,Math.min(1,(visibleY+scrollPad)/maxY));
+      thumbY.style.height=th+'px';thumbY.style.top=Math.round(frac*Math.max(0,track-th))+'px';barY.setAttribute('aria-valuenow',String(Math.round(frac*100)));
+    }
+  }
+  function bindScrollbar(bar,thumb,horizontal){
+    let sd=null;
+    const start=e=>{
+      if(e.target!==thumb)return;
+      e.preventDefault();e.stopPropagation();
+      sd={start:horizontal?e.clientX:e.clientY,x,y,zoom,track:horizontal?bar.clientWidth:bar.clientHeight,thumb:horizontal?thumb.offsetWidth:thumb.offsetHeight};
+      try{bar.setPointerCapture(e.pointerId);}catch{}
+      thumb.classList.add('dragging');
+    };
+    const move=e=>{
+      if(!sd)return;
+      e.preventDefault();e.stopPropagation();
+      const delta=(horizontal?e.clientX:e.clientY)-sd.start;
+      const span=Math.max(1,sd.track-sd.thumb);
+      const viewport=(horizontal?stage.clientWidth:stage.clientHeight)/sd.zoom;
+      const content=horizontal?contentW:contentH;
+      const max=Math.max(0,content-viewport);
+      const worldDelta=delta/span*max;
+      if(horizontal)x=sd.x-worldDelta*sd.zoom;else y=sd.y-worldDelta*sd.zoom;
+      apply();
+    };
+    const end=e=>{
+      if(!sd)return;
+      sd=null;thumb.classList.remove('dragging');
+      try{bar.releasePointerCapture(e.pointerId);}catch{}
+    };
+    bar.addEventListener('pointerdown',e=>{
+      e.stopPropagation();
+      if(e.target===thumb){start(e);return;}
+      const rect=bar.getBoundingClientRect();
+      if(horizontal){
+        const track=bar.clientWidth||1,thumbSize=thumb.offsetWidth||36;
+        const frac=Math.max(0,Math.min(1,(e.clientX-rect.left-thumbSize/2)/Math.max(1,track-thumbSize)));
+        const viewport=stage.clientWidth/zoom,content=contentW,max=Math.max(0,content-viewport);
+        x=-(scrollPad+frac*max)*zoom;apply();
+      }else{
+        const track=bar.clientHeight||1,thumbSize=thumb.offsetHeight||36;
+        const frac=Math.max(0,Math.min(1,(e.clientY-rect.top-thumbSize/2)/Math.max(1,track-thumbSize)));
+        const viewport=stage.clientHeight/zoom,content=contentH,max=Math.max(0,content-viewport);
+        y=-(scrollPad+frac*max)*zoom;apply();
+      }
+    });
+    bar.addEventListener('pointermove',move);
+    bar.addEventListener('pointerup',end);
+    bar.addEventListener('pointercancel',end);
+  }
+  bindScrollbar(barX,thumbX,true);bindScrollbar(barY,thumbY,false);
   // 节点文字上开始拖动时，浏览器默认会先开始选词，导致地图收不到稳定的 pointermove。
   // 统一禁止选词，并在拖动期间拦截 selectstart；无位移的点击仍然照常打开节点。
   stage.addEventListener("selectstart",e=>{if(drag)e.preventDefault();});
-  const apply=()=>{if(!stage.isConnected||stage.clientWidth<=0||stage.clientHeight<=0)return;world.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;courseUi.views.set(kb,{mapId:map.id,zoom,x,y});reset.textContent=Math.round(zoom*100)+'%';};
+  const apply=()=>{if(!stage.isConnected||stage.clientWidth<=0||stage.clientHeight<=0)return;world.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;courseUi.views.set(kb,{mapId:map.id,zoom,x,y});reset.textContent=Math.round(zoom*100)+'%';updateScrollbars();};
   const home=()=>{if(!stage.isConnected||stage.clientWidth<=0||stage.clientHeight<=0)return;const roots=children.get('')||[];const first=roots[0];const branch=(courseUi.selected&&positions.has(courseUi.selected)?{id:courseUi.selected}:first&&(children.get(first.id)||[])[0]||first||map.nodes[0]);const p=positions.get(branch.id);zoom=1;x=Math.round(stage.clientWidth*.32-p.x);y=Math.round(stage.clientHeight*.38-p.y);apply();};
   const controls=el('div','course-map-controls'),reset=btn('100%','ghost sm',home);reset.setAttribute('aria-label','重置导图视角');const change=z=>{const next=Math.max(.45,Math.min(2.5,z));x=stage.clientWidth/2-(stage.clientWidth/2-x)*next/zoom;y=stage.clientHeight/2-(stage.clientHeight/2-y)*next/zoom;zoom=next;apply();};controls.append(btn('−','ghost sm',()=>change(zoom/1.15)),reset,btn('＋','ghost sm',()=>change(zoom*1.15)));stage.appendChild(controls);
-  stage.onpointerdown=e=>{if(e.target.closest('.course-map-controls'))return;dragged=false;drag={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY};};
+  stage.onpointerdown=e=>{if(e.target.closest('.course-map-controls,.course-scrollbar'))return;dragged=false;drag={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY};};
   stage.onpointermove=e=>{if(!drag)return;const rect=stage.getBoundingClientRect(),factor=stage.clientWidth/rect.width;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)>5){dragged=true;stage.setPointerCapture(e.pointerId);x+=dx*factor;y+=dy*factor;apply();}drag.x=e.clientX;drag.y=e.clientY;};stage.onpointerup=()=>{drag=null;setTimeout(()=>dragged=false,0);};stage.onpointercancel=()=>{drag=null;};stage.addEventListener('wheel',e=>{if(e.target.closest('.course-job'))return;e.preventDefault();change(zoom*Math.exp(-e.deltaY*.001));},{passive:false});
-  const observer=new ResizeObserver(()=>{if(!stage.isConnected){observer.disconnect();return;}if(!view)home();});observer.observe(stage);stage._courseObserver=observer;if(view)apply();else requestAnimationFrame(home);
+  const observer=new ResizeObserver(()=>{if(!stage.isConnected){observer.disconnect();return;}if(!view)home();else updateScrollbars();});observer.observe(stage);stage._courseObserver=observer;if(view)apply();else requestAnimationFrame(home);
   return{focusNode:id=>{const p=positions.get(id);if(p){zoom=1;x=stage.clientWidth/2-p.x;y=stage.clientHeight/2-p.y;apply();}},filter:q=>world.querySelectorAll('.course-node').forEach(b=>b.classList.toggle('course-muted',!!q&&!b.textContent.toLowerCase().includes(q.toLowerCase())))};
 }
 async function renderCourseWorkspace(){

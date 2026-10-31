@@ -271,7 +271,7 @@ body {
 .topbar-text h1 { margin: 0; font-size: calc(20px * var(--fs, 1)); font-weight: 650; letter-spacing: -.01em; }
 .topbar-text p { margin: 4px 0 0; color: var(--muted); font-size: calc(13px * var(--fs, 1)); }
 .top-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-.view { flex: 1; overflow: auto; padding: 24px 30px 48px; }
+.view { flex: 1; min-height: 0; overflow: auto; padding: 24px 30px 48px; }
 
 
 /* ---------- 卡片 ---------- */
@@ -405,6 +405,36 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand-soft)
 .check-item .txt b { font-weight: 600; }
 .check-item .txt span { display: block; color: var(--muted); font-size: calc(13px * var(--fs, 1)); }
 .check-item.done .txt b { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+
+/* 首次使用清单：收起时只占一行，展开后步骤区自己滚动，不挤掉对话输入区。 */
+.onboarding {
+  width: 100%; max-width: 920px; margin: 0 auto 16px;
+  padding: 0; overflow: hidden;
+}
+.onboarding-summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px;
+}
+.onboarding-summary::-webkit-details-marker { display: none; }
+.onboarding-summary .onboarding-title { font-size: 15px; font-weight: 650; flex: none; }
+.onboarding-summary .tag { flex: none; }
+.onboarding-summary .onboarding-next {
+  flex: 1; min-width: 0; color: var(--muted); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.onboarding-summary .btn { margin-left: auto; flex: none; }
+.onboarding-caret { flex: none; display: inline-flex; color: var(--muted); transition: transform .15s var(--ease-out); }
+.onboarding-caret svg { width: 15px; height: 15px; }
+.onboarding[open] .onboarding-caret { transform: rotate(180deg); }
+.onboarding[open] > .onboarding-summary { border-bottom: 1px solid var(--line-soft); }
+.onboarding-body { padding: 14px 18px 16px; max-height: 40vh; overflow: auto; }
+.onboarding-first .onboarding-body { max-height: none; overflow: visible; }
+.onboarding-body > p { margin: 0 0 10px; }
+.onboarding .check-item { padding: 9px 11px; }
+.onboarding .check-item .txt b { font-size: 14px; }
+.onboarding .check-item .txt span { font-size: 13px; }
+.onboarding-foot { max-width: 920px; margin: 0 auto 12px; text-align: center; }
 
 /* ---------- 列表条目 ---------- */
 .list { display: flex; flex-direction: column; gap: 8px; }
@@ -2909,6 +2939,8 @@ html[data-theme="dark"] {
   position: absolute; top: 0; bottom: 0; width: 8px; z-index: 30;
   cursor: col-resize; background: transparent; touch-action: none;
 }
+.splitter-rail { right: -4px; }
+.splitter-workspace { left: calc(var(--workspace-side, 300px) - 4px); }
 .splitter-panel { right: -4px; }
 .splitter-dock { left: 0; }
 .splitter::after {
@@ -3514,3 +3546,150 @@ html[data-theme="dark"] .composer {
 .md th { font-weight:650; background:var(--panel-soft); }
 .md tbody tr:hover td { background:var(--brand-soft); }
 .md .md-table-wrap code { white-space:pre; }
+
+/* ============================================================
+   交互状态层 · 2026-10-30
+   ------------------------------------------------------------
+   目标：当前页、悬停、选中、焦点、禁用五种状态一眼可分。
+   做法：
+     1. 用语义令牌统一“选中”，不再让各组件各自拿 --brand-soft；
+     2. 选中态同时给“底色 + 左侧/底部指示条 + 文字加重”，不单靠颜色；
+     3. 悬停保持中性灰，强调色只留给选中和焦点；
+     4. 深色模式单独给一套令牌，不直接反色。
+   ============================================================ */
+:root {
+  --state-accent: #2f6b52;
+  --state-accent-ink: #123d2b;
+  --state-on-accent: #ffffff;
+  --state-hover: rgba(12, 42, 30, .055);
+  --state-hover-strong: rgba(12, 42, 30, .085);
+  --state-selected: color-mix(in srgb, var(--state-accent) 13%, transparent);
+  --state-selected-strong: color-mix(in srgb, var(--state-accent) 20%, transparent);
+  --state-selected-line: color-mix(in srgb, var(--state-accent) 38%, transparent);
+  --state-focus: #2f6b52;
+  --state-disabled-opacity: .45;
+}
+
+html[data-theme="dark"] {
+  --state-accent: #7fc3a2;
+  --state-accent-ink: #e2f6ea;
+  --state-on-accent: #0c100e;
+  --state-hover: rgba(255, 255, 255, .07);
+  --state-hover-strong: rgba(255, 255, 255, .11);
+  --state-selected: color-mix(in srgb, var(--state-accent) 17%, transparent);
+  --state-selected-strong: color-mix(in srgb, var(--state-accent) 25%, transparent);
+  --state-selected-line: color-mix(in srgb, var(--state-accent) 52%, transparent);
+  --state-focus: #8fd3b1;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    --state-accent: #7fc3a2;
+    --state-accent-ink: #e2f6ea;
+    --state-on-accent: #0c100e;
+    --state-hover: rgba(255, 255, 255, .07);
+    --state-hover-strong: rgba(255, 255, 255, .11);
+    --state-selected: color-mix(in srgb, var(--state-accent) 17%, transparent);
+    --state-selected-strong: color-mix(in srgb, var(--state-accent) 25%, transparent);
+    --state-selected-line: color-mix(in srgb, var(--state-accent) 52%, transparent);
+    --state-focus: #8fd3b1;
+  }
+}
+
+/* 主导航：当前页 = 强调底 + 左侧 3px 指示条 + 深色文字 */
+.rail .nav-item.active {
+  background-color: var(--state-selected);
+  background-image: none;
+  color: var(--state-accent-ink);
+  box-shadow: inset 0 0 0 1px var(--state-selected-line);
+}
+.rail .nav-item.active::before {
+  display: block;
+  left: -7px;
+  width: 3px;
+  height: 22px;
+  border-radius: 0 3px 3px 0;
+  background: var(--state-accent);
+}
+.rail .nav-item.active .rail-caption { font-weight: 650; }
+.rail .nav-item.active:hover { background-color: var(--state-selected-strong); }
+.rail .nav-item:hover:not(.active),
+.rail .rail-btn:hover { background-color: var(--state-hover); }
+
+/* 通用列表选中：强调底 + 左侧 3px 条 */
+.panel-item.active {
+  background-color: var(--state-selected);
+  background-image: none;
+  color: var(--state-accent-ink);
+  box-shadow: inset 3px 0 0 var(--state-accent), inset 0 0 0 1px var(--state-selected-line);
+}
+.panel-item.active .panel-item-title { color: var(--state-accent-ink); font-weight: 650; }
+
+.settings-nav button.active {
+  background-color: var(--state-selected);
+  background-image: none;
+  color: var(--state-accent-ink);
+  box-shadow: inset 3px 0 0 var(--state-accent), inset 0 0 0 1px var(--state-selected-line);
+}
+.settings-nav button.active svg { opacity: 1; color: var(--state-accent); }
+
+.toc-item.active {
+  background-color: var(--state-selected);
+  color: var(--state-accent-ink);
+  box-shadow: inset 3px 0 0 var(--state-accent), inset 0 0 0 1px var(--state-selected-line);
+}
+
+/* 分段控件 / 筛选片：描边 + 加粗，避免只靠底色 */
+.chip.active {
+  background-color: var(--state-selected);
+  border-color: var(--state-selected-line);
+  color: var(--state-accent-ink);
+  font-weight: 650;
+}
+.seg-item.active,
+.panel-seg button.active {
+  background-color: var(--state-selected-strong);
+  background-image: none;
+  color: var(--state-accent-ink);
+  box-shadow: inset 0 0 0 1px var(--state-selected-line), var(--glass-lift-sm);
+}
+.palette-item.active {
+  background-color: var(--state-selected);
+  border-color: var(--state-selected-line);
+}
+.palette-item.active .pi-icon {
+  background-color: var(--state-accent);
+  color: var(--state-on-accent);
+}
+
+/* 悬停统一为中性灰；选中项悬停只加深选中底色 */
+.panel-item:hover:not(.active),
+.settings-nav button:hover:not(.active),
+.toc-item:hover:not(.active),
+.chip:hover:not(.active),
+.seg-item:hover:not(.active),
+.palette-item:hover:not(.active) { background-color: var(--state-hover); }
+
+.btn:not(.primary):not(.ghost):hover { background-color: var(--state-hover); border-color: var(--brand-line); }
+.btn.ghost:hover { background-color: var(--state-hover); }
+.btn:disabled,
+.btn[aria-disabled="true"],
+.chip:disabled,
+.seg-item:disabled,
+.workspace-tab:disabled {
+  opacity: var(--state-disabled-opacity);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* 焦点环：统一使用状态色，深色模式下同样清晰 */
+.nav-item:focus-visible,
+.rail-btn:focus-visible,
+.btn:focus-visible,
+.workspace-tab:focus-visible,
+.panel-item:focus-visible,
+.toc-item:focus-visible,
+.settings-nav button:focus-visible,
+.chip:focus-visible,
+.seg-item:focus-visible,
+.palette-item:focus-visible { outline-color: var(--state-focus); }

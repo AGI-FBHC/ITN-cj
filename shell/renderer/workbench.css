@@ -283,23 +283,41 @@ body.workspace-wide #view > * { max-width:1100px; margin-inline:auto; }
 /* Content-first workspaces. Glass is the window frame; reading surfaces stay quiet. */
 body.library-workspace .panel { display:none; }
 body.library-workspace #rail-toggle { visibility:hidden; }
+body.library-workspace #view { display:flex; flex-direction:column; overflow:hidden; }
+body.library-workspace .library-search,
+body.library-workspace .library-toolbar { flex:0 0 auto; }
+body.library-workspace .document-browser { flex:1 1 auto; min-height:0; height:auto; }
+body.library-workspace .harvest-entry,
+body.library-workspace .kb-management { flex:1 1 auto; min-height:0; overflow:auto; }
+body.library-workspace .kb-prep-banner { flex:0 0 auto; }
+.kb-prep-banner {
+  display:flex; align-items:center; gap:12px;
+  margin:0 0 14px; padding:12px 16px;
+  border:1px solid var(--amber-line); border-radius:12px;
+  background:var(--amber-soft); color:var(--ink-2);
+  font-size:14px;
+}
+.kb-prep-banner .grow { min-width:0; overflow-wrap:anywhere; }
 .library-workspace .library-search { background:transparent; border:0; box-shadow:none; padding:0; margin:0; }
 .library-workspace .library-search .card-head { display:none; }
 .library-workspace .library-toolbar { margin:14px 0; }
 .library-workspace .library-toolbar > select { width:auto; max-width:340px; }
-.document-browser { display:grid; grid-template-columns:290px minmax(0,1fr); min-height:420px; height:calc(100vh - 330px); border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel); }
-.document-browser .library-documents { margin:0; padding:16px 12px; overflow:auto; border:0; border-right:1px solid var(--line); border-radius:0; box-shadow:none; background:var(--panel-soft); }
+.document-browser { display:grid; grid-template-columns:290px minmax(0,1fr); min-height:0; height:auto; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel); }
+.document-browser .library-documents { margin:0; padding:16px 12px; overflow:auto; border:0; border-right:1px solid var(--line); border-radius:0; box-shadow:none; background:var(--panel-soft); min-height:0; }
 .document-browser .library-documents > .row { grid-template-columns:1fr; gap:8px; }
 .document-browser .library-documents input, .document-browser .library-documents select { min-width:0; width:100%; }
-.document-browser .library-documents .library-document { position:relative; display:block; padding:14px 10px 12px; border-radius:9px; margin:3px 0; min-height:102px; }
+.document-browser .library-documents .library-document { position:relative; display:block; padding:14px 10px 12px; border-radius:9px; margin:3px 0; min-height:102px; cursor:pointer; }
+.document-browser .library-documents .library-document:hover { background:color-mix(in srgb,var(--panel-soft) 72%,var(--panel)); }
+.document-browser .library-documents .library-document:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
 .document-browser .library-document.selected { background:var(--brand-soft); }
+.document-browser .library-document.selected:hover { background:var(--brand-soft); }
 .document-browser .library-document > .file-icon { display:none; }
 .document-browser .library-document h3 { font-size:14px; margin:0 0 6px; line-height:1.5; }
 .document-browser .library-document .meta { font-size:13px; }
 .document-browser .library-document .library-path { display:none; }
 .document-browser .library-document > .tag { margin:6px 0 0; font-size:13px; }
 .document-browser .library-document > .btn { float:right; margin-top:4px; border:0; background:transparent; box-shadow:none; font-size:13px; }
-.document-browser > .library-preview { display:block; overflow:auto; min-width:0; padding:26px 32px; scroll-margin-top:0; }
+.document-browser > .library-preview { display:block; overflow:auto; min-width:0; min-height:0; padding:26px 32px; scroll-margin-top:0; }
 .document-browser > .library-preview:empty::before { content:'选择左侧文档，在这里阅读原文'; display:block; padding:80px 20px; text-align:center; color:var(--muted); }
 .document-browser .document-preview { box-shadow:none; background:transparent; border:0; padding:0; margin:0; }
 .document-browser .document-preview h2 { font-size:23px; line-height:1.4; }
@@ -316,7 +334,7 @@ body.library-workspace #rail-toggle { visibility:hidden; }
 .document-browser .library-results h3 { font-size:14px; }
 .document-browser .hit-body { font-size:13px; line-height:1.6; }
 .library-workspace .harvest-entry, .library-workspace .library-info { margin:12px 0 0; padding:12px 16px; box-shadow:none; border:1px solid var(--line); background:transparent; }
-.outcome-workspace { display:grid; grid-template-columns:280px minmax(0,1fr); height:calc(100vh - 315px); min-height:420px; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel); }
+.outcome-workspace { display:grid; grid-template-columns:280px minmax(0,1fr); height:auto; min-height:0; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel); }
 .outcome-workspace .outcome-list { display:flex; flex-direction:column; gap:2px; margin:0; padding:10px; overflow:auto; border-right:1px solid var(--line); background:var(--panel-soft); }
 .outcome-list .resource-entry { flex-shrink:0; min-height:112px; border:0; border-radius:9px; box-shadow:none; background:transparent; padding:15px 14px; gap:6px; }
 .outcome-list .resource-entry.selected { background:var(--brand-soft); }
@@ -409,12 +427,12 @@ body[data-page='settings'] .settings-body .card h2 { font-size:16px; }
   .home-recent { border-left:0; border-top:1px solid var(--line); }
   .study-mode-panel { padding:20px; }
 }
-.outcome-workspace { height:calc(100vh - 350px); grid-template-rows:minmax(0,1fr); }
+.outcome-workspace { height:auto; grid-template-rows:minmax(0,1fr); }
 .outcome-reader, .outcome-workspace .outcome-list { min-height:0; }
 .embedded-resource .resource-dock-body { min-height:0; flex:1; }
 .object-source[hidden] { display:none!important; }
 body[data-page='notes'] #view > .card:not(.res-tabs) { background:transparent; border:0; box-shadow:none; padding:0; }
-.object-browser { height:calc(100vh - 365px); min-height:400px; }
+.object-browser { height:auto; min-height:0; }
 .object-list { overflow:auto; padding:10px; background:var(--panel-soft); border-right:1px solid var(--line); }
 .object-row { display:flex; flex-direction:column; text-align:left; gap:8px; width:100%; border:0; background:transparent; color:var(--ink); padding:16px 14px; border-radius:9px; font:inherit; cursor:pointer; }
 .object-row strong { font-size:14px; line-height:1.5; }
@@ -444,7 +462,7 @@ body[data-page='notes'] #view > .card:not(.res-tabs) { background:transparent; b
 .topbar-text { flex:0 0 auto; }
 body.workspace-wide #view > .study-workspace { max-width:none; }
 .study-workspace { overflow:visible; align-items:start; }
-.study-side { position:sticky; top:0; max-height:calc(100vh - 140px); overflow:auto; border-radius:16px 0 0 16px; }
+.study-side { position:static; top:auto; max-height:none; overflow:auto; border-radius:16px 0 0 16px; }
 .study-chapter-group { display:flex; flex-direction:column; gap:2px; padding-bottom:12px; }
 .study-section { border:0; background:transparent; color:var(--ink); display:flex; align-items:baseline; gap:8px; padding:9px 10px 9px 20px; text-align:left; font:inherit; font-size:13px; border-radius:8px; cursor:pointer; line-height:1.5; }
 .study-section .grow { min-width:0; overflow-wrap:anywhere; }
@@ -546,6 +564,10 @@ body.reference-compact .app > #panel { display:none; }
 .knowledge-scene { position:relative; flex:1; min-height:520px; overflow:hidden; background:var(--panel); isolation:isolate; }
 .knowledge-scene::before { content:''; position:absolute; inset:0; pointer-events:none; z-index:0; opacity:.34; background-image:radial-gradient(circle,color-mix(in srgb,var(--line) 72%,transparent) .65px,transparent .75px); background-size:24px 24px; mask-image:linear-gradient(to bottom,transparent 0,#000 12%,#000 88%,transparent 100%); }
 .knowledge-canvas { position:relative; z-index:1; width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
+/* 知识网络画布复用学·练导图的滚动条；这里只调整位置和层级。 */
+.knowledge-scene .course-scrollbar { z-index:4; }
+.knowledge-scene .course-scrollbar-x { left:14px; right:14px; bottom:6px; height:8px; }
+.knowledge-scene .course-scrollbar-y { right:6px; top:14px; bottom:14px; width:8px; }
 .knowledge-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; text-align:center; padding:30px; }
 .knowledge-empty h3,.knowledge-empty p { margin:0; }
 .knowledge-empty { z-index:2; }
@@ -707,8 +729,8 @@ body[data-page="home"] .view { padding:14px 18px 14px; min-height:0; }
 
 .outcome-workspace {
   grid-template-columns:360px minmax(0,1fr);
-  height:calc(100vh - 258px);
-  min-height:460px;
+  height:auto;
+  min-height:0;
   border-radius:18px;
   box-shadow:0 12px 36px rgba(20,38,29,.06);
 }
@@ -951,4 +973,314 @@ body[data-page="home"] .view {
 
 .knowledge-link-suggestion-status.exists {
   color: var(--muted);
+}
+
+/* ============================================================
+   工作区交互状态层 · 2026-10-30
+   页面标签、文档列表、成果列表、章节列表统一使用状态令牌；
+   选中项同时有底色、左侧/底部指示条和加重文字。
+   ============================================================ */
+.workspace-tabs .workspace-tab.active,
+.kb-workspace-tabs .workspace-tab[aria-current="page"] {
+  background-color: var(--state-selected);
+  background-image: none;
+  color: var(--state-accent-ink);
+  font-weight: 650;
+  box-shadow: inset 0 -2px 0 var(--state-accent), inset 0 0 0 1px var(--state-selected-line);
+}
+.workspace-tabs .workspace-tab.active:hover { background-color: var(--state-selected-strong); }
+.workspace-tabs .workspace-tab:hover:not(.active) { background-color: var(--state-hover); color: var(--ink); }
+
+.study-mode-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--state-accent);
+  color: var(--state-accent-ink);
+  font-weight: 650;
+}
+
+.document-browser .library-documents .library-document:hover { background-color: var(--state-hover); }
+.document-browser .library-document.selected {
+  background-color: var(--state-selected);
+  background-image: none;
+  box-shadow: inset 3px 0 0 var(--state-accent), inset 0 0 0 1px var(--state-selected-line);
+}
+.document-browser .library-document.selected:hover { background-color: var(--state-selected-strong); }
+.document-browser .library-document.selected h3 { color: var(--state-accent-ink); font-weight: 650; }
+
+.outcome-list .resource-entry:hover:not(.selected),
+.outcome-list .personal-entry:hover:not(.selected),
+.study-chapter:hover:not(.active) { background-color: var(--state-hover); }
+
+.outcome-list .resource-entry.selected,
+.outcome-list .personal-entry.selected {
+  background-color: var(--state-selected);
+  background-image: none;
+  border-color: var(--state-selected-line);
+  box-shadow: inset 3px 0 0 var(--state-accent), inset 0 0 0 1px var(--state-selected-line);
+}
+.outcome-list .resource-entry.selected strong,
+.outcome-list .personal-entry.selected strong { color: var(--state-accent-ink); font-weight: 650; }
+
+.study-chapter.active {
+  background-color: var(--state-selected);
+  border-color: var(--state-selected-line);
+  box-shadow: inset 3px 0 0 var(--state-accent), var(--shadow-sm);
+}
+.study-chapter.active .study-chapter-idx {
+  background-color: var(--state-accent);
+  color: var(--state-on-accent);
+}
+
+.object-row.selected {
+  background-color: var(--state-selected);
+  box-shadow: inset 3px 0 0 var(--state-accent), inset 0 0 0 1px var(--state-selected-line);
+}
+
+/* ============================================================
+   统一工作区骨架 · 2026-10-30
+   ------------------------------------------------------------
+   目标：对话 / 学习 / 知识库 / 成果四个页面共用同一套高度链：
+     顶栏固定 → 工具行固定 → 左右栏占满剩余高度 → 两侧各自滚动。
+   原则：
+     1. 页面整体不滚动，内容区自己滚动；
+     2. 不再用 calc(100vh - 固定值) 猜顶栏高度；
+     3. 左栏宽度用同一个变量，避免每页 290 / 360 各写一套；
+     4. 窄屏退回整页滚动，避免左右栏被压扁。
+   ============================================================ */
+:root {
+  --workspace-side: clamp(240px, 22vw, 340px);
+  --workspace-radius: 16px;
+}
+
+/* 学习 · 学练：左目录 + 右讲义，各自滚动 */
+body[data-page="learn"] #view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+body[data-page="learn"] #view > .course-workspace {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+body[data-page="learn"] #view > .study-workspace {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  overflow: hidden;
+  align-items: stretch;
+  grid-template-columns: var(--workspace-side) minmax(0, 1fr);
+  border-radius: var(--workspace-radius);
+}
+body[data-page="learn"] .study-side {
+  position: static;
+  max-height: none;
+  min-height: 0;
+  overflow: auto;
+}
+body[data-page="learn"] .study-detail {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* 成果 · 个性资源：工具行固定，资源列表与阅读区各自滚动 */
+body[data-page="resources"] #view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+body[data-page="resources"] #view > .outcome-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+body[data-page="resources"] .outcome-toolbar-clean {
+  flex: 0 0 auto;
+}
+body[data-page="resources"] .outcome-workspace {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  grid-template-columns: var(--workspace-side) minmax(0, 1fr);
+  border-radius: var(--workspace-radius);
+}
+body[data-page="resources"] .outcome-list-panel,
+body[data-page="resources"] .outcome-reader {
+  min-height: 0;
+}
+body[data-page="resources"] .outcome-reader {
+  height: auto;
+}
+
+/* 成果 · 笔记 / 错题：同一个 object-browser 也改成占满剩余高度 */
+body[data-page="notes"] #view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+body[data-page="notes"] #view > .res-tabs {
+  flex: 0 0 auto;
+}
+body[data-page="notes"] #view > .card:not(.res-tabs) {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+body[data-page="notes"] .outcome-workspace.object-browser {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  grid-template-columns: var(--workspace-side) minmax(0, 1fr);
+  border-radius: var(--workspace-radius);
+}
+body[data-page="notes"] .object-list,
+body[data-page="notes"] .object-reader {
+  min-height: 0;
+}
+
+/* 知识库：沿用已改好的 flex 高度链，只统一左栏宽度 */
+body[data-page="kb"] .document-browser {
+  grid-template-columns: var(--workspace-side) minmax(0, 1fr);
+}
+
+/* 窄屏：不再强行左右分栏占满视口，退回整页滚动 */
+@media (max-width: 1080px) {
+  /* 只有旧的“左目录 + 右讲义”形态需要退回整页滚动；
+     思维导图工作区仍然占满视口，否则画布会被压扁。 */
+  body[data-page="learn"] #view:has(> .study-workspace) {
+    display: block;
+    overflow: auto;
+  }
+  body[data-page="learn"] #view > .study-workspace {
+    display: block;
+    overflow: visible;
+  }
+  body[data-page="learn"] .study-side {
+    max-height: 300px;
+    overflow: auto;
+  }
+  body[data-page="learn"] .study-detail {
+    overflow: visible;
+  }
+}
+@media (max-width: 900px) {
+  body[data-page="resources"] #view {
+    display: block;
+    overflow: auto;
+  }
+  body[data-page="resources"] #view > .outcome-page {
+    display: block;
+  }
+  body[data-page="resources"] .outcome-workspace {
+    display: block;
+    height: auto;
+  }
+  body[data-page="resources"] .outcome-list-panel {
+    max-height: 42vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  body[data-page="resources"] .outcome-reader {
+    height: auto;
+    min-height: 420px;
+  }
+  body[data-page="notes"] #view {
+    display: block;
+    overflow: auto;
+  }
+  body[data-page="notes"] #view > .card:not(.res-tabs) {
+    display: block;
+  }
+  body[data-page="notes"] .outcome-workspace.object-browser {
+    display: block;
+    min-height: 420px;
+  }
+  body[data-page="notes"] .object-reader {
+    min-height: 360px;
+  }
+  body[data-page="resources"] .splitter-workspace,
+  body[data-page="notes"] .splitter-workspace {
+    display: none;
+  }
+}
+
+/* ============================================================
+   左侧栏伸缩 · 2026-10-30
+   ------------------------------------------------------------
+   第一层窄栏：56px（图标）～240px（图标 + 文字）。
+   - 拖右边缘调宽度，双击恢复 56px；
+   - 宽度 >= 120px 时切换为展开形态；
+   - 展开/收起按钮在侧栏底部；
+   - 900px 以下强制收起，避免挤压主区。
+   ============================================================ */
+.rail {
+  position: relative;
+}
+.splitter-rail { right: -4px; }
+
+body:not(.rail-expanded) .rail > .nav-item,
+body:not(.rail-expanded) .rail > .rail-btn {
+  width: 42px;
+  height: 42px;
+  margin: 1px 0;
+  padding: 0;
+  flex-direction: row;
+  justify-content: center;
+  gap: 0;
+}
+body:not(.rail-expanded) .rail > .nav-item .rail-caption,
+body:not(.rail-expanded) .rail > .rail-btn .rail-caption { display: none; }
+
+body.rail-expanded .rail {
+  align-items: stretch;
+  padding: 10px;
+  gap: 4px;
+}
+body.rail-expanded .rail > .nav-item,
+body.rail-expanded .rail > .rail-btn {
+  width: 100%;
+  height: 42px;
+  margin: 1px 0;
+  padding: 0 10px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  border-radius: 11px;
+}
+body.rail-expanded .rail > .nav-item .rail-caption,
+body.rail-expanded .rail > .rail-btn .rail-caption {
+  display: block;
+  position: static;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.rail-expanded .rail > .nav-item .rail-tip,
+body.rail-expanded .rail > .rail-btn .rail-tip { display: none; }
+body.rail-expanded .rail-sep { width: 100%; }
+body.rail-expanded .rail-spacer { flex: 1 1 auto; }
+
+#rail-expand svg { transition: transform .16s var(--ease-out); }
+body:not(.rail-expanded) #rail-expand svg { transform: rotate(-90deg); }
+body.rail-expanded #rail-expand svg { transform: rotate(90deg); }
+
+@media (max-width: 900px) {
+  .rail {
+    flex-basis: 56px !important;
+    width: 56px !important;
+  }
+  .splitter-rail,
+  #rail-expand { display: none; }
 }

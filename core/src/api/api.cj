@@ -1009,7 +1009,9 @@ public class Api {
             // 显示大小：页面缩放与字体大小分开存（两者是两件事：缩放管"多大一块"、字体管"字多大"）
             o.put("uiZoom", JsonString(db.getKv("settings", "ui_zoom", "1")))
             o.put("uiFont", JsonString(db.getKv("settings", "ui_font", "1")))
-            // 分栏宽度（会话栏 / 成果面板）：用户拖过就记住，下次打开还是这个宽度
+            // 分栏宽度（左侧窄栏 / 页面左列表 / 会话栏 / 成果面板）：用户拖过就记住
+            o.put("uiRailW", JsonString(db.getKv("settings", "ui_rail_w", "")))
+            o.put("uiWorkspaceW", JsonString(db.getKv("settings", "ui_workspace_w", "")))
             o.put("uiPanelW", JsonString(db.getKv("settings", "ui_panel_w", "")))
             o.put("uiDockW", JsonString(db.getKv("settings", "ui_dock_w", "")))
             // 让 lumin 动手的那几个开关（默认全关：只问答、不碰本机文件）
@@ -1052,14 +1054,48 @@ public class Api {
                     if (font >= 0.85 && font <= 1.4) {
                         db.putKv("settings", "ui_font", font.toString())
                     }
-                    // 分栏宽度：限幅，别让手滑把会话栏拖成整屏
-                    let panelW = floatValue(match (b.get("uiPanelW")) { case Some(z) => z; case None => JsonNull() })
-                    if (panelW >= 180.0 && panelW <= 520.0) {
-                        db.putKv("settings", "ui_panel_w", Int64(panelW).toString())
+                    // 分栏宽度：限幅，别让手滑把侧栏拖成整屏。
+                    // 明确发空字符串表示“恢复默认宽度”，要真的清掉旧值；
+                    // 只看 floatValue 会把空串当 0 忽略，保存后再回写旧宽度，双击就失效。
+                    let railValue = match (b.get("uiRailW")) { case Some(v) => v; case None => JsonNull() }
+                    let railEmpty = match (railValue) { case s: JsonString => trimStr(s.getValue()).size == 0; case _ => false }
+                    if (railEmpty) {
+                        db.putKv("settings", "ui_rail_w", "")
+                    } else {
+                        let railW = floatValue(railValue)
+                        if (railW >= 56.0 && railW <= 240.0) {
+                            db.putKv("settings", "ui_rail_w", Int64(railW).toString())
+                        }
                     }
-                    let dockW = floatValue(match (b.get("uiDockW")) { case Some(z) => z; case None => JsonNull() })
-                    if (dockW >= 300.0 && dockW <= 900.0) {
-                        db.putKv("settings", "ui_dock_w", Int64(dockW).toString())
+                    let workspaceValue = match (b.get("uiWorkspaceW")) { case Some(v) => v; case None => JsonNull() }
+                    let workspaceEmpty = match (workspaceValue) { case s: JsonString => trimStr(s.getValue()).size == 0; case _ => false }
+                    if (workspaceEmpty) {
+                        db.putKv("settings", "ui_workspace_w", "")
+                    } else {
+                        let workspaceW = floatValue(workspaceValue)
+                        if (workspaceW >= 220.0 && workspaceW <= 420.0) {
+                            db.putKv("settings", "ui_workspace_w", Int64(workspaceW).toString())
+                        }
+                    }
+                    let panelValue = match (b.get("uiPanelW")) { case Some(v) => v; case None => JsonNull() }
+                    let panelEmpty = match (panelValue) { case s: JsonString => trimStr(s.getValue()).size == 0; case _ => false }
+                    if (panelEmpty) {
+                        db.putKv("settings", "ui_panel_w", "")
+                    } else {
+                        let panelW = floatValue(panelValue)
+                        if (panelW >= 220.0 && panelW <= 420.0) {
+                            db.putKv("settings", "ui_panel_w", Int64(panelW).toString())
+                        }
+                    }
+                    let dockValue = match (b.get("uiDockW")) { case Some(v) => v; case None => JsonNull() }
+                    let dockEmpty = match (dockValue) { case s: JsonString => trimStr(s.getValue()).size == 0; case _ => false }
+                    if (dockEmpty) {
+                        db.putKv("settings", "ui_dock_w", "")
+                    } else {
+                        let dockW = floatValue(dockValue)
+                        if (dockW >= 300.0 && dockW <= 900.0) {
+                            db.putKv("settings", "ui_dock_w", Int64(dockW).toString())
+                        }
                     }
                     let workDir = strOf(b, "agentWorkDir")
                     if (workDir.size > 0) {
@@ -1090,6 +1126,8 @@ public class Api {
                     o.put("rail", JsonString(db.getKv("settings", "ui_rail", "1")))
                     o.put("uiZoom", JsonString(db.getKv("settings", "ui_zoom", "1")))
                     o.put("uiFont", JsonString(db.getKv("settings", "ui_font", "1")))
+                    o.put("uiRailW", JsonString(db.getKv("settings", "ui_rail_w", "")))
+                    o.put("uiWorkspaceW", JsonString(db.getKv("settings", "ui_workspace_w", "")))
                     o.put("uiPanelW", JsonString(db.getKv("settings", "ui_panel_w", "")))
                     o.put("uiDockW", JsonString(db.getKv("settings", "ui_dock_w", "")))
                     o.put("agentWorkDir", JsonString(db.getKv("settings", "agent_work_dir", "")))

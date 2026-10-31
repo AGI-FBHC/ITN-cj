@@ -1405,17 +1405,64 @@ function mountGuidedReasoning() {
   state.guidedReasoningCleanup = () => { observer.disconnect(); select.removeEventListener('change', sync); document.removeEventListener('click', closeModels); control.dispose(); reasoningControls.delete(control); group.remove(); usage.remove(); state.guidedReasoningCleanup = null; };
 }
 
-/** 「首次使用清单」：五个必须走通的环节，完成状态全部来自真实数据。 */
+/** 「首次使用清单」：四步，完成状态全部来自真实数据。文案面向普通学生，不用索引/分片这类术语。 */
 function checklist() {
-  const kbs = state.cfg.knowledgeBases;
-  const steps = [
-    { done: hasChatModel(), title: "配置模型接口", text: "填接口地址与密钥，绑定到「对话与生成」。", go: () => go("settings", "models"), act: "去配置" },
-    { done: kbs.length > 0, title: "指定资料目录", text: "选一个本机资料目录（Markdown / 文本）。", go: () => go("settings", "kb"), act: "去指定" },
-    { done: kbs.some((k) => (k.chunkCount || 0) > 0), title: "建立索引", text: "扫描目录并切片，建完才能检索。", go: () => go("settings", "kb"), act: "去建立" },
-    { done: state.sessions.length > 0, title: "问第一个问题", text: "就你的资料提问，答案带出处编号。", go: () => go("chat"), act: "去提问" },
-    { done: state.artifacts.length > 0, title: "生成第一份产物", text: "把一章做成讲义或练习，存成本机 Markdown。", go: () => go("learn"), act: "去生成" },
+  const kbs = state.cfg.knowledgeBases || [];
+  const hasMap = typeof courseUi !== "undefined" && !!courseUi.data?.map;
+  const started = (state.chatTurns || []).length > 0 ||
+    hasMap || (Array.isArray(state.artifacts) && state.artifacts.length > 0);
+  return [
+    { done: hasChatModel(), title: "配置模型", text: "填一次接口地址和密钥，就能开始对话。", go: () => go("settings", "models"), act: "去配置" },
+    { done: kbs.length > 0, title: "添加学习资料", text: "把课件、笔记或文件夹放进知识库。", go: () => go("kb", "manage"), act: "添加资料" },
+    { done: kbs.some((k) => (k.chunkCount || 0) > 0), title: "准备资料", text: "让 Lumin 读完资料，之后才能搜索和生成讲义。", go: () => go("kb", "manage"), act: "准备资料" },
+    { done: started, title: "开始使用", text: "问一个问题，或去「学 · 练」生成第一张思维导图。", go: () => go("learn"), act: "去学习" },
   ];
-  return steps;
+}
+
+function onboardingComplete() {
+  return checklist().every((step) => step.done);
+}
+
+/** 首次使用清单卡片：未完成时显示；模型未配置时默认展开，之后收成一条下一步提示。 */
+function onboardingCard() {
+  const steps = checklist();
+  const done = steps.filter((s) => s.done).length;
+  if (done >= steps.length) return null;
+  const next = steps.find((s) => !s.done);
+  const details = el("details", "card onboarding");
+  details.id = "onboarding-card";
+  details.open = !hasChatModel();
+  if (!hasChatModel()) details.classList.add("onboarding-first");
+  const summary = el("summary", "onboarding-summary");
+  const caret = el("span", "onboarding-caret");
+  caret.innerHTML = icon("chevron");
+  caret.setAttribute("aria-hidden", "true");
+  summary.append(
+    el("strong", "onboarding-title", "开始使用 Lumin"),
+    tag(done + " / " + steps.length, done ? "ok" : ""),
+    el("span", "onboarding-next", "下一步：" + next.title),
+    caret,
+    btn(next.act, "primary sm", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      next.go();
+    }),
+  );
+  details.appendChild(summary);
+  const body = el("div", "onboarding-body");
+  body.appendChild(el("p", "muted sm", "按顺序完成这几步，搜索、讲义和练习才能完整使用。"));
+  const list = el("div", "checklist");
+  steps.forEach((step, index) => {
+    const item = el("div", "check-item" + (step.done ? " done" : ""));
+    item.appendChild(el("span", "idx", step.done ? "✓" : String(index + 1)));
+    const text = el("div", "txt");
+    text.append(el("b", null, step.title), el("span", null, step.text));
+    item.appendChild(text);
+    list.appendChild(item);
+  });
+  body.appendChild(list);
+  details.appendChild(body);
+  return details;
 }
 
 /* ---------- 导航与路由 ---------- */
@@ -1523,12 +1570,14 @@ function railButton(item) {
 }
 
 /** 侧栏上的"动作"按钮（检索、主题、设置不进任何分组）。刻意不用 .nav-item，免得被当成页面。 */
-function railAction(id, iconName, label, onClick) {
+function railAction(id, iconName, label, onClick, caption) {
   const b = el("button", "rail-btn");
   b.type = "button";
   if (id) b.id = id;
   b.setAttribute("aria-label", label);
-  b.innerHTML = icon(iconName) + '<span class="rail-tip">' + esc(label) + "</span>";
+  b.innerHTML = icon(iconName) +
+    (caption ? '<span class="rail-caption">' + esc(caption) + "</span>" : "") +
+    '<span class="rail-tip">' + esc(label) + "</span>";
   b.onclick = onClick;
   return b;
 }
@@ -1539,7 +1588,7 @@ function buildNav() {
   rail.innerHTML = "";
 
   // 检索放在最上面：它是"入口"，不属于任何一页
-  rail.appendChild(railAction("rail-search-btn", "search", "检索资料与笔记（Ctrl+K）", () => openPalette()));
+  rail.appendChild(railAction("rail-search-btn", "search", "检索资料与笔记（Ctrl+K）", () => openPalette(), "检索"));
   rail.appendChild(el("div", "rail-sep"));
 
   RAIL_GROUPS.forEach((group, gi) => {
@@ -1556,8 +1605,12 @@ function buildNav() {
   rail.appendChild(el("div", "rail-spacer"));
   rail.appendChild(el("div", "rail-sep"));
 
+  const expandBtn = railAction("rail-expand", "chevron", "展开侧栏", () => toggleRail(), "展开侧栏");
+  expandBtn.classList.add("rail-expand");
+  rail.appendChild(expandBtn);
+
   rail.appendChild(railAction("rail-theme", state.dark ? "moon" : "sun",
-    (state.dark ? "切到浅色" : "切到深色") + "（设置里可以跟随系统）", () => toggleTheme()));
+    (state.dark ? "切到浅色" : "切到深色") + "（设置里可以跟随系统）", () => toggleTheme(), "主题"));
 
   const setBtn = railButton({ id: "settings", label: "设置", icon: "gear" });
   if ((typeof navigationRoot === "function" ? navigationRoot(current) : current) === "settings") {
@@ -1565,6 +1618,9 @@ function buildNav() {
   }
   rail.appendChild(setBtn);
   // 齿轮是"设置"的通用记号：上一版用的图形像太阳，和主题按钮撞脸，已换成真正的齿轮
+  applyRailMode();
+  // buildNav 会清空 rail，边缘的拖动手柄要重新挂回去
+  if (typeof installSplitters === "function") installSplitters();
 }
 
 function pageFromHash() {
@@ -4197,7 +4253,17 @@ function applyPrefs(p) {
  * 成果面板是工作台脚本按需创建/移除的，插兄弟节点会在它出现时错位。
  */
 const LAYOUT_COLS = {
-  panel: { key: "uiPanelW", css: "--panel-w", min: 180, max: 520, dir: 1, sel: ".panel" },
+  rail: { key: "uiRailW", css: "--rail-w", min: 56, max: 240, dir: 1, sel: ".rail" },
+  workspace: {
+    key: "uiWorkspaceW",
+    css: "--workspace-side",
+    min: 220,
+    max: 420,
+    dir: 1,
+    sel: ".document-browser, .outcome-workspace",
+    measure: ".library-documents, .outcome-list-panel, .object-list",
+  },
+  panel: { key: "uiPanelW", css: "--panel-w", min: 220, max: 420, dir: 1, sel: ".panel" },
   dock: { key: "uiDockW", css: "--dock-w", min: 300, max: 900, dir: -1, sel: ".resource-dock" },
 };
 const layoutW = { panel: null, dock: null };
@@ -4207,8 +4273,74 @@ function setColWidth(k, v) {
   const n = Math.max(L.min, Math.min(L.max, Math.round(Number(v))));
   layoutW[k] = n;
   document.documentElement.style.setProperty(L.css, n + "px");
+  if (k === "rail") applyRailMode(n);
   return n;
 }
+
+/** 侧栏宽度 >= 120px 时切换成“图标 + 文字”的展开形态；窄屏始终收起。 */
+function applyRailMode(width) {
+  const rail = $("rail");
+  if (!rail) return;
+  const stored = Number(layoutW.rail) ||
+    parseFloat(document.documentElement.style.getPropertyValue("--rail-w")) || 0;
+  const w = Number.isFinite(width) ? width : (stored || parseFloat(getComputedStyle(rail).width) || 56);
+  const expanded = w >= 120 && window.innerWidth > 900;
+  document.body.classList.toggle("rail-expanded", expanded);
+  const button = $("rail-expand");
+  if (!button) return;
+  const label = expanded ? "收起侧栏" : "展开侧栏";
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-expanded", String(expanded));
+  button.title = label + "（拖动右边缘可调宽度）";
+  const caption = button.querySelector(".rail-caption");
+  if (caption) caption.textContent = label;
+  const tip = button.querySelector(".rail-tip");
+  if (tip) tip.textContent = label;
+}
+
+/** 顶栏按钮之外再给侧栏一个就地折叠入口；拖动右边缘则走 makeSplitter。 */
+function toggleRail() {
+  const rail = $("rail");
+  if (!rail) return;
+  if (window.innerWidth <= 900) {
+    toast("窗口较窄，侧栏保持收起");
+    return;
+  }
+  const current = parseFloat(getComputedStyle(rail).width) || 56;
+  const next = current >= 120 ? 56 : 208;
+  setColWidth("rail", next);
+  savePrefs({ uiRailW: next });
+  toast(next > 56 ? "侧栏已展开，可拖动右边缘调整宽度" : "侧栏已收起");
+}
+let railResizeTimer = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(railResizeTimer);
+  // 等窗口尺寸落定后再读 innerWidth；resize 事件里读到的可能还是旧尺寸。
+  railResizeTimer = setTimeout(() => applyRailMode(), 80);
+});
+// 跨过 900px 断点时 resize 事件里的 innerWidth 可能还是旧值；媒体查询变化更可靠。
+window.matchMedia("(max-width: 900px)").addEventListener?.("change", () => applyRailMode());
+// 隐藏窗口/部分 Electron 版本在放大回原尺寸时不一定补发 resize；用布局尺寸兜底。
+if (typeof ResizeObserver === "function") {
+  let railWasNarrow = window.innerWidth <= 900;
+  const railViewportObserver = new ResizeObserver(() => {
+    const narrow = window.innerWidth <= 900;
+    if (narrow !== railWasNarrow) {
+      railWasNarrow = narrow;
+      applyRailMode();
+    }
+  });
+  railViewportObserver.observe(document.documentElement);
+}
+// 最后一道兜底：少数隐藏窗口/远程桌面环境不会补发 resize，也不会触发 ResizeObserver。
+let railNarrowSeen = window.innerWidth <= 900;
+setInterval(() => {
+  const narrow = window.innerWidth <= 900;
+  if (narrow !== railNarrowSeen) {
+    railNarrowSeen = narrow;
+    applyRailMode();
+  }
+}, 400);
 
 function applyWidths(p) {
   for (const k of Object.keys(LAYOUT_COLS)) {
@@ -4235,8 +4367,9 @@ function makeSplitter(k) {
        zoom 不去读设置里的值，而是**就地自校准**：量出来的宽度 ÷ 计算样式的宽度就是实际缩放，
        这样无论缩放是怎么来的（设置、Ctrl +/-、还是别处写的 body zoom）都成立。
        起点优先取 CSS 变量本身（它就是要改的那个值），取不到再退回布局宽度。 */
-    const layoutW = parseFloat(getComputedStyle(target).width) || 0;
-    const screenW = target.getBoundingClientRect().width;
+    const measured = (L.measure && document.querySelector(L.measure)) || target;
+    const layoutW = parseFloat(getComputedStyle(measured).width) || 0;
+    const screenW = measured.getBoundingClientRect().width;
     startZoom = (layoutW > 0 && screenW > 0) ? (screenW / layoutW) : 1;
     const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(L.css));
     startW = (Number.isFinite(cur) && cur > 0) ? cur : layoutW;
@@ -4260,6 +4393,7 @@ function makeSplitter(k) {
     layoutW[k] = null;
     document.documentElement.style.removeProperty(LAYOUT_COLS[k].css);
     savePrefs({ [LAYOUT_COLS[k].key]: "" });
+    if (k === "rail") applyRailMode();
     toast("这一栏恢复默认宽度");
   });
   return h;
@@ -5403,7 +5537,7 @@ PAGES.kb = {
     const k = state.cfg.knowledgeBases.find(x => x.id === id) || {};
     const search = cardOf({cls: "library-search", title: "搜资料", sub: "输入问题或关键词，找到有出处的内容"});
     const row = el("div", "row");
-    const q = el("input", "grow"); q.placeholder = "例如：这份资料如何解释智能体？"; q.setAttribute("aria-label", "搜索资料内容");
+    const q = el("input", "grow"); q.placeholder = "搜索资料内容，例如：栈和队列的区别"; q.setAttribute("aria-label", "搜索资料内容");
     const runButton = btn("搜索", "primary", () => run()); row.append(q, runButton); search.appendChild(row);
     const out = el("div", "library-results"); out.setAttribute("aria-live", "polite"); search.appendChild(out); v.appendChild(search);
     let searching = false;
@@ -5426,10 +5560,10 @@ PAGES.kb = {
     q.onkeydown = e => { if (e.key === "Enter" && !e.isComposing) run(); };
     const toolbar = el("div", "library-toolbar"); toolbar.appendChild(el("h2", null, k.name || "我的资料")); toolbar.appendChild(spacer());
     const add = el("details", "library-add"); add.appendChild(el("summary", "btn", "+ 添加资料"));
-    const options = el("div", "library-add-options"); options.append(btn("本机文件或文件夹", "ghost", () => go("settings", "kb")), btn("网页或 GitHub", "ghost", () => { harvest.open = true; harvest.scrollIntoView({block: "nearest"}); })); add.appendChild(options); toolbar.appendChild(add); v.appendChild(toolbar);
+    const options = el("div", "library-add-options"); options.append(btn("本机文件或文件夹", "ghost", () => go("kb", "manage")), btn("网页或 GitHub", "ghost", () => go("kb", "harvest"))); add.appendChild(options); toolbar.appendChild(add); v.appendChild(toolbar);
     const listCard = cardOf({cls: "library-documents"});
     const filters = el("div", "row");
-    const filter = el("input", "grow"); filter.placeholder = "按文档名称筛选"; filter.setAttribute("aria-label", "筛选文档名称");
+    const filter = el("input", "grow"); filter.placeholder = "筛选文档名称"; filter.setAttribute("aria-label", "筛选文档名称");
     const status = el("select"); status.setAttribute("aria-label", "筛选资料状态");
     for (const [value, text] of [["", "全部状态"], ["ready", "已准备"], ["pending", "待准备"], ["missing", "原文件已移走"], ["unknown", "来源暂不可读"]]) { const o = el("option", null, text); o.value = value; status.appendChild(o); }
     filters.append(filter, status); listCard.appendChild(filters);
@@ -5440,8 +5574,16 @@ PAGES.kb = {
     const labels = {ready: "已准备", pending: "待准备", missing: "原文件已移走", unknown: "来源暂不可读"};
     const paint = () => {
       list.innerHTML = "";
-      const docs = st.docs || [], rows = docs.filter(d => ((d.title || "") + " " + d.path).toLocaleLowerCase().includes(filter.value.toLocaleLowerCase()) && (!status.value || d.status === status.value));
-      count.textContent = "显示 " + rows.length + " / " + docs.length + " 篇资料";
+      const docs = st.docs || [];
+      const showName = docs.length > 8;
+      const showStatus = docs.some(d => d.status !== "ready");
+      if (!showName) filter.value = "";
+      if (!showStatus) status.value = "";
+      filter.hidden = !showName;
+      status.hidden = !showStatus;
+      filters.hidden = !(showName || showStatus);
+      const rows = docs.filter(d => ((d.title || "") + " " + d.path).toLocaleLowerCase().includes(filter.value.toLocaleLowerCase()) && (!status.value || d.status === status.value));
+      count.textContent = (showName || showStatus) ? "显示 " + rows.length + " / " + docs.length + " 篇资料" : docs.length + " 篇资料";
       if (!rows.length) list.appendChild(el("p", "muted", docs.length ? "没有匹配的文档，换个名称或状态试试。" : "还没有可读的资料。添加支持的文本文件后，点击准备资料。"));
       for (const d of rows) {
         const item = el("div", "item library-document"); item.dataset.path = d.path; item.dataset.status = d.status; const ic = el("div", "file-icon"); ic.innerHTML = icon("file"); item.appendChild(ic);
@@ -5449,7 +5591,14 @@ PAGES.kb = {
         const meta = [d.sizeBytes >= 0 ? fmtSize(d.sizeBytes) : "大小暂不可用", d.chunks + " 个内容片段"];
         main.appendChild(el("p", "meta", meta.join(" · "))); main.appendChild(el("p", "muted sm library-path", d.path)); item.appendChild(main);
         item.appendChild(tag(labels[d.status] || "已准备", d.status === "ready" ? "ok" : "warn"));
-        const read = btn("看内容", "sm", e => preview(d.path, e.currentTarget)); read.disabled = !d.chunks; item.appendChild(read); list.appendChild(item);
+        const read = btn("看内容", "sm", e => preview(d.path, e.currentTarget)); read.disabled = !d.chunks; item.appendChild(read);
+        if (d.chunks) {
+          item.tabIndex = 0;
+          item.setAttribute("aria-label", "打开资料：" + (d.title || d.path));
+          item.onclick = e => { if (e.target.closest("button,a")) return; preview(d.path, read); };
+          item.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); preview(d.path, read); } };
+        }
+        list.appendChild(item);
       }
     };
     const load = async () => {
@@ -7604,15 +7753,21 @@ PAGES.chat = {
       v.classList.toggle("chat-blank", !state.chatTurns.length && !(sheetNow && !sheetNow.hidden));
     };
 
+    const guide = onboardingCard();
+    if (guide) v.appendChild(guide);
     if (!hasChatModel()) {
-      v.appendChild(cardOf({
-        body: emptyState({
-          art: "gear",
-          title: "还没有可用的对话模型",
-          text: "桌面版用你自己的模型服务：填一次接口地址和密钥，把「对话与生成」绑上去，就能开始对话。",
-          actions: [btn("去配置模型", "primary", () => go("models"))],
-        }),
-      }));
+      if (!guide) {
+        v.appendChild(cardOf({
+          body: emptyState({
+            art: "gear",
+            title: "还没有可用的对话模型",
+            text: "桌面版用你自己的模型服务：填一次接口地址和密钥，把「对话与生成」绑上去，就能开始对话。",
+            actions: [btn("去配置模型", "primary", () => go("models"))],
+          }),
+        }));
+      } else {
+        v.appendChild(el("p", "muted sm onboarding-foot", "桌面版使用你自己的模型服务，接口地址和密钥只保存在本机。"));
+      }
       await renderPanel();
       return;
     }
@@ -8166,6 +8321,8 @@ PAGES.chat = {
     }
 
     function paint() {
+      // 四步都完成才收起清单；只发了第一条消息、还没添加/准备资料时继续保留引导。
+      if (state.chatTurns.length && onboardingComplete()) $("onboarding-card")?.remove();
       // 会话 id 标在对话区上：自检要按"这一段会话"验联网档位，调试时也好对号
       thread.dataset.session = state.chatSessionId || "";
       if (typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
@@ -8179,6 +8336,24 @@ PAGES.chat = {
            "不要定死一个页面，用户根本不知道我当前新对话要在哪开始"）。 */
         const wdEmpty = sessionWorkDir();
         const wsKey = (wdEmpty.project ? "work:" : "chat:") + (wdEmpty.path || wdEmpty.name || "");
+        const kbReady = !!indexedKb();
+        const emptyHint = !hasKb()
+          ? "还没有学习资料。先添加资料，或直接问我一个通用问题。"
+          : !kbReady
+            ? "资料还没准备，搜索和生成讲义暂时不可用。先准备资料，或直接问我一个通用问题。"
+            : "检索范围：本机全部知识库，答案带出处。";
+        const emptyActions = !hasKb()
+          ? [btn("添加学习资料", "primary", () => go("kb", "manage")),
+             btn("直接提问", "ghost", () => $("chat-input")?.focus())]
+          : !kbReady
+            ? [btn("准备资料", "primary", () => go("kb", "manage")),
+               btn("直接提问", "ghost", () => $("chat-input")?.focus())]
+            : [
+                state.chapter
+                  ? btn("本章重点", "", () => { ta.value = "这一章的核心结论是什么？"; send(); })
+                  : btn("资料重点", "", () => { ta.value = "我这边的资料里都有哪些重点？"; send(); }),
+                btn("看知识库里有什么", "ghost", () => go("kb")),
+              ];
         let empty = thread.querySelector(".empty");
         if (empty && empty.dataset.ws !== wsKey) { empty.remove(); empty = null; }   // 换了会话/工作区就重画
         if (!empty) {
@@ -8192,15 +8367,9 @@ PAGES.chat = {
             text: (wdEmpty.project
                     ? "工作目录：" + (wdEmpty.path || "") + "（权限见输入框左下角）"
                     : "") +
-                  "检索范围：本机全部知识库，答案带出处。" +
+                  emptyHint +
                   (state.chapter ? " 会带上你正在学的《" + state.chapter + "》。" : ""),
-            actions: hasKb() ? [
-              // 第一条跟着"当前在学什么"走：学过某一章才问"这一章"，否则问一个一定有落点的问题
-              (state.chapter
-                ? btn("本章重点", "", () => { ta.value = "这一章的核心结论是什么？"; send(); })
-                : btn("资料重点", "", () => { ta.value = "我这边的资料里都有哪些重点？"; send(); })),
-              btn("看知识库里有什么", "ghost", () => go("kb")),
-            ] : [btn("去指定资料目录", "", () => go("settings", "kb"))],
+            actions: emptyActions,
           });
           empty.dataset.ws = wsKey;
           thread.appendChild(empty);
