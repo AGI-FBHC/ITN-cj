@@ -1,4 +1,4 @@
-# 内核端到端冒烟测试：mock 模型 + 配置读写 + 对话链路
+﻿# 内核端到端冒烟测试：mock 模型 + 配置读写 + 对话链路
 param(
     [string]$CoreExe = "$PSScriptRoot\..\dist\core\itn-desktop-core.exe",
     [string]$DataDir = "$env:TEMP\itn-desktop-smoke",
@@ -19,10 +19,27 @@ $coreOut = Join-Path $env:TEMP "itn-core-smoke.out"
 $coreErr = Join-Path $env:TEMP "itn-core-smoke.err"
 
 function Api([string]$base, [string]$path, [string]$method = "GET", [string]$body = "") {
-    $req = @{ Uri = "$base$path"; Method = $method; TimeoutSec = 60; SkipHttpErrorCheck = $true }
-    if ($body) { $req.Body = $body; $req.ContentType = "application/json" }
-    $r = Invoke-WebRequest @req -UseBasicParsing
-    return @{ status = $r.StatusCode; body = $r.Content }
+    $req = @{ Uri = "$base$path"; Method = $method; TimeoutSec = 60 }
+    if ($body) {
+        # PS 5.1 otherwise encodes a string body with the ANSI code page.
+        $req.Body = [Text.Encoding]::UTF8.GetBytes($body)
+        $req.ContentType = "application/json; charset=utf-8"
+    }
+    try {
+        $r = Invoke-WebRequest @req -UseBasicParsing -ErrorAction Stop
+        return @{ status = [int]$r.StatusCode; body = $r.Content }
+    } catch {
+        $resp = $_.Exception.Response
+        if (-not $resp) { throw }
+        # PS 5.1 exposes the JSON error body here; the response stream may
+        # already be consumed by Invoke-WebRequest.
+        $text = $_.ErrorDetails.Message
+        if (-not $text) {
+            $reader = New-Object IO.StreamReader($resp.GetResponseStream())
+            try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        }
+        return @{ status = [int]$resp.StatusCode; body = $text }
+    }
 }
 
 $mock = Start-Process -FilePath "python" -ArgumentList "$PSScriptRoot\mock-openai\server.py", "$MockPort" -PassThru -WindowStyle Hidden -RedirectStandardOutput $mockLog -RedirectStandardError "$mockLog.err"

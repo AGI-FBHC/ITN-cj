@@ -1,4 +1,4 @@
-# 准备 Lumin 的 PPT 渲染运行时。
+﻿# 准备 Lumin 的 PPT 渲染运行时。
 #
 # 目标机器不要求预装 Python；这里把一个官方 embeddable Python 以及
 # python-pptx/Pillow/lxml 的 wheel 内容放进 shell/renderer/ppt-renderer/python。

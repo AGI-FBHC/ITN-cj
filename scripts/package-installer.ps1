@@ -1,4 +1,4 @@
-param([string]$AppDir='', [string]$Compiler='', [string]$Output='')
+﻿param([string]$AppDir='', [string]$Compiler='', [string]$Output='')
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path "$PSScriptRoot\..").Path
 $version=(Get-Content "$repo\shell\package.json" -Raw|ConvertFrom-Json).version

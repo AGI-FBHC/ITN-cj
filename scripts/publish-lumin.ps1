@@ -1,4 +1,4 @@
-# 把本仓库里的 lumin/ 目录导出成**独立仓库**并推送到 GitHub。
+﻿# 把本仓库里的 lumin/ 目录导出成**独立仓库**并推送到 GitHub。
 # 原理：git subtree split 会把历史里所有碰过 lumin/ 的提交挑出来、重建成一棵"根就是 lumin"的历史，
 #       所以独立仓保留了完整的开发历史，但看不到 ITN-Desktop 的其他内容。
 #

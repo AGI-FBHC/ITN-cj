@@ -1,9 +1,18 @@
-# 载入仓颉工具链与依赖环境（只作用于当前 PowerShell 会话）
+﻿# 载入仓颉工具链与依赖环境（只作用于当前 PowerShell 会话）
 # 用法： . .\scripts\env.ps1
 
 if (-not $SdkRoot) {
-    $SdkRoot = 'D:\cangjie-sdk\1.2.0'
+    if ($env:CANGJIE_SDK_ROOT -and (Test-Path -LiteralPath $env:CANGJIE_SDK_ROOT)) {
+        $SdkRoot = $env:CANGJIE_SDK_ROOT
+    } else {
+        $SdkRoot = 'D:\cangjie-sdk\1.2.0'
+    }
 }
+
+if (-not (Test-Path -LiteralPath "$SdkRoot\cangjie\envsetup.ps1")) {
+    throw "找不到仓颉 SDK：$SdkRoot（需要包含 cangjie\envsetup.ps1）"
+}
+$env:CANGJIE_SDK_ROOT = $SdkRoot
 
 . "$SdkRoot\cangjie\envsetup.ps1"
 

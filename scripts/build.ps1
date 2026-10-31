@@ -1,4 +1,4 @@
-# 构建仓颉内核
+﻿# 构建仓颉内核
 . "$PSScriptRoot\env.ps1"
 Push-Location "$PSScriptRoot\..\core"
 try {

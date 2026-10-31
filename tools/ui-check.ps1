@@ -1,4 +1,4 @@
-# 验证内核托管界面：静态资源可访问，且非白名单文件名被拒绝
+﻿# 验证内核托管界面：静态资源可访问，且非白名单文件名被拒绝
 param(
     [string]$Exe = "$PSScriptRoot\..\dist\core\itn-desktop-core.exe",
     [string]$UiDir = "$PSScriptRoot\..\shell\renderer"
@@ -24,14 +24,23 @@ if (-not $port) { Write-Output "FAIL 端口文件未生成"; $core.Kill(); exit 
 Write-Output "内核端口: $port"
 
 $base = "http://127.0.0.1:$port"
+function Get-ResponseInfo([string]$url) {
+    try {
+        $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        return @{ Status = [int]$r.StatusCode; Length = $r.RawContentLength; Type = $r.Headers["Content-Type"] }
+    } catch {
+        $resp = $_.Exception.Response
+        if (-not $resp) { throw }
+        return @{ Status = [int]$resp.StatusCode; Length = 0; Type = $resp.Headers["Content-Type"] }
+    }
+}
 foreach ($p in @("/", "/index.html", "/app.js", "/style.css")) {
-    $r = Invoke-WebRequest -Uri "$base$p" -UseBasicParsing -TimeoutSec 10 -SkipHttpErrorCheck
-    $ct = $r.Headers["Content-Type"]
-    Write-Output ("{0} -> {1} {2} bytes type={3}" -f $p, $r.StatusCode, $r.RawContentLength, $ct)
+    $r = Get-ResponseInfo "$base$p"
+    Write-Output ("{0} -> {1} {2} bytes type={3}" -f $p, $r.Status, $r.Length, $r.Type)
 }
 
 # 不在白名单内的文件名必须被拒绝
-$r = Invoke-WebRequest -Uri "$base/nope.js" -UseBasicParsing -TimeoutSec 10 -SkipHttpErrorCheck
-Write-Output ("/nope.js -> {0}（应为 404）" -f $r.StatusCode)
+$r = Get-ResponseInfo "$base/nope.js"
+Write-Output ("/nope.js -> {0}（应为 404）" -f $r.Status)
 
 $core.Kill()
