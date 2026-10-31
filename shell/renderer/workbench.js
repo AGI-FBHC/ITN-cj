@@ -961,7 +961,10 @@ PAGES.kb.render = async function() {
   const results = view.querySelector('.library-results'); documents.appendChild(results);
   // 返回按钮放在结果上方：长结果列表时它仍第一眼可见，而不是沉到卡片底部。
   documents.insertBefore(btn('返回文档列表', 'ghost sm search-reset', () => { results.innerHTML = ''; view.querySelector('[aria-label="搜索资料内容"]').value = ''; }), results);
-  const first = documents.querySelector('.library-document[data-status="ready"] button:not([disabled])') || documents.querySelector('.library-document button:not([disabled])');
+  const restorePath = state.kbRestoreDoc || '';
+  const savedRow = restorePath ? documents.querySelector('.library-document[data-path="' + CSS.escape(restorePath) + '"]') : null;
+  const first = savedRow?.querySelector('button:not([disabled])') || documents.querySelector('.library-document[data-status="ready"] button:not([disabled])') || documents.querySelector('.library-document button:not([disabled])');
+  state.kbRestoreDoc = '';
   if (first) { first.dataset.autoPreview='true'; first.click(); delete first.dataset.autoPreview; }
 };
 

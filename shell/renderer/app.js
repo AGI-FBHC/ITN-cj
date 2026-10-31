@@ -1453,11 +1453,14 @@ function onboardingCard() {
   body.appendChild(el("p", "muted sm", "按顺序完成这几步，搜索、讲义和练习才能完整使用。"));
   const list = el("div", "checklist");
   steps.forEach((step, index) => {
-    const item = el("div", "check-item" + (step.done ? " done" : ""));
+    const item = el("button", "check-item" + (step.done ? " done" : ""));
+    item.type = "button";
+    item.onclick = () => step.go();
     item.appendChild(el("span", "idx", step.done ? "✓" : String(index + 1)));
     const text = el("div", "txt");
     text.append(el("b", null, step.title), el("span", null, step.text));
     item.appendChild(text);
+    item.appendChild(el("span", "check-go", step.done ? "查看" : step.act + " →"));
     list.appendChild(item);
   });
   body.appendChild(list);
@@ -1649,6 +1652,99 @@ function updateNavButtons() {
   if (fwd) fwd.disabled = navIndex >= navStack.length - 1;
 }
 
+/* 返回不能只记页面地址：用户从文档 A 滚到一半点回退，应该回到 A 的位置，
+   而不是重新打开页面顶部。这里把当前滚动位置、选中的资料/资源和标签页
+   一起写进当前 history entry，popstate 时再恢复。 */
+function captureNavigationSnapshot() {
+  const scrollTop = (selector) => Math.round(document.querySelector(selector)?.scrollTop || 0);
+  const selected = (selector, attr) => document.querySelector(selector)?.getAttribute(attr) || "";
+  return {
+    page: current,
+    section: currentSection || "",
+    viewScroll: scrollTop("#view"),
+    panelScroll: scrollTop("#panel-body"),
+    chatThreadScroll: scrollTop("#chat-thread"),
+    chatSessionId: state.chatSessionId || "",
+    chatStickBottom: state.stickBottom !== false,
+    kb: state.kb || "",
+    kbDoc: selected(".library-document.selected", "data-path"),
+    kbListScroll: scrollTop(".library-documents"),
+    kbPreviewScroll: scrollTop(".library-preview"),
+    resourceId: selected(".outcome-grid .resource-entry.selected", "data-resource"),
+    personalId: selected(".outcome-list .personal-entry.selected", "data-personal-id"),
+    outcomeListScroll: scrollTop(".outcome-list"),
+    outcomeReaderScroll: scrollTop(".resource-dock-body"),
+    objectListScroll: scrollTop(".object-list"),
+    objectReaderScroll: scrollTop(".object-reader"),
+    chapter: state.chapter || null,
+    studySection: state.studySection || null,
+    resTab: state.resTab || "",
+    selectedNote: state.selectedNote || "",
+    selectedWrong: state.selectedWrong || "",
+    knowledgeView: state.knowledgeView || "graph",
+  };
+}
+
+function rememberCurrentHistorySnapshot() {
+  if (navIndex < 0) return;
+  try {
+    const previous = history.state || {};
+    history.replaceState(Object.assign({}, previous, { i: navIndex, snap: captureNavigationSnapshot() }), "", location.href);
+  } catch (e) { /* file:// 或旧浏览器没有 history.state */ }
+}
+
+function applySnapshotState(snap) {
+  if (!snap) return;
+  if (snap.kb) state.kb = snap.kb;
+  if (snap.chatSessionId !== undefined) state.chatSessionId = snap.chatSessionId;
+  if (snap.chapter !== undefined) state.chapter = snap.chapter;
+  if (snap.studySection !== undefined) state.studySection = snap.studySection;
+  if (snap.resTab) state.resTab = snap.resTab;
+  if (snap.selectedNote !== undefined) state.selectedNote = snap.selectedNote;
+  if (snap.selectedWrong !== undefined) state.selectedWrong = snap.selectedWrong;
+  if (snap.knowledgeView) state.knowledgeView = snap.knowledgeView;
+  state.kbRestoreDoc = snap.kbDoc || "";
+}
+
+function restoreScroll(selector, value) {
+  const node = document.querySelector(selector);
+  if (node && Number.isFinite(value)) node.scrollTop = value;
+}
+
+async function restoreSnapshotDom(snap) {
+  if (!snap) return;
+  const apply = () => {
+    restoreScroll("#view", snap.viewScroll);
+    restoreScroll("#panel-body", snap.panelScroll);
+    restoreScroll("#chat-thread", snap.chatThreadScroll);
+    restoreScroll(".library-documents", snap.kbListScroll);
+    restoreScroll(".library-preview", snap.kbPreviewScroll);
+    restoreScroll(".outcome-list", snap.outcomeListScroll);
+    restoreScroll(".resource-dock-body", snap.outcomeReaderScroll);
+    restoreScroll(".object-list", snap.objectListScroll);
+    restoreScroll(".object-reader", snap.objectReaderScroll);
+  };
+  if (snap.page === "resources" && (snap.resourceId || snap.personalId)) {
+    const selector = snap.resourceId
+      ? '.resource-entry[data-resource="' + CSS.escape(snap.resourceId) + '"]'
+      : '.personal-entry[data-personal-id="' + CSS.escape(snap.personalId) + '"]';
+    const card = document.querySelector(selector);
+    if (card) {
+      card.click();
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+  }
+  if (snap.page === "chat" && snap.chatStickBottom === false) {
+    state.stickBottom = false;
+    restoreScroll("#chat-thread", snap.chatThreadScroll);
+  }
+  apply();
+  requestAnimationFrame(apply);
+  setTimeout(apply, 180);
+  setTimeout(apply, 500);
+  setTimeout(apply, 1200);
+}
+
 let currentSection = "";
 
 // 页面附属 UI 到切页为止；会话请求和内核任务不属于页面生命周期。
@@ -1690,6 +1786,10 @@ function clearRouteUi() {
 async function go(page, section, opts) {
   if(page==="settings"&&section==="kb"){page="kb";section="manage";}
   if(page==="resources"&&section==="files")section="";
+  // 离开当前页之前，把滚动位置和选中的资料/资源写进当前 history entry。
+  // 回退/前进本身不能覆盖目标 entry 的快照。
+  if (!(opts && (opts.fromHistory || opts.replace))) rememberCurrentHistorySnapshot();
+  document.querySelector(".topbar-back")?.remove();
   const navigation = state.navigationGeneration = (state.navigationGeneration || 0) + 1;
   navigationLoads.clear();
   clearRouteUi();
@@ -1700,6 +1800,9 @@ async function go(page, section, opts) {
   const target = PAGES[page] ? page : "home";
   current = target;
   currentSection = section || "";
+  const restoreSnapshot = opts && opts.snapshot &&
+    opts.snapshot.page === target && (opts.snapshot.section || "") === currentSection
+    ? opts.snapshot : null;
   state.notificationViewReady = false;
   state.guidedNotificationSessionId = '';
   syncNotificationContext();
@@ -1732,14 +1835,25 @@ async function go(page, section, opts) {
   } else {
     rememberHash(hash);
   }
-  // 把"这一格在访问栈里的位置"写进 history.state：光比 URL 分不出同一地址出现过两次
-  try { history.replaceState({ i: navIndex }, "", location.href); } catch (e) { /* 忽略 */ }
+  // 把"这一格在访问栈里的位置"写进 history.state：光比 URL 分不出同一地址出现过两次。
+  // 回退/前进时保留目标 entry 的快照；同地址重渲染时也不要丢掉刚存下的位置。
+  let previousState = {};
+  try { previousState = history.state || {}; } catch (e) { /* 忽略 */ }
+  const nextState = { i: navIndex };
+  if (restoreSnapshot) nextState.snap = restoreSnapshot;
+  else if (previousState.snap && location.hash === hash) nextState.snap = previousState.snap;
+  try { history.replaceState(nextState, "", location.href); } catch (e) { /* 忽略 */ }
   // 「会话总览」是对话页里的列表视图，不是对话框：标题栏与主区都要正常显示
   if (target !== "chat" || currentSection === "overview") setChatMode(false);
   buildNav();
   const meta = PAGE_META[target];
   $("page-title").textContent = meta.title;
   $("page-sub").textContent = meta.sub;
+  if (target !== "chat" && navIndex > 0) {
+    const topbar = document.querySelector(".topbar");
+    const text = topbar?.querySelector(".topbar-text");
+    if (topbar) topbar.insertBefore(btn("← 返回", "ghost sm topbar-back", () => history.back()), text || topbar.firstChild);
+  }
   document.querySelector(".study-citation")?.remove();
   if (typeof decorateWorkspace === "function") decorateWorkspace();
   const ta = $("top-actions");
@@ -1753,6 +1867,8 @@ async function go(page, section, opts) {
   // 真正滚动的是 #view（.main 是 overflow:hidden）。此前重置的是 .main，等于没重置，
   // 于是从长页面切到别的页面会停在半截。就地更新（例如标记已读）则刻意不调用 go()，保住阅读位置。
   v.scrollTop = 0;
+  // 会话、章节、标签页等状态要在页面 render 之前恢复，否则页面会先按默认值画一遍。
+  if (restoreSnapshot) applySnapshotState(restoreSnapshot);
   try {
     // 第二层面板先渲染：它决定这一层的"目录"长什么样（章节 / 笔记 / 产物 / 会话…）
     await renderPanel();
@@ -1780,6 +1896,7 @@ async function go(page, section, opts) {
   if (opts && opts.focus) focusInView(opts.focus);
   if (typeof workbenchAfterPage === "function") await workbenchAfterPage();
   if (navigation === state.navigationGeneration) {
+    if (restoreSnapshot) await restoreSnapshotDom(restoreSnapshot);
     v.setAttribute("aria-busy", "false");
     state.notificationViewReady = true;
     syncNotificationContext();
@@ -10637,7 +10754,7 @@ async function boot() {
       if (at >= 0 && at !== navIndex) { navIndex = at; updateNavButtons(); }
       return;
     }
-    go(p.page, p.section, { replace: true, fromHistory: true, index: at });
+    go(p.page, p.section, { replace: true, fromHistory: true, index: at, snapshot: st && st.snap });
   };
   window.addEventListener("popstate", onLocationChange);
   window.addEventListener("hashchange", onLocationChange);
