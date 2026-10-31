@@ -813,20 +813,27 @@ function syncWorkbenchEvents(events) {
 PAGES.resources.render = async function() {
   const generation=state.navigationGeneration,view=$('view');view.replaceChildren();
   const pageShell=el('section','outcome-page');
-  const toolbar=el('div','outcome-toolbar outcome-toolbar-clean'),search=inputOf('learning-resource-search','搜索个性资源标题或正文',state.outcomeQuery || ''),kind=el('select');
-  const toolbarText=el('div','outcome-toolbar-title');
-  toolbarText.append(el('h2',null,'个性资源'),el('p','muted','保存过的讲义、练习、课件和文件都在这里。'));
+  const importPersonal = async () => {
+    if (!window.itnWindow?.pickFile) return toast('请在桌面窗口选择文件');
+    const file = await window.itnWindow.pickFile();
+    if (!file) return;
+    const data = await window.itnWindow.readResourceFile(file);
+    if (data.ok) offerPersonalSave(data); else toast(data.error);
+  };
+  const toolbar=el('div','outcome-toolbar outcome-toolbar-clean page-tools'),search=inputOf('learning-resource-search','搜索个性资源标题或正文',state.outcomeQuery || ''),kind=el('select');
   search.setAttribute('aria-label','搜索个性资源');kind.setAttribute('aria-label','筛选成果类型');kind.appendChild(option('','全部格式'));
   for(const [value,label] of [['pptx','PowerPoint'],['html','网页'],['md','Markdown / 讲义'],['quiz','测验'],['docx','Word'],['pdf','PDF'],['png','图片']])kind.appendChild(option(value,label));kind.value=state.outcomeKind || '';
   const create=el('details','outcome-create');create.appendChild(el('summary','btn primary','+ 添加资源'));
-  const menu=el('div','outcome-menu');menu.append(btn('制作 PPT','ghost',()=>openPresentationBrief()),btn('导入文件','ghost',async()=>{if(!window.itnWindow?.pickFile)return toast('请在桌面窗口选择文件');const file=await window.itnWindow.pickFile();if(file){const data=await window.itnWindow.readResourceFile(file);if(data.ok)offerPersonalSave(data);else toast(data.error);}}),btn('设置目录','ghost',async()=>{const directory=await window.itnWindow?.pickDirectory?.();if(directory){await api('/api/personal/settings',{directory});await go('resources');}}));create.appendChild(menu);
-  toolbar.append(toolbarText,search,kind,create);pageShell.appendChild(toolbar);
+  const menu=el('div','outcome-menu');menu.append(btn('制作 PPT','ghost',()=>openPresentationBrief()),btn('导入文件','ghost',importPersonal),btn('设置目录','ghost',async()=>{const directory=await window.itnWindow?.pickDirectory?.();if(directory){await api('/api/personal/settings',{directory});await go('resources');}}));create.appendChild(menu);
+  toolbar.append(search,kind,create);pageShell.appendChild(toolbar);
   const split=el('div','outcome-workspace'),listPanel=el('aside','outcome-list-panel'),listHead=el('div','outcome-list-head'),grid=el('div','resource-grid outcome-grid outcome-list'),reader=el('section','outcome-reader');reader.id='outcome-reader';reader.setAttribute('aria-label','个性资源阅读区');
   const status=el('span','outcome-count');status.setAttribute('role','status');listHead.append(el('strong',null,'资源列表'),status);listPanel.append(listHead,grid);
   const placeholder=el('div','outcome-placeholder');
   placeholder.append(el('div','outcome-placeholder-mark','◌'),el('h2',null,'从左侧选择一份资源'),el('p','muted','确认保存的副本会显示在这里，并保留对应的学习上下文。'));
-  const placeholderActions=el('div','outcome-placeholder-actions');placeholderActions.append(btn('制作 PPT','sm',()=>openPresentationBrief()),btn('导入文件','ghost sm',async()=>{if(!window.itnWindow?.pickFile)return toast('请在桌面窗口选择文件');const file=await window.itnWindow.pickFile();if(file){const data=await window.itnWindow.readResourceFile(file);if(data.ok)offerPersonalSave(data);else toast(data.error);}}));placeholder.appendChild(placeholderActions);
-  reader.appendChild(placeholder);split.append(listPanel,reader);pageShell.appendChild(split);view.appendChild(pageShell);
+  const placeholderActions=el('div','outcome-placeholder-actions');placeholderActions.append(btn('制作 PPT','sm',()=>openPresentationBrief()),btn('导入文件','ghost sm',importPersonal));placeholder.appendChild(placeholderActions);
+  const emptyPanel=el('section','resource-empty-state');emptyPanel.hidden=true;
+  emptyPanel.appendChild(emptyState({art:'layers',title:'还没有个性资源',text:'生成或导入文件后，确认保存即可在这里查看。',actions:[btn('制作 PPT','primary',()=>openPresentationBrief()),btn('导入文件','ghost',importPersonal)]}));
+  reader.appendChild(placeholder);split.append(listPanel,reader,emptyPanel);pageShell.appendChild(split);view.appendChild(pageShell);
   const data=await api('/api/personal/list',{});if(generation!==state.navigationGeneration)return;let all=data.resources || [],timer,seq=0;
   status.title=data.directory;
   const paint=async()=>{
@@ -834,9 +841,12 @@ PAGES.resources.render = async function() {
     let ids;
     if(q){const found=await api('/api/personal/search',{query:q});if(token!==seq||generation!==state.navigationGeneration)return;ids=new Set(found.hits.filter(h=>h.type==='resource').map(h=>h.id));}
     const rows=all.filter(r=>(!kind.value||r.kind===kind.value||r.learningKind===kind.value)&&(!ids||ids.has(r.id)));
+    const none=!all.length;
+    split.classList.toggle('resource-empty',none);
+    listPanel.hidden=none;reader.hidden=none;emptyPanel.hidden=!none;
     grid.replaceChildren();status.textContent=rows.length+' 份';status.title=data.directory;
-    if(!rows.length)grid.appendChild(emptyState({inline:true,art:'layers',title:all.length?'没有匹配的资源':'还没有个性资源',text:all.length?'换个关键词或格式再试。':'生成或导入文件后，确认保存即可在这里查看。'}));
-    rows.forEach(r=>grid.appendChild(personalResourceCard(r)));
+    if(!rows.length&&!none)grid.appendChild(emptyState({inline:true,art:'layers',title:'没有匹配的资源',text:'换个关键词或格式再试。'}));
+    if(!none)rows.forEach(r=>grid.appendChild(personalResourceCard(r)));
     reader.classList.toggle('has-selection', !!workbench.open);
   };
   search.oninput=()=>{clearTimeout(timer);seq++;timer=setTimeout(()=>paint().catch(e=>toast(e.message)),220);};kind.onchange=()=>paint();await paint();
@@ -975,11 +985,14 @@ PAGES.kb.render=async function(){
   const view=$('view'),management=el('details','card kb-management');management.id='kb-management';
   management.appendChild(el('summary','item-title','添加与管理知识库'));
   const content=el('section','kb-management-content');content.appendChild(settingsKb());
-  const harvestLink=el('div','row');harvestLink.appendChild(btn('从网页或 GitHub 收集资料','sm ghost',()=>go('kb','harvest')));content.appendChild(harvestLink);
+  if(hasKb()){const harvestLink=el('div','row');harvestLink.appendChild(btn('从网页或 GitHub 收集资料','sm ghost',()=>go('kb','harvest')));content.appendChild(harvestLink);}
   management.appendChild(content);
-  const section=(currentSection==='harvest'||currentSection==='manage')?currentSection:'view';
+  const requestedSection=(currentSection==='harvest'||currentSection==='manage')?currentSection:'view';
+  const section=(!hasKb()&&requestedSection==='harvest')?'manage':requestedSection;
   management.open=section==='manage';
-  if(!hasKb())view.replaceChildren(management);else view.appendChild(management);
+  view.appendChild(management);
+  const empty=view.querySelector('.kb-empty');
+  if(empty)empty.hidden=section!=='view';
   const topbar=document.querySelector('.topbar');
   topbar?.querySelector('.kb-workspace-tabs')?.remove();
   const tabs=el('nav','workspace-tabs kb-workspace-tabs');tabs.setAttribute('aria-label','知识库功能区');
@@ -1001,7 +1014,7 @@ PAGES.kb.render=async function(){
   const showLibrary=section==='view';
   if(browser)browser.hidden=!showLibrary;if(search)search.hidden=!showLibrary;if(toolbar)toolbar.hidden=!showLibrary;if(info)info.hidden=true;
   if(harvest){harvest.hidden=section!=='harvest';if(section==='harvest')harvest.open=true;}
-  management.hidden=hasKb()&&section!=='manage';
+  management.hidden=section!=='manage';
   if(toolbar)toolbar.appendChild(btn('管理知识库','ghost sm',()=>go('kb','manage')));
   if(section==='manage')management.scrollIntoView({block:'start'});
   if(section==='harvest'&&harvest)harvest.scrollIntoView({block:'start'});

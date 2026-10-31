@@ -5648,7 +5648,15 @@ PAGES.kb = {
     if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view"); v.innerHTML = "";
     if (!hasKb()) {
-      v.appendChild(cardOf({body: emptyState({art: "db", title: "把想学的资料放进来", text: "添加本机文件或文件夹，之后可以搜内容、读原文、按章节学习。支持 Markdown、文本与 CSV 等文本格式。", actions: [btn("添加资料", "primary", () => go("settings", "kb"))]})})); return;
+      const empty = el("section", "kb-empty");
+      empty.appendChild(emptyState({
+        art: "db",
+        title: "把想学的资料放进来",
+        text: "添加本机文件或文件夹，或从网页收集，之后可以搜索、读原文、按章节学习。",
+        actions: [btn("添加资料", "primary", () => go("kb", "manage"))],
+      }));
+      v.appendChild(empty);
+      return;
     }
     const id = state.kb;
     const k = state.cfg.knowledgeBases.find(x => x.id === id) || {};

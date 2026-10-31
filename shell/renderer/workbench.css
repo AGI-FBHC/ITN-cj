@@ -290,6 +290,20 @@ body.library-workspace .document-browser { flex:1 1 auto; min-height:0; height:a
 body.library-workspace .harvest-entry,
 body.library-workspace .kb-management { flex:1 1 auto; min-height:0; overflow:auto; }
 body.library-workspace .kb-prep-banner { flex:0 0 auto; }
+/* 知识库和成果共用同一条内容宽度，避免一个贴边、一个居中。 */
+body.library-workspace .library-search,
+body.library-workspace .library-toolbar,
+body.library-workspace .document-browser,
+body.library-workspace .kb-prep-banner,
+body.library-workspace .kb-management,
+body.library-workspace .kb-empty {
+  width:100%; max-width:1100px; margin-inline:auto;
+}
+body.library-workspace .kb-empty {
+  flex:1 1 auto; min-height:0; display:grid; place-items:center; padding:24px;
+}
+body.library-workspace .kb-empty .empty { width:min(520px,100%); }
+body.library-workspace .kb-empty[hidden] { display:none!important; }
 .kb-prep-banner {
   display:flex; align-items:center; gap:12px;
   margin:0 0 14px; padding:12px 16px;
@@ -545,7 +559,9 @@ body.reference-compact .app > #panel { display:none; }
 .outcome-toolbar ~ p[role="status"] { overflow-wrap:anywhere; }
 /* 知识网络页（替代原「总览」）：网络图 / 时间线两种视图，共用右侧宽抽屉。
    表格化之前的占位样式全部删掉；配色与间距按"画布当主角、详情宽而松"重排。 */
-.knowledge-network { padding:16px 18px 14px; display:flex; flex-direction:column; gap:12px; margin-bottom:0; }
+.knowledge-network { padding:0; display:flex; flex-direction:column; gap:0; margin-bottom:0; border:0; background:transparent; box-shadow:none; }
+.knowledge-toolbar { margin:4px 0 16px; }
+.knowledge-network-foot { margin-top:8px; }
 .knowledge-toolbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .knowledge-view-seg { display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel-sunk); flex:none; }
 .knowledge-seg { height:38px; padding:0 16px; border:0; background:transparent; color:var(--ink-2); font:inherit; font-size:13px; cursor:pointer; }
@@ -735,6 +751,15 @@ body[data-page="home"] .view { padding:14px 18px 14px; min-height:0; }
   box-shadow:0 12px 36px rgba(20,38,29,.06);
 }
 
+body[data-page="resources"] .outcome-workspace.resource-empty { grid-template-columns:1fr; }
+body[data-page="resources"] .outcome-workspace.resource-empty .outcome-list-panel,
+body[data-page="resources"] .outcome-workspace.resource-empty .outcome-reader { display:none; }
+.resource-empty-state {
+  display:grid; place-items:center; min-height:0;
+  padding:40px; background:var(--panel);
+}
+.resource-empty-state[hidden] { display:none!important; }
+.resource-empty-state .empty { width:min(520px,100%); }
 .outcome-list-panel {
   min-width:0;
   display:flex;
@@ -909,8 +934,8 @@ body[data-page="home"] .view { padding:14px 18px 14px; min-height:0; }
 
 body.workspace-wide #view > .knowledge-network {
   width:100%;
-  max-width:none;
-  margin:0;
+  max-width:1100px;
+  margin:0 auto;
 }
 
 body[data-page="home"] .view {
@@ -1058,10 +1083,17 @@ body[data-page="learn"] #view {
   overflow: hidden;
   min-height: 0;
 }
-body[data-page="learn"] #view > .course-workspace {
+body[data-page="learn"] .view:has(> .course-workspace) {
+  padding: 12px 20px 40px;
+}
+body[data-page="learn"] #view > .course-workspace,
+body.workspace-wide[data-page="learn"] #view > .course-workspace {
   flex: 1;
   min-height: 0;
   height: auto;
+  width: 100%;
+  max-width: 1100px;
+  margin-inline: auto;
 }
 body[data-page="learn"] #view > .study-workspace {
   flex: 1;
