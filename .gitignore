@@ -17,6 +17,10 @@ third_party/probe/*.db-journal
 third_party/probe/*.db-wal
 tmp/
 
+# 演示用的隔离 profile 与原始录制（脱敏后的素材才进 demo/fixtures/）
+demo/profile/
+demo/recordings/
+
 # 本地安装的第三方 agent skills（npx skills add ...）与它生成的锁文件
 .agents/
 skills-lock.json
