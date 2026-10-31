@@ -285,7 +285,7 @@ async function renderCourseWorkspace(){
   if(courseUi.data?.map){const map=courseUi.data.map,tree=mountCourseTree(stage,map);search.oninput=()=>{tree.filter(search.value.trim());const match=map.nodes.find(n=>n.title.includes(search.value.trim()));if(search.value.trim()&&match)tree.focusNode(match.id);};stage.appendChild(el('p','course-map-caption',courseUi.data.sourceChanged?'资料有更新，可重建导图；旧资源继续保留。':'点选节点打开学习资源 · 拖动查看 · 滚轮缩放'));
     if(courseUi.focusNode){const fid=courseUi.focusNode;courseUi.focusNode='';stage.querySelector('.course-node[data-node="'+fid+'"]')?.classList.add('course-node-focus');requestAnimationFrame(()=>tree.focusNode(fid));}
   }
-  else{const empty=el('div','course-map-empty');empty.append(el('h2',null,'从这个知识库生成思维导图'),el('p','muted','Lumin会阅读资料并整理出树形学习大纲，通常两到三级。'),btn('生成思维导图','primary',()=>build.click()));stage.appendChild(empty);}
+  else{const empty=el('div','course-map-empty');empty.append(emptyState({art:'layers',title:'从这个知识库生成思维导图',text:'Lumin 会阅读资料并整理出树形学习大纲，通常两到三级。',actions:[btn('生成思维导图','primary',()=>build.click())]}));stage.appendChild(empty);}
   const job=courseUi.data?.job;if(job?.status==='running')watchCourseJob(job,stage);else if(job?.status==='completed'&&job.mapId&&job.baseMapId&&job.mapId!==courseUi.data.map?.id){const pending=el('div','course-job');pending.append(el('span',null,'有一张新版导图待确认'),btn('预览新版','sm',async()=>previewCourseCandidate(await courseApi('map',{id:job.mapId}))));stage.appendChild(pending);}
 }
 PAGES.learn.render=async function(){const generation=state.navigationGeneration;await loadCfg();if(generation!==state.navigationGeneration)return;courseUi.kb=state.kb;await courseRefresh();};

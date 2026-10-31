@@ -973,23 +973,206 @@ PAGES.kb.render = async function() {
   documents.insertBefore(btn('返回文档列表', 'ghost sm search-reset', () => { results.innerHTML = ''; view.querySelector('[aria-label="搜索资料内容"]').value = ''; }), results);
   const restorePath = state.kbRestoreDoc || '';
   const savedRow = restorePath ? documents.querySelector('.library-document[data-path="' + CSS.escape(restorePath) + '"]') : null;
-  const first = savedRow?.querySelector('button:not([disabled])') || documents.querySelector('.library-document[data-status="ready"] button:not([disabled])') || documents.querySelector('.library-document button:not([disabled])');
+  // 整行就是“看内容”：自动预览也点行本身，不能再找行内按钮。
+  const first = (savedRow && savedRow.getAttribute('role') === 'button' ? savedRow : null)
+    || documents.querySelector('.library-document[data-status="ready"][role="button"]')
+    || documents.querySelector('.library-document[role="button"]');
   state.kbRestoreDoc = '';
   if (first) { first.dataset.autoPreview='true'; first.click(); delete first.dataset.autoPreview; }
 };
+
+/* ============================================================
+   资料管理：左栏资料库列表 + 右栏详情
+   ------------------------------------------------------------
+   这里刻意不再复用「设置 → 知识库」的表单：设置页是设置页，
+   工作区是工作区。添加资料走弹窗，两种资料来源在弹窗和详情页都各有一张卡。
+   ============================================================ */
+
+const kbManageState = { selected: "" };
+
+function kbManageCurrent(kbs) {
+  const saved = kbManageState.selected || state.kb || "";
+  return kbs.find(k => k.id === saved) || kbs[0] || null;
+}
+
+function kbSourceOption(kind, active, onPick) {
+  const card = el("button", "kb-source-card" + (active ? " active" : ""));
+  card.type = "button";
+  const isDir = kind === "dir";
+  card.innerHTML = '<span class="kb-source-icon">' + icon(isDir ? "folder" : "file") + "</span>" +
+    '<span class="kb-source-text"><b>' + (isDir ? "文件夹" : "文件") + "</b><span>" +
+    (isDir ? "整个目录原地登记，保留章节结构；删除登记不会删原文件。" : "单个文件复制进资料库；支持 Markdown、TXT、CSV、HTML、JSON。") +
+    "</span></span>" +
+    '<span class="kb-source-go">' + (isDir ? "选择文件夹" : "选择文件") + "</span>";
+  card.onclick = () => onPick(kind);
+  return card;
+}
+
+function openKbAddDialog(initialKind) {
+  let sourceKind = initialKind === "file" ? "file" : "dir";
+  const dialog = courseDialog("添加知识库", "文件夹原地登记，文件复制进资料库");
+  const form = el("div", "kb-add-form");
+  const sourceCards = el("div", "kb-source-choice");
+  const paintSource = () => {
+    sourceCards.replaceChildren(
+      kbSourceOption("dir", sourceKind === "dir", pick),
+      kbSourceOption("file", sourceKind === "file", pick),
+    );
+  };
+  const pick = (kind) => {
+    sourceKind = kind;
+    paintSource();
+    pickImportPath(kind);
+  };
+  paintSource();
+  const name = inputOf("kb-import-name", "默认使用文件或文件夹名");
+  const path = inputOf("kb-import-path", "选择文件夹、文件，或粘贴路径");
+  path.className = "grow";
+  path.addEventListener("input", () => {
+    path.dataset.kind = "auto";
+    const mode = $("kb-source-mode");
+    if (mode) mode.textContent = "";
+  });
+  const pickRow = el("div", "row kb-pick-row");
+  pickRow.append(path, btn("选择…", "sm", () => pickImportPath(sourceKind)));
+  const mode = el("p", "muted sm kb-source-mode"); mode.id = "kb-source-mode";
+  form.append(
+    sourceCards,
+    fieldOf("名称（可选）", name),
+    fieldOf("资料位置", pickRow),
+    mode,
+    el("p", "muted sm", "文件夹会保留原有目录结构；文件会复制一份到资料库，原文件不动。"),
+  );
+  const actions = el("div", "row kb-add-actions");
+  const impActions = el("div", "row kb-import-actions");
+  const addOnly = btn("仅添加", "", async () => { if (await importKbMaterial(false)) dialog.close(); });
+  const addIndex = btn("添加并索引", "primary", async () => { if (await importKbMaterial(true)) dialog.close(); });
+  addOnly.dataset.idleLabel = "仅添加";
+  addIndex.dataset.idleLabel = "添加并索引";
+  impActions.append(addOnly, addIndex);
+  actions.append(btn("取消", "ghost", dialog.close), spacer(), impActions);
+  form.append(actions);
+  dialog.body.appendChild(form);
+}
+
+function kbManageDetail(k, repaint) {
+  const detail = el("div", "kb-manage-detail-body");
+  const head = el("div", "kb-detail-head");
+  const title = el("div", "grow");
+  const titleRow = el("div", "row kb-title-row");
+  titleRow.append(el("h2", null, k.name || k.id));
+  if (state.kb === k.id) titleRow.append(tag("当前", "ok"));
+  titleRow.append(tag(k.chunkCount > 0 ? "已索引" : "待索引", k.chunkCount > 0 ? "ok" : "warn"));
+  title.appendChild(titleRow);
+  const pathLine = el("div", "kb-detail-path");
+  pathLine.appendChild(el("span", "muted", k.rootDir || "未设置目录"));
+  pathLine.appendChild(copyButton(() => k.rootDir || "", "复制"));
+  title.appendChild(pathLine);
+  head.appendChild(title);
+  head.appendChild(btn("添加资料", "primary", () => openKbAddDialog("dir")));
+  detail.appendChild(head);
+
+  const stats = el("div", "kb-stats");
+  const stat = (label, value, unit) => {
+    const cell = el("div", "kb-stat");
+    const val = el("div", "kb-stat-v", String(value));
+    if (String(value).length > 8) val.classList.add("kb-stat-v-sm");
+    if (unit) val.appendChild(el("span", "kb-stat-u", unit));
+    cell.append(el("div", "kb-stat-k", label), val);
+    stats.appendChild(cell);
+  };
+  stat("文档", k.docCount || 0, "篇");
+  stat("内容片段", k.chunkCount || 0, "片");
+  stat("图片", k.imageCount || 0, "张");
+  stat("索引时间", k.builtAt ? fmtStamp(k.builtAt) : "—", "");
+  detail.appendChild(stats);
+
+  const acts = el("div", "row kb-detail-actions");
+  acts.appendChild(managedButton(k.chunkCount > 0 ? "重建索引" : "建立索引", "primary", "kb:build:" + k.id, "正在准备…", button => buildIndex(k.id, button)));
+  acts.appendChild(managedButton("整理", "", "kb:organize:" + k.id, "正在整理…", button => organizeKb(k.id, button)));
+  acts.appendChild(btn("重命名", "ghost", () => renameKnowledgeBase(k)));
+  acts.appendChild(btn("去检索", "ghost", () => { state.kb = k.id; go("kb"); }));
+  if (state.kb !== k.id) acts.appendChild(btn("设为当前", "ghost", () => { state.kb = k.id; toast("已切换为当前知识库"); repaint(); }));
+  acts.appendChild(spacer());
+  acts.appendChild(btn("删除", "danger-ghost", () => deleteKnowledgeBase(k)));
+  detail.appendChild(acts);
+
+  if (k.sourcePath && k.sourcePath !== k.rootDir) {
+    const source = el("div", "kb-source-line");
+    source.append(el("span", "kb-source-label", "来源"), el("span", "muted", k.sourcePath));
+    detail.appendChild(source);
+  }
+
+  const addSection = el("section", "kb-add-section");
+  addSection.appendChild(el("h3", null, "添加资料"));
+  addSection.appendChild(el("p", "muted sm", "两种来源分开处理，避免把“一个目录”误当成“一个文件”。"));
+  const choices = el("div", "kb-source-choice");
+  choices.append(
+    kbSourceOption("dir", false, kind => openKbAddDialog(kind)),
+    kbSourceOption("file", false, kind => openKbAddDialog(kind)),
+  );
+  addSection.appendChild(choices);
+  const harvest = el("div", "row kb-harvest");
+  harvest.append(el("span", "muted sm", "也可以从网页或 GitHub 收集资料"), btn("去收集", "ghost sm", () => go("kb", "harvest")));
+  addSection.appendChild(harvest);
+  detail.appendChild(addSection);
+  return detail;
+}
+
+function kbManageWorkspace() {
+  const root = el("section", "kb-manage-workspace kb-management");
+  root.id = "kb-management";
+  const list = el("aside", "kb-manage-list");
+  const detail = el("div", "kb-manage-detail");
+  root.append(list, detail);
+  const paint = () => {
+    const kbs = state.cfg.knowledgeBases || [];
+    const selected = kbManageCurrent(kbs);
+    if (selected) kbManageState.selected = selected.id;
+    list.replaceChildren();
+    const head = el("div", "kb-manage-list-head");
+    head.append(el("h2", null, "我的知识库"), el("span", "kb-manage-count", kbs.length + " 个"));
+    list.appendChild(head);
+    const items = el("div", "kb-manage-items");
+    for (const k of kbs) {
+      const b = el("button", "kb-manage-item" + (selected && k.id === selected.id ? " active" : ""));
+      b.type = "button";
+      b.innerHTML = '<span class="kb-mi-name">' + esc(k.name || k.id) + "</span>" +
+        '<span class="kb-mi-meta">' + (k.docCount || 0) + " 篇 · " + (k.chunkCount || 0) + " 片</span>" +
+        '<span class="kb-mi-state ' + (k.chunkCount > 0 ? "ok" : "warn") + '">' + (k.chunkCount > 0 ? "已索引" : "待索引") + "</span>";
+      b.onclick = () => { kbManageState.selected = k.id; paint(); };
+      items.appendChild(b);
+    }
+    list.appendChild(items);
+    const add = btn("+ 添加知识库", "ghost", () => openKbAddDialog("dir"));
+    add.classList.add("kb-manage-add");
+    list.appendChild(add);
+
+    detail.replaceChildren();
+    if (!selected) {
+      const empty = el("div", "kb-manage-empty");
+      empty.appendChild(emptyState({
+        art: "db",
+        title: "还没有知识库",
+        text: "选一个文件夹，或加入几份文件，建立一次索引后就能检索、读原文。",
+        actions: [btn("添加第一个知识库", "primary", () => openKbAddDialog("dir"))],
+      }));
+      detail.appendChild(empty);
+      return;
+    }
+    detail.appendChild(kbManageDetail(selected, paint));
+  };
+  paint();
+  return root;
+}
 
 const knowledgeLibraryBeforeManagement=PAGES.kb.render;
 PAGES.kb.render=async function(){
   const generation=state.navigationGeneration;
   await knowledgeLibraryBeforeManagement.call(this);if(generation!==state.navigationGeneration||current!=='kb')return;
-  const view=$('view'),management=el('details','card kb-management');management.id='kb-management';
-  management.appendChild(el('summary','item-title','添加与管理知识库'));
-  const content=el('section','kb-management-content');content.appendChild(settingsKb());
-  if(hasKb()){const harvestLink=el('div','row');harvestLink.appendChild(btn('从网页或 GitHub 收集资料','sm ghost',()=>go('kb','harvest')));content.appendChild(harvestLink);}
-  management.appendChild(content);
+  const view=$('view'),management=kbManageWorkspace();
   const requestedSection=(currentSection==='harvest'||currentSection==='manage')?currentSection:'view';
   const section=(!hasKb()&&requestedSection==='harvest')?'manage':requestedSection;
-  management.open=section==='manage';
   view.appendChild(management);
   const empty=view.querySelector('.kb-empty');
   if(empty)empty.hidden=section!=='view';
@@ -1015,8 +1198,6 @@ PAGES.kb.render=async function(){
   if(browser)browser.hidden=!showLibrary;if(search)search.hidden=!showLibrary;if(toolbar)toolbar.hidden=!showLibrary;if(info)info.hidden=true;
   if(harvest){harvest.hidden=section!=='harvest';if(section==='harvest')harvest.open=true;}
   management.hidden=section!=='manage';
-  if(toolbar)toolbar.appendChild(btn('管理知识库','ghost sm',()=>go('kb','manage')));
-  if(section==='manage')management.scrollIntoView({block:'start'});
   if(section==='harvest'&&harvest)harvest.scrollIntoView({block:'start'});
 };
 

@@ -5729,12 +5729,13 @@ PAGES.kb = {
         const meta = [d.sizeBytes >= 0 ? fmtSize(d.sizeBytes) : "大小暂不可用", d.chunks + " 个内容片段"];
         main.appendChild(el("p", "meta", meta.join(" · "))); main.appendChild(el("p", "muted sm library-path", d.path)); item.appendChild(main);
         item.appendChild(tag(labels[d.status] || "已准备", d.status === "ready" ? "ok" : "warn"));
-        const read = btn("看内容", "sm", e => preview(d.path, e.currentTarget)); read.disabled = !d.chunks; item.appendChild(read);
         if (d.chunks) {
+          // 整行可点就是“看内容”：不再额外放一个按钮，列表更安静。
           item.tabIndex = 0;
+          item.setAttribute("role", "button");
           item.setAttribute("aria-label", "打开资料：" + (d.title || d.path));
-          item.onclick = e => { if (e.target.closest("button,a")) return; preview(d.path, read); };
-          item.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); preview(d.path, read); } };
+          item.onclick = e => { if (e.target.closest("button,a")) return; preview(d.path); };
+          item.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); preview(d.path); } };
         }
         list.appendChild(item);
       }
@@ -10418,15 +10419,17 @@ async function importKbMaterial(withIndex) {
     const id = info.id || "";
     state.kb = id || state.kb;
     await loadCfg(true);
-    if (!id) { toast("导入完成"); if (generation === state.navigationGeneration) await go("settings", "kb"); return; }
+    if (!id) { toast("导入完成"); if (generation === state.navigationGeneration) await returnToKbManage(); return true; }
     if (withIndex) {
       await buildIndex(id);
     } else {
       toast("已导入 " + (info.docs || 0) + " 篇资料，还没建立索引");
-      if (generation === state.navigationGeneration) await go("settings", "kb");
+      if (generation === state.navigationGeneration) await returnToKbManage();
     }
+    return true;
   } catch (e) {
     toast("导入失败：" + e.message);
+    return false;
   } finally {
     buttons.forEach(b => { b.disabled = false; b.removeAttribute("aria-busy"); b.textContent = b.dataset.idleLabel; });
   }
@@ -10450,7 +10453,7 @@ function renameKnowledgeBase(kb) {
       await api("/api/kb/rename", { id: kb.id, name: name.value.trim() });
       await loadCfg(true);
       dialog.close();
-      await go("settings", "kb");
+      await returnToKbManage();
       toast("已重命名");
     } catch (e) { error.textContent = e.message; save.disabled = false; }
   });
@@ -10459,6 +10462,27 @@ function renameKnowledgeBase(kb) {
   actions.append(btn("取消", "ghost", dialog.close), save);
   dialog.body.append(fieldOf("名称", name), error, actions);
   name.focus(); name.select();
+}
+
+/** 导入/重命名/删除之后回到用户刚才所在的位置：知识库管理页或设置页。 */
+async function returnToKbManage() {
+  if (current === "kb" && currentSection === "manage") {
+    await go("kb", "manage");
+  } else {
+    await go("settings", "kb");
+  }
+}
+
+function deleteKnowledgeBase(k) {
+  confirmDialog("删除知识库登记？",
+    "会把「" + (k.name || k.id) + "」的登记从本机删掉，索引与这一章的学习进度也会一起消失。\n" +
+    "你目录里的原始资料不会被删，之后可以重新登记并建立索引。",
+    async () => {
+      await api("/api/kb/delete", { id: k.id });
+      toast("已删除登记（本机原文件不会被删）");
+      await loadCfg(true);
+      await returnToKbManage();
+    }, {confirmLabel: "删除", busyLabel: "正在删除…", errorPrefix: "删除失败："});
 }
 
 /* ---------- 设置 · 知识库 ---------- */
@@ -10531,18 +10555,7 @@ function settingsKb() {
       acts.appendChild(managedButton("整理", "sm", "kb:organize:" + k.id, "正在整理…", button => organizeKb(k.id, button)));
       if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
       acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
-      acts.appendChild(btn("删除", "sm ghost", () => {
-        // 删知识库是"连带"操作：登记没了，索引、阅读进度、本章学习记录就都找不回来了（原文件不动）
-        confirmDialog("删除知识库登记？",
-          "会把「" + (k.name || k.id) + "」的登记从本机删掉，索引与这一章的学习进度也会一起消失。\n" +
-          "你目录里的原始资料不会被删，之后可以重新登记并建立索引。",
-          async () => {
-            await api("/api/kb/delete", { id: k.id });
-            toast("已删除登记（本机原文件不会被删）");
-            await loadCfg(true);
-            go("settings", "kb");
-          }, {confirmLabel: "删除", busyLabel: "正在删除…", errorPrefix: "删除失败："});
-      }));
+      acts.appendChild(btn("删除", "sm ghost", () => deleteKnowledgeBase(k)));
       it.appendChild(acts);
       kbox.appendChild(it);
     }
@@ -10948,7 +10961,7 @@ async function organizeKb(kbId, trigger) {
             await api("/api/kb/organize", { id: kbId, clear: true });
             toast("已清除，回到按材料标题分章");
             modal.close();
-            go("settings", "kb");
+            await returnToKbManage();
           },
         },
         {label: "关闭", cls: "ghost", dismiss: true},
