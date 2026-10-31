@@ -45,8 +45,9 @@ public class TaskFeed {
         let t=SessionStore(dataDir()).titleOf(sid)
         return if(t.size>0){t}else{"新对话"}
     }
-    private func chatStage(sid: String): String{
-        for(r in DbHub.open(dataDir()).query("SELECT kind,payload FROM session_events WHERE session_id=? ORDER BY id DESC LIMIT 10",va([tv(sid)]))){
+    private func chatStage(sid: String, turnId: String): String{
+        // 只读**当前 turn** 的事件：同一个会话上一轮的工具调用不能拿来当这一轮的进度。
+        for(r in DbHub.open(dataDir()).query("SELECT kind,payload FROM session_events WHERE session_id=? AND turn_id=? ORDER BY id DESC LIMIT 20",va([tv(sid),tv(turnId)]))){
             let kind=r.text(0);let p=objOf(JsonValue.fromStr(r.text(1))).getOrDefault({=>JsonObject()})
             if(kind=="tool/call"){return "正在调用 "+toolLabel(strOf(p,"tool"))}
             if(kind=="resource/progress"){let label=strOf(p,"label");if(label.size>0){return label}}
@@ -81,7 +82,7 @@ public class TaskFeed {
             o.put("kind",JsonString("chat"))
             o.put("title",JsonString("对话："+chatTitle(sid)))
             o.put("status",JsonString(status))
-            o.put("stage",JsonString(chatStage(sid)))
+            o.put("stage",JsonString(chatStage(sid,turnId)))
             let startedMs=intOf(st,"startedMs")
             if(startedMs>0){o.put("startedAt",JsonString(strOf(st,"startedAt")));o.put("elapsedSeconds",JsonInt((nowMs()-startedMs)/1000))}
             o.put("link",linkOf("chat",sid,""))
@@ -124,9 +125,16 @@ public class TaskFeed {
     }
     public func recent(): JsonArray{
         let rows=ArrayList<JsonObject>()
-        for(r in DbHub.open(dataDir()).querySql("SELECT session_id, turn_id, ts, payload FROM session_events WHERE kind='turn/end' ORDER BY id DESC LIMIT 6")){
+        // 一个会话只留最近一条 turn/end；正在跑这一轮的会话不再同时出现在“最近完成”。
+        // 否则同一个标题会同时挂“进行中”和“已完成”，看起来像状态没更新。
+        let activeSessions=sessionHub().activeSessionIds()
+        let seenSessions=ArrayList<String>()
+        for(r in DbHub.open(dataDir()).querySql("SELECT session_id, turn_id, ts, payload FROM session_events WHERE kind='turn/end' ORDER BY id DESC LIMIT 20")){
+            let sid=r.text(0)
+            if(activeSessions.contains(sid)||seenSessions.contains(sid)){continue}
+            seenSessions.add(sid)
             let p=objOf(JsonValue.fromStr(r.text(3))).getOrDefault({=>JsonObject()})
-            let o=JsonObject();let sid=r.text(0)
+            let o=JsonObject()
             o.put("id",JsonString("turn:"+sid+":"+r.text(1)))
             o.put("kind",JsonString("chat"))
             o.put("title",JsonString("对话："+chatTitle(sid)))

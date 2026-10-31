@@ -8,6 +8,7 @@ import stdx.encoding.json.*
 import itn_desktop_core.runtime.*
 import itn_desktop_core.runtime_host.*
 import itn_desktop_core.session.SessionStore
+import itn_desktop_core.session.SessionEvent
 import itn_desktop_core.store.Store
 import itn_desktop_core.presentation.DesktopJobs
 
@@ -132,4 +133,52 @@ func taskFeedKeepsOneTruthAndLuminCanListButNotCancelItselfOrIgnoreConsent(): Un
         if (strOf(row, "id") == "turn:" + sid + ":turn-new" && strOf(row, "status") == "interrupted") { interrupted = true }
     }
     @Expect(interrupted, true)
+}
+
+@Test
+func taskFeedKeepsOneRecentTurnPerSessionAndHidesActiveOnes(): Unit {
+    let dir = freshDir("task-feed-dedupe")
+    let sessions = SessionStore(dir)
+    func appendEnd(sid: String, turn: String): Unit {
+        let e = SessionEvent()
+        e.sessionId = sid
+        e.turnId = turn
+        e.kind = "turn/end"
+        e.payload.put("ok", JsonBool(true))
+        sessions.append(e)
+    }
+    appendEnd("s-a", "t-old")
+    appendEnd("s-a", "t-new")
+    appendEnd("s-b", "t-b")
+    let feed = TaskFeed(Store(dir))
+    let recent = feed.recent()
+    var aCount: Int64 = 0
+    var sawANew = false
+    var sawBOld = false
+    var i: Int64 = 0
+    while (i < recent.size()) {
+        let row = objOf(recent[i]).getOrThrow(); i += 1
+        let id = strOf(row, "id")
+        if (id.startsWith("turn:s-a:")) {
+            aCount += 1
+            if (id.contains(":t-new")) { sawANew = true }
+        }
+        if (id == "turn:s-b:t-b") { sawBOld = true }
+    }
+    @Expect(aCount, 1)
+    @Expect(sawANew, true)
+    @Expect(sawBOld, true)
+
+    // 同一会话新一轮在跑时，不再把上一轮同时列进“最近完成”。
+    @Expect(sessionHub().reserve("s-b", "t-b2"), true)
+    setTaskState(dir, "s-b", "t-b2", "running")
+    let activeRecent = feed.recent()
+    var sawBActiveDuplicate = false
+    var j: Int64 = 0
+    while (j < activeRecent.size()) {
+        let row = objOf(activeRecent[j]).getOrThrow(); j += 1
+        if (strOf(row, "id") == "turn:s-b:t-b") { sawBActiveDuplicate = true }
+    }
+    @Expect(sawBActiveDuplicate, false)
+    sessionHub().release("s-b")
 }
