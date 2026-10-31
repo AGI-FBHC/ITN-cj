@@ -1525,12 +1525,25 @@ input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:f
 .topbar > .workspace-tabs .workspace-tab {
   padding: 4px 0; min-height: 28px; border-radius: 0;
   border-bottom: 2px solid transparent; background: transparent;
+  background-image: none; box-shadow: none;
   color: var(--muted); font-weight: 500;
 }
-.topbar > .workspace-tabs .workspace-tab:hover { background: transparent; color: var(--ink); }
+.topbar > .workspace-tabs .workspace-tab:hover { background: transparent; color: var(--ink); box-shadow: none; }
 .topbar > .workspace-tabs .workspace-tab.active {
-  background: transparent; color: var(--ink);
-  border-bottom-color: var(--accent); font-weight: 650;
+  background: transparent; background-image: none; box-shadow: none;
+  color: var(--ink); border-bottom-color: var(--accent); font-weight: 650;
+}
+
+/* 分段控件要连成一体：全局 .btn 的圆角和内边距不能把每一段变成独立按钮。 */
+.knowledge-view-seg .knowledge-seg {
+  height: 38px; min-height: 38px; padding: 0 16px;
+  border: 0; border-radius: 0; background: transparent; background-image: none;
+  box-shadow: none; color: var(--ink-2); font-size: 13px;
+}
+.knowledge-view-seg .knowledge-seg:hover { background: color-mix(in srgb, var(--panel) 55%, transparent); color: var(--ink); }
+.knowledge-view-seg .knowledge-seg.on {
+  background: var(--panel); background-image: none; color: var(--ink);
+  font-weight: 600; box-shadow: none; border-radius: 0;
 }
 
 /* 空态：一个图标、一句说明、一个主操作；不再套第二层大白卡 */

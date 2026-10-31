@@ -31,7 +31,11 @@ async function spFindAsset(res){
 
 function spReturnToMap(asset){
   if(asset&&typeof courseUi==='object')courseUi.focusNode=asset.nodeId||'';
-  return go('learn');
+  // 从学·练点进来的：直接后退，不再 push 一条新的 #/learn。
+  // 否则“返回思维导图”和顶栏/标题栏的后退会互相当成前进目标，来回弹。
+  const previous=(typeof navIndex==='number'&&navIndex>0)?String(navStack[navIndex-1]||''):'';
+  if(previous.startsWith('#/learn')){history.back();return Promise.resolve();}
+  return go('learn','',{replace:true});
 }
 
 function spBreadcrumb(res,asset){
