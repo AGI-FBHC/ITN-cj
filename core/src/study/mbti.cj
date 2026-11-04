@@ -168,7 +168,7 @@ func mbtiQuotedInstruction(text: String): Bool {
 
 func mbtiHasChange(text: String): Bool {
     let lower = text.toAsciiLower()
-    for (word in ["设置", "设为", "设成", "改成", "改为", "调整为", "改到", "切换为", "切换成", "切成", "保存为", "记为", "填成", "填写", "填入", "set ", "change ", "save as"]) {
+    for (word in ["设置", "设为", "设成", "设定", "改成", "改为", "修改", "调整为", "改到", "切换为", "切换成", "切成", "保存", "存为", "存成", "记为", "记录为", "填成", "填写", "填入", "写成", "写为", "标记为", "标为", "更新为", "指定为", "set ", "change ", "save as"]) {
         if (lower.contains(word)) { return true }
     }
     return false
@@ -350,9 +350,9 @@ public class MbtiAssessmentStore {
                 if (hasUser && userType != calculated) { throw Exception("确认保存测评时只能填写服务端结果，不能替换成模型猜测的类型") }
                 userType = calculated; saveResult = true
             } else if (hasUser) {
-                throw Exception("设置用户 MBTI 的原话必须同时包含本人目标、设置意图和目标类型")
+                throw Exception("设置用户 MBTI 的原话必须同时包含本人目标、设置意图和目标类型（例如“保存我的 MBTI 类型为 ENTP”或“把我的 MBTI 类型设置为 ENTP”）")
             }
-            if (hasLumin && !mbtiExplicitSetting(userQuote, luminType, true)) { throw Exception("设置 Lumin MBTI 的原话必须包含 Lumin、设置意图和目标类型") }
+            if (hasLumin && !mbtiExplicitSetting(userQuote, luminType, true)) { throw Exception("设置 Lumin MBTI 的原话必须包含 Lumin、设置意图和目标类型（例如“把 Lumin 的 MBTI 保存为 INTJ”）") }
             if (!hasUser && !hasLumin && !saveResult) { throw Exception("没有明确指定要修改的偏好，也没有可确认保存的测评结果") }
             // Migrate first; then write only the requested MBTI keys and the result marker atomically.
             StudyStore(dataDir).loadProfile()

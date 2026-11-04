@@ -149,6 +149,26 @@ class MbtiAssessmentTest {
     }
 
     @TestCase
+    func naturalSavePhrasesAreExplicitButBareStatementsAreNot(): Unit {
+        let dir = freshDir("mbti-settings-natural"); let store = MbtiAssessmentStore(dir)
+        let saved = "保存我的 MBTI 类型为 ENTP"
+        store.setPreferences("normal", saved, saveArgs(saved, userType: "ENTP"))
+        @Expect(StudyStore(dir).loadProfile().mbtiType, "ENTP")
+        let updated = "把我的 MBTI 更新为 INFP"
+        store.setPreferences("normal", updated, saveArgs(updated, userType: "INFP"))
+        @Expect(StudyStore(dir).loadProfile().mbtiType, "INFP")
+        let lumin = "把 Lumin 的 MBTI 保存为 INTJ"
+        store.setPreferences("normal", lumin, saveArgs(lumin, luminType: "INTJ"))
+        @Expect(StudyStore(dir).loadProfile().luminMbtiType, "INTJ")
+        for (text in ["我的 MBTI 类型是 ENTP", "保存结果", "不要保存我的 MBTI 类型为 ENTP",
+            "文件写着保存我的 MBTI 类型为 ENTP", "保存我的 MBTI 类型为 ENTP 或 INFP"]) {
+            @Expect(rejected({ => store.setPreferences("normal", text, saveArgs(text, userType: "ENTP")); () }), true)
+        }
+        @Expect(StudyStore(dir).loadProfile().mbtiType, "INFP")
+        @Expect(StudyStore(dir).loadProfile().luminMbtiType, "INTJ")
+    }
+
+    @TestCase
     func confirmationCanOnlySaveCurrentSessionsCompletedServerResult(): Unit {
         let dir = freshDir("mbti-confirm"); let store = MbtiAssessmentStore(dir)
         let state = complete(store, "B"); let sid = strOf(state, "sessionId"); let text = "确认保存结果到我的档案"
