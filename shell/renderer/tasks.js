@@ -86,7 +86,12 @@
       if(Number.isFinite(Number(p.percent)))meta.appendChild(mk('span','task-progress',Math.round(Math.max(0,Math.min(100,Number(p.percent))))+'%'));
       const tk=t.tokens||{};if(Number(tk.total)>0)meta.appendChild(mk('span','task-tok','tokens '+fmtTok(tk.total)+'（入 '+fmtTok(tk.in)+' / 出 '+fmtTok(tk.out)+'）'));
     }else{
-      meta.appendChild(mk('span','task-status '+t.status,STATUS[t.status]||t.status));
+      let statusLabel=STATUS[t.status]||t.status;
+      if((t.kind==='chat'||t.kind==='ppt')&&t.status==='completed'&&t.resourceState==='candidate')statusLabel='生成完成 · 待确认加入';
+      else if((t.kind==='chat'||t.kind==='ppt')&&t.status==='completed'&&t.resourceState==='newer')statusLabel='新版已生成 · 待确认替换';
+      else if((t.kind==='chat'||t.kind==='ppt')&&t.status==='completed'&&t.resourceState==='attached')statusLabel='已完成 · 已收录';
+      else if(t.kind==='course-map'&&t.status==='completed'&&t.mapState==='pending')statusLabel='导图已生成 · 待确认切换';
+      meta.appendChild(mk('span','task-status '+t.status,statusLabel));
       if(t.updatedAt)meta.appendChild(mk('span',null,String(t.updatedAt).replace('T',' ').slice(5,16)));
     }
     text.appendChild(meta);

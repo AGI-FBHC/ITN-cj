@@ -5703,13 +5703,13 @@ PAGES.kb = {
     const filters = el("div", "row");
     const filter = el("input", "grow"); filter.placeholder = "筛选文档名称"; filter.setAttribute("aria-label", "筛选文档名称");
     const status = el("select"); status.setAttribute("aria-label", "筛选资料状态");
-    for (const [value, text] of [["", "全部状态"], ["ready", "已准备"], ["pending", "待准备"], ["missing", "原文件已移走"], ["unknown", "来源暂不可读"]]) { const o = el("option", null, text); o.value = value; status.appendChild(o); }
+    for (const [value, text] of [["", "全部状态"], ["ready", "已准备"], ["pending", "待准备"], ["missing", "原文件已移走"], ["unknown", "来源文件不可读"]]) { const o = el("option", null, text); o.value = value; status.appendChild(o); }
     filters.append(filter, status); listCard.appendChild(filters);
     const count = el("p", "muted sm"); count.setAttribute("aria-live", "polite"); listCard.appendChild(count);
     const list = el("div", "list"); listCard.appendChild(list); v.appendChild(listCard);
     const previewHost = el("section", "library-preview"); v.appendChild(previewHost);
     let st = null;
-    const labels = {ready: "已准备", pending: "待准备", missing: "原文件已移走", unknown: "来源暂不可读"};
+    const labels = {ready: "已准备", pending: "待准备", missing: "原文件已移走", unknown: "来源文件不可读"};
     const paint = () => {
       list.innerHTML = "";
       const docs = st.docs || [];
@@ -5726,9 +5726,10 @@ PAGES.kb = {
       for (const d of rows) {
         const item = el("div", "item library-document"); item.dataset.path = d.path; item.dataset.status = d.status; const ic = el("div", "file-icon"); ic.innerHTML = icon("file"); item.appendChild(ic);
         const main = el("div", "grow"); main.appendChild(el("h3", "item-title", d.title || d.path));
-        const meta = [d.sizeBytes >= 0 ? fmtSize(d.sizeBytes) : "大小暂不可用", d.chunks + " 个内容片段"];
+        const meta = [d.sizeBytes >= 0 ? fmtSize(d.sizeBytes) : (d.status === "unknown" ? "来源大小未知" : "大小暂不可用"), d.chunks + " 个内容片段"];
         main.appendChild(el("p", "meta", meta.join(" · "))); main.appendChild(el("p", "muted sm library-path", d.path)); item.appendChild(main);
-        item.appendChild(tag(labels[d.status] || "已准备", d.status === "ready" ? "ok" : "warn"));
+        const statusText = d.status === "unknown" && d.chunks > 0 ? "来源文件不可读（索引可用）" : (labels[d.status] || "已准备");
+        item.appendChild(tag(statusText, d.status === "ready" ? "ok" : "warn"));
         if (d.chunks) {
           // 整行可点就是“看内容”：不再额外放一个按钮，列表更安静。
           item.tabIndex = 0;
@@ -9797,7 +9798,14 @@ async function settingsModels() {
     b.textContent = "搜索中…";
     try {
       const r = await api("/api/websearch/test", { apiKey: $("ws-key").value.trim(), results: 3 });
-      toast("通了：搜到 " + r.count + " 条 · " + String(r.first || "").slice(0, 20));
+      // 测通只代表密钥和网络可用；对话是否联网还看开关与保存状态。
+      if ($("ws-enabled").value !== "1") {
+        toast("密钥可用，搜到 " + r.count + " 条；但开关是“关闭”，对话里不会联网 —— 请选“开启”并保存");
+      } else if (!r.enabled) {
+        toast("密钥可用，搜到 " + r.count + " 条；当前开关尚未保存，点“保存”后对话才会联网");
+      } else {
+        toast("通了：搜到 " + r.count + " 条 · " + String(r.first || "").slice(0, 20));
+      }
       b.textContent = "再测一次";
     } catch (e) {
       toast("测试失败：" + e.message);
@@ -9817,6 +9825,12 @@ async function settingsModels() {
   wsActs.appendChild(wsClear);
   wsCard.appendChild(wsActs);
   wsCard.appendChild(el("p", "model-field-hint", ws.hasKey ? "已设置搜索密钥" : "尚未设置搜索密钥"));
+  if (ws.hasKey && (!ws.enabled || mode === "off")) {
+    wsCard.appendChild(el("p", "model-field-hint warn",
+      mode === "off" && ws.enabled
+        ? "联网档位是“不联网”，对话里的模型不会联网；要用请改成“自动判断”或“优先联网”并保存。"
+        : "密钥已保存，但联网开关是关闭的，对话里的模型不会调用联网搜索。"));
+  }
 
   /* 手动抓一页：贴个链接就读，不用等模型自己决定 */
   const fetchRow = el("div", "row");

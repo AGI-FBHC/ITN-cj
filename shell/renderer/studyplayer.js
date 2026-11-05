@@ -67,7 +67,9 @@ function spHead(res,asset,progressText,extraActions){
   return head;
 }
 
-function spMoreMenu(res,asset){
+async function spMoreMenu(res,asset){
+  // 播放器打开后可能刚在别处确认收录；菜单每次打开都重新查一次槽位。
+  const fresh=await spFindAsset(res);if(fresh)asset=fresh;
   const d=courseDialog('资源操作',(res.title||'')+' · v'+res.version);
   const actions=el('div','course-manage-actions');
   if(res.sessionId)actions.appendChild(btn('回到生成会话','',()=>{d.close();openChatSession(res.sessionId).catch(e=>toast(e.message));}));
@@ -78,7 +80,12 @@ function spMoreMenu(res,asset){
     actions.appendChild(btn('移入回收站','ghost course-danger',()=>courseConfirm('移入回收站？','只移走这份资源，不删除导图、节点或学习记录。',async()=>{await courseApi('resource/action',{id:asset.id,action:'trash',confirmed:true});toast('已移入回收站。');await go('learn');})));
   }else{
     d.body.appendChild(el('p','course-replace-note','这是尚未加入学习资源的候选版本；满意后可在生成会话里收录，或在这里直接加入。'));
-    const add=btn('加入我的学习资源','primary',async()=>{const handled=await offerCourseSave({path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId});if(!handled)toast('这段会话没有绑定学习节点，可先在学·练里从节点发起生成。');});
+    const add=btn('加入我的学习资源','primary',async()=>{
+      const file={path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId};
+      file.onSaved=()=>{d.close();go('study',res.id+'@'+res.version).catch(e=>toast(e.message));};
+      const handled=await offerCourseSave(file);
+      if(!handled)toast('这段会话没有绑定学习节点，可先在学·练里从节点发起生成。');
+    });
     actions.appendChild(add);
   }
   d.body.appendChild(actions);

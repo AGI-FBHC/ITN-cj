@@ -1545,6 +1545,7 @@ body.panel-hidden #rail-toggle { background: var(--rail-hi); color: var(--brand)
   margin: 0 0 16px; color: var(--muted); font-size: calc(14px * var(--fs, 1)); line-height: 1.6;
 }
 .model-field-hint { margin: 8px 0 0; }
+.model-field-hint.warn { color: var(--danger); }
 .model-form-actions { margin-top: 20px; }
 .model-form-error { color: var(--danger); font-size: calc(14px * var(--fs, 1)); margin: 16px 0 0; }
 .model-item .grow { min-width: 0; }

@@ -200,7 +200,9 @@ async function offerPersonalSave(file) {
   const actions=el('div','row'),confirm=workbenchRequestButton('确认存入','primary','personal:save:'+file.path,'正在存入…',async()=>{
     try{
       const saved=await api('/api/personal/save',{path:file.path,title:title.value.trim() || file.name,text:file.indexText || file.text || '',learningId:file.learningId || '',learningVersion:file.learningVersion || 0,sessionId:file.sessionId || state.chatSessionId || '',turnId:file.turnId || '',confirmed:true});
-      close();toast('已存入个性资源 · 确认版本 '+saved.version);if(current==='resources')await go('resources');
+      close();toast('已存入个性资源 · 确认版本 '+saved.version);
+      if(current==='resources'&&typeof workbench.refreshPersonalList==='function')await workbench.refreshPersonalList();
+      else if(current==='resources')await go('resources');
     }catch(e){toast('保存失败：'+e.message);}
   });
   actions.append(confirm,btn('这版先不存','ghost',close));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);unbindEscape=bindModalEscape(overlay,close);title.focus();
@@ -517,7 +519,14 @@ function renderResourceDock() {
     } catch(e) {toast('比较失败：' + e.message);}
   }));
   if(res.id && res.kind !== 'ppt')actions.appendChild(btn('全屏打开','ghost sm',()=>go('study',res.id+'@'+res.version)));
-  actions.appendChild(btn(res.courseTarget?.nodeId?'加入我的学习资源':'存入个性资源','sm',()=>offerPersonalSave({path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId})));
+  if(res.courseAsset?.status==='current'){
+    actions.appendChild(el('span','tag ok','已收录'));
+  }else{
+    const saveFile={path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId};
+    const saveBtn=btn(res.courseTarget?.nodeId?'待确认加入':'存入个性资源','sm',()=>offerPersonalSave(saveFile));
+    if(res.courseTarget?.nodeId)saveFile.onSaved=()=>{res.courseAsset={status:'current'};saveBtn.textContent='已收录';saveBtn.disabled=true;};
+    actions.appendChild(saveBtn);
+  }
   body.appendChild(actions);
   if ((res.warnings || []).length) body.appendChild(el('p', 'resource-notice', res.warnings.join('；')));
   const content = el('div', 'resource-content');
@@ -848,6 +857,15 @@ PAGES.resources.render = async function() {
     if(!rows.length&&!none)grid.appendChild(emptyState({inline:true,art:'layers',title:'没有匹配的资源',text:'换个关键词或格式再试。'}));
     if(!none)rows.forEach(r=>grid.appendChild(personalResourceCard(r)));
     reader.classList.toggle('has-selection', !!workbench.open);
+  };
+  // 存入个性资源后只刷新列表本身，不整页重进：阅读区、滚动位置和搜索词都留着。
+  workbench.refreshPersonalList=async()=>{
+    if(generation!==state.navigationGeneration)return;
+    const fresh=await api('/api/personal/list',{});
+    if(generation!==state.navigationGeneration)return;
+    all=fresh.resources || [];
+    if(fresh.directory)status.title=fresh.directory;
+    await paint();
   };
   search.oninput=()=>{clearTimeout(timer);seq++;timer=setTimeout(()=>paint().catch(e=>toast(e.message)),220);};kind.onchange=()=>paint();await paint();
 };

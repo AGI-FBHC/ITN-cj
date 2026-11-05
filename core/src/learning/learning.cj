@@ -91,6 +91,17 @@ public class LearningStore {
         if (raw.size == 0) { throw Exception("资源或版本不存在") }
         let out = parsed(raw)
         let target=db().scalarText("SELECT body FROM course_targets WHERE session_id=?",va([tv(strOf(out,"sessionId"))]));if(target.size>0){out.put("courseTarget",parsed(target))}
+        for(r in db().querySql("SELECT id,status,body FROM course_assets")){
+            if(r.text(1)!="current"){continue}
+            let a=parsed(r.text(2))
+            if(strOf(a,"learningId")==id&&intOf(a,"learningVersion")==version){
+                let asset=JsonObject()
+                asset.put("id",JsonString(r.text(0)));asset.put("status",JsonString(r.text(1)))
+                asset.put("nodeId",JsonString(strOf(a,"nodeId")));asset.put("kind",JsonString(strOf(a,"kind")))
+                asset.put("title",JsonString(strOf(a,"title")))
+                out.put("courseAsset",asset);break
+            }
+        }
         let versions = JsonArray()
         for (r in db().query("SELECT version FROM learning_resource_versions WHERE resource_id = ? ORDER BY version DESC", va([tv(id)]))) { versions.add(JsonInt(r.int(0))) }
         out.put("versions", versions)

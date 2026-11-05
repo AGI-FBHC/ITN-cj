@@ -123,6 +123,34 @@ public class TaskFeed {
         }
         return out
     }
+    /**
+     * 这一段完成的对话是否对应“已生成但未收录”的课程资源。
+     * 只给任务中心补一个只读状态，不改变任务本身的完成含义。
+     */
+    private func resourceStateOf(sid: String): String{
+        let rows=DbHub.open(dataDir()).query("SELECT body FROM course_targets WHERE session_id=?",va([tv(sid)]))
+        if(rows.size==0){return ""}
+        var target: JsonObject
+        try{target=objOf(JsonValue.fromStr(rows[0].text(0))).getOrThrow()}catch(e: Exception){return ""}
+        let nid=strOf(target,"nodeId");let kind=strOf(target,"kind");let kb=strOf(target,"kbId")
+        if(nid.size==0||kind.size==0||kb.size==0){return ""}
+        let mapId=strOf(target,"mapId")
+        let head=DbHub.open(dataDir()).getKv("meta","course-head:"+kb,"")
+        if(mapId.size>0&&mapId!=head){return ""}
+        var candidateId="";var candidateVersion: Int64=0
+        for(lr in DbHub.open(dataDir()).query("SELECT r.id,v.body FROM learning_resources r JOIN learning_resource_versions v ON v.resource_id=r.id AND v.version=r.latest_version WHERE r.kb_id=? AND r.kind=?",va([tv(kb),tv(kind)]))){
+            try{if(strOf(objOf(JsonValue.fromStr(lr.text(1))).getOrThrow(),"sessionId")==sid){candidateId=lr.text(0);candidateVersion=intOf(objOf(JsonValue.fromStr(lr.text(1))).getOrThrow(),"version");break}}catch(e: Exception){()}
+        }
+        if(candidateId.size==0){return ""}
+        let slotId=DbHub.open(dataDir()).scalarText("SELECT resource_id FROM course_slots WHERE node_id=? AND kind=?",va([tv(nid),tv(kind)]))
+        if(slotId.size==0){return "candidate"}
+        let currentRaw=DbHub.open(dataDir()).scalarText("SELECT body FROM course_assets WHERE id=?",va([tv(slotId)]))
+        if(currentRaw.size==0){return "candidate"}
+        var currentId="";var currentVersion: Int64=0
+        try{let a=objOf(JsonValue.fromStr(currentRaw)).getOrThrow();currentId=strOf(a,"learningId");currentVersion=intOf(a,"learningVersion")}catch(e: Exception){return "candidate"}
+        if(currentId==candidateId&&currentVersion==candidateVersion){return "attached"}
+        return "newer"
+    }
     public func recent(): JsonArray{
         let rows=ArrayList<JsonObject>()
         // 一个会话只留最近一条 turn/end；正在跑这一轮的会话不再同时出现在“最近完成”。
@@ -145,6 +173,8 @@ public class TaskFeed {
             o.put("updatedAt",JsonString(r.text(2)))
             o.put("link",linkOf("chat",sid,""))
             o.put("cancelable",JsonBool(false))
+            let resourceState=if(boolOf(p,"ok")){resourceStateOf(sid)}else{""}
+            if(resourceState.size>0){o.put("resourceState",JsonString(resourceState))}
             rows.add(o)
         }
         let courseRecent=CourseJobs(store).recent(4);var crir: Int64=0
@@ -160,6 +190,9 @@ public class TaskFeed {
             o.put("updatedAt",JsonString(strOf(j,"createdAt")))
             o.put("link",linkOf("learn","",strOf(j,"kbId")))
             o.put("cancelable",JsonBool(false))
+            let kbId=strOf(j,"kbId")
+            let head=DbHub.open(dataDir()).getKv("meta","course-head:"+kbId,"")
+            if(strOf(j,"status")=="completed"&&strOf(j,"baseMapId").size>0&&strOf(j,"mapId")!=head){o.put("mapState",JsonString("pending"))}
             rows.add(o)
         }
         let deskRecent=DesktopJobs(dataDir()).recent(4);var drir: Int64=0
@@ -176,6 +209,7 @@ public class TaskFeed {
             let sid=strOf(body,"sessionId")
             o.put("link",if(sid.size>0){linkOf("chat",sid,"")}else{linkOf("resources","","")})
             o.put("cancelable",JsonBool(false))
+            if(kind=="presentation"&&sid.size>0){let rs=resourceStateOf(sid);if(rs.size>0){o.put("resourceState",JsonString(rs))}}
             rows.add(o)
         }
         // 按时间倒序（ISO 字符串可直接比较），最多 10 条

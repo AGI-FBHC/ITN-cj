@@ -66,9 +66,79 @@ public class CourseStore {
         let out=JsonArray();for(r in db().query("SELECT body,status FROM course_maps WHERE kb_id=? ORDER BY updated_at DESC",va([tv(kb)]))){let o=courseJson(r.text(0));o.put("status",JsonString(r.text(1)));out.add(o)};return out
     }
     public func unlinked(): JsonArray{let out=JsonArray();let all=PersonalStore(dataDir).list();var i=0;while(i<all.size()){let a=objOf(all[i]).getOrThrow();i+=1;if(db().scalarInt("SELECT COUNT(*) FROM course_assets WHERE id=?",va([tv(strOf(a,"id"))]))==0){out.add(a)}};return out}
+    /**
+     * 已生成、但还没确认收录到节点的候选。
+     *
+     * 任务中心只能看到“生成完成”；节点四张卡只看 course_assets 的当前资源。
+     * 两者之间必须有一个“待确认加入”的可见状态，否则演示时看起来像没刷新。
+     * 这里只读 course_targets + 最新学习资源，不改变任何写入语义。
+     */
+    public func candidates(kb: String): JsonArray{
+        let out=JsonArray();let currentMap=head(kb);if(currentMap.size==0){return out}
+        let seen=HashSet<String>()
+        for(r in db().query("SELECT body FROM course_targets WHERE kb_id=? ORDER BY rowid DESC",va([tv(kb)]))){
+            var target: JsonObject
+            try{target=courseJson(r.text(0))}catch(e: Exception){continue}
+            if(strOf(target,"mapId")!=currentMap){continue}
+            let nid=strOf(target,"nodeId");let kind=strOf(target,"kind");let sid=strOf(target,"sessionId")
+            if(nid.size==0||sid.size==0||!courseKind(kind)){continue}
+            let key=nid+"|"+kind
+            if(seen.contains(key)){continue}
+            var existsNode=false
+            try{node(kb,nid);existsNode=true}catch(e: Exception){existsNode=false}
+            if(!existsNode){continue}
+            let slotId=slot(nid,kind)
+            var currentLearningId="";var currentVersion: Int64=0;var currentTitle=""
+            if(slotId.size>0){
+                let raw=db().scalarText("SELECT body FROM course_assets WHERE id=?",va([tv(slotId)]))
+                if(raw.size>0){try{let a=courseJson(raw);currentLearningId=strOf(a,"learningId");currentVersion=intOf(a,"learningVersion");currentTitle=strOf(a,"title")}catch(e: Exception){()}}
+            }
+            for(lr in db().query("SELECT r.id,r.title,r.latest_version,v.body,r.updated_at FROM learning_resources r JOIN learning_resource_versions v ON v.resource_id=r.id AND v.version=r.latest_version WHERE r.kb_id=? AND r.kind=? ORDER BY r.updated_at DESC",va([tv(kb),tv(kind)]))){
+                var body: JsonObject
+                try{body=courseJson(lr.text(3))}catch(e: Exception){continue}
+                if(strOf(body,"sessionId")!=sid){continue}
+                let lid=lr.text(0);let lv=intOf(body,"version")
+                if(slotId.size>0&&currentLearningId==lid&&currentVersion==lv){seen.add(key);break}
+                let c=JsonObject()
+                c.put("nodeId",JsonString(nid));c.put("kind",JsonString(kind))
+                c.put("title",JsonString(if(lr.text(1).size>0){lr.text(1)}else{strOf(body,"title")}))
+                c.put("learningId",JsonString(lid))
+                c.put("learningVersion",JsonInt(lv))
+                c.put("sessionId",JsonString(sid));c.put("turnId",JsonString(strOf(body,"turnId")))
+                c.put("artifactPath",JsonString(strOf(body,"artifactPath")))
+                c.put("updatedAt",JsonString(lr.text(4)))
+                c.put("state",JsonString(if(slotId.size>0){"newer"}else{"candidate"}))
+                if(slotId.size>0){c.put("existingId",JsonString(slotId));c.put("existingTitle",JsonString(currentTitle));c.put("existingVersion",JsonInt(currentVersion))}
+                out.add(c);seen.add(key);break
+            }
+        }
+        return out
+    }
+    /** 已经点过“生成”、当前仍在跑的节点任务；只用于把节点卡片显示成“正在生成”。 */
+    public func generating(kb: String): JsonArray{
+        let out=JsonArray();let currentMap=head(kb);if(currentMap.size==0){return out}
+        let seen=HashSet<String>()
+        for(r in db().query("SELECT body FROM course_targets WHERE kb_id=? ORDER BY rowid DESC",va([tv(kb)]))){
+            var target: JsonObject
+            try{target=courseJson(r.text(0))}catch(e: Exception){continue}
+            if(strOf(target,"mapId")!=currentMap){continue}
+            let nid=strOf(target,"nodeId");let kind=strOf(target,"kind");let sid=strOf(target,"sessionId")
+            if(nid.size==0||sid.size==0||!courseKind(kind)){continue}
+            let key=nid+"|"+kind
+            if(seen.contains(key)||db().getKv("meta","course-busy:"+sid,"").size==0){continue}
+            var existsNode=false
+            try{node(kb,nid);existsNode=true}catch(e: Exception){existsNode=false}
+            if(!existsNode){continue}
+            let c=JsonObject();c.put("nodeId",JsonString(nid));c.put("kind",JsonString(kind))
+            c.put("title",JsonString(strOf(target,"title")));c.put("sessionId",JsonString(sid))
+            out.add(c);seen.add(key)
+        }
+        return out
+    }
     public func state(kb: String): JsonObject{
         recoverFiles();let out=JsonObject();let id=head(kb)
         out.put("map",if(id.size>0){map(id)}else{JsonNull()});out.put("resources",resources(kb,"current"))
+        out.put("candidates",candidates(kb));out.put("generating",generating(kb))
         out.put("archiveCount",JsonInt(resources(kb,"archive").size()));out.put("trashCount",JsonInt(resources(kb,"trash").size()))
         let cfg=Store(dataDir).load().findKb(kb)
         out.put("sourceChanged",JsonBool(match(cfg){case Some(c)=>id.size>0&&strOf(map(id),"sourceVersion")!=c.builtAt;case None=>id.size>0}))

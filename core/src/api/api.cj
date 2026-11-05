@@ -1294,6 +1294,9 @@ public class Api {
                         o.put("count", JsonInt(hits.size()))
                         o.put("first", JsonString(pickStr(hits[0], ["title"])))
                         o.put("url", JsonString(pickStr(hits[0], ["url"])))
+                        // 连通性只证明“密钥 + 网络”可用；对话里是否真的联网还取决于已保存的开关。
+                        o.put("enabled", JsonBool(webSearchEnabled(store.dataDir)))
+                        o.put("savedKey", JsonBool(webSearchKey(store.dataDir).size > 0))
                         ok(ctx, o)
                     } catch (e: Exception) {
                         // 502：上游（Tavily）的问题，不是本机的问题

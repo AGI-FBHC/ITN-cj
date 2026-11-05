@@ -18,6 +18,7 @@ import itn_desktop_core.runtime.StepContext
 import itn_desktop_core.runtime.EventStream
 import itn_desktop_core.runtime.ModelReply
 import itn_desktop_core.agent.courseTools
+import itn_desktop_core.runtime_host.TaskFeed
 import itn_desktop_core.dev.seedGrowthActivity
 import itn_desktop_core.kb.stamp
 import itn_desktop_core.util.*
@@ -62,6 +63,60 @@ class CourseLifecycleTest {
         cs.action(id,"restore","course-kb",nid,"",true);@Expect(cs.slot(nid,"lecture"),id);@Expect(PersonalStore(dir).search("SECRET-COURSE-77",10).size(),1)
         cs.action(id,"trash","","","",true);let copy=strOf(cs.resource(id,true),"path");cs.action(id,"purge","","","",true)
         @Expect(exists(copy),false);@Expect(exists(strOf(candidate,"artifactPath")),true);@Expect(cs.head("course-kb"),strOf(map,"id"))
+    }
+    @TestCase
+    func stateExposesGeneratedButUnattachedCandidateUntilConfirmed(): Unit{
+        let dir=courseTestDir("course-candidate-state");let map=publishedCourse(dir);let cs=CourseStore(dir);let nid=firstCourseNode(map)
+        let sid=strOf(cs.start("course-kb",nid,"lecture","",false),"sessionId");let candidate=courseCandidate(dir,sid,"lecture","待确认候选")
+        let before=cs.state("course-kb");let candidates=arrOf(before,"candidates");@Expect(candidates.size(),1)
+        let c=objOf(candidates[0]).getOrThrow();@Expect(strOf(c,"nodeId"),nid);@Expect(strOf(c,"kind"),"lecture")
+        @Expect(strOf(c,"learningId"),strOf(candidate,"id"));@Expect(strOf(c,"artifactPath"),strOf(candidate,"artifactPath"))
+        @Expect(strOf(c,"sessionId"),sid)
+        let saved=cs.commit(courseSaveArgs(sid,candidate,""));@Expect(strOf(saved,"nodeId"),nid)
+        let after=cs.state("course-kb");@Expect(arrOf(after,"candidates").size(),0);@Expect(arrOf(after,"resources").size(),1)
+        let attached=LearningStore(dir).resource(strOf(candidate,"id"),1)
+        @Expect(strOf(objOf(attached.get("courseAsset").getOrThrow()).getOrThrow(),"status"),"current")
+    }
+    @TestCase
+    func newerCandidateIsVisibleWhileAttachedVersionStaysCurrent(): Unit{
+        let dir=courseTestDir("course-newer-candidate");let map=publishedCourse(dir);let cs=CourseStore(dir);let nid=firstCourseNode(map)
+        let first=cs.start("course-kb",nid,"lecture","",false);let sidA=strOf(first,"sessionId")
+        let v1=cs.commit(courseSaveArgs(sidA,courseCandidate(dir,sidA,"lecture","第一版"),""))
+        courseMarkBusy(dir,sidA,true);courseMarkBusy(dir,sidA,false)
+        let sidB=strOf(cs.start("course-kb",nid,"lecture","",true),"sessionId")
+        let v2=courseCandidate(dir,sidB,"lecture","第二版候选")
+        @Expect(cs.slot(nid,"lecture"),strOf(v1,"id"))
+        let arr=arrOf(cs.state("course-kb"),"candidates");@Expect(arr.size(),1)
+        let c=objOf(arr[0]).getOrThrow();@Expect(strOf(c,"state"),"newer")
+        @Expect(strOf(c,"learningId"),strOf(v2,"id"));@Expect(strOf(c,"sessionId"),sidB)
+        @Expect(strOf(c,"existingId"),strOf(v1,"id"));@Expect(intOf(c,"existingVersion"),1)
+    }
+    @TestCase
+    func generatingOnlyListsBusyTargetsOnTheCurrentMap(): Unit{
+        let dir=courseTestDir("course-generating-state");let map=publishedCourse(dir);let cs=CourseStore(dir);let nid=firstCourseNode(map)
+        let sid=strOf(cs.start("course-kb",nid,"lecture","",false),"sessionId")
+        @Expect(arrOf(cs.state("course-kb"),"generating").size(),0)
+        courseMarkBusy(dir,sid,true)
+        let busy=arrOf(cs.state("course-kb"),"generating");@Expect(busy.size(),1)
+        let g=objOf(busy[0]).getOrThrow();@Expect(strOf(g,"nodeId"),nid);@Expect(strOf(g,"kind"),"lecture");@Expect(strOf(g,"sessionId"),sid)
+        courseMarkBusy(dir,sid,false)
+        @Expect(arrOf(cs.state("course-kb"),"generating").size(),0)
+    }
+    @TestCase
+    func taskFeedDistinguishesGeneratedFromAttachedCourseResource(): Unit{
+        let dir=courseTestDir("course-task-state");let map=publishedCourse(dir);let cs=CourseStore(dir);let nid=firstCourseNode(map)
+        let sid=strOf(cs.start("course-kb",nid,"lecture","",false),"sessionId");let candidate=courseCandidate(dir,sid,"lecture","任务中心状态")
+        let end=SessionEvent();end.sessionId=sid;end.turnId="test-turn";end.kind="turn/end";end.payload.put("ok",JsonBool(true));SessionStore(dir).append(end)
+        let feed=TaskFeed(Store(dir))
+        var candidateState=""
+        var recent=feed.recent();var i: Int64=0
+        while(i<recent.size()){let r=objOf(recent[i]).getOrThrow();i+=1;if(strOf(r,"id")=="turn:"+sid+":test-turn"){candidateState=strOf(r,"resourceState")}}
+        @Expect(candidateState,"candidate")
+        cs.commit(courseSaveArgs(sid,candidate,""))
+        var attachedState=""
+        recent=feed.recent();i=0
+        while(i<recent.size()){let r=objOf(recent[i]).getOrThrow();i+=1;if(strOf(r,"id")=="turn:"+sid+":test-turn"){attachedState=strOf(r,"resourceState")}}
+        @Expect(attachedState,"attached")
     }
     @TestCase
     func replacementIsConfirmedAndStaleWritersCannotOverwrite(): Unit{
